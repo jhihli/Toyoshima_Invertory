@@ -1,0 +1,113 @@
+# Claude Design Prompt: Warehouse Receiving Management System UI
+
+## Context
+
+I'm building a Django web application for managing warehouse receiving operations. Trucks deliver pallets from different vendors, workers scan SO (Sales Order) numbers and board barcodes using Zebra scanners, and the data is recorded in the system. I need a clean, professional, data-dense web UI designed for warehouse managers and office staff who view and manage this data on desktop browsers.
+
+## Database Schema (already implemented)
+
+The system has these main entities:
+
+1. **Vendor** - Suppliers like MSFT, SMS. Each vendor has a `weight_rule`:
+   - `per_pallet`: record each pallet's weight separately (MSFT)
+   - `aggregated`: record total weight + total qty in one row (SMS)
+
+2. **SO (Sales Order)** - The core business unit. Fields: so_number, vendor, date, licence_number, payload_number, note. One SO can have multiple pallets and boards.
+
+3. **SOPhoto** - Photos attached to an SO (multiple photos per SO).
+
+4. **Pallet** - Weight and quantity records under an SO. Fields: pallet_seq, weight, qty.
+
+5. **Board** - Individual boards scanned by workers. Fields: barcode, catalog, weight, qty, mpn (manufacturer part number), photo, note.
+
+6. **ChipBrand** - Dictionary of chip brands (Samsung, Intel, etc.)
+
+7. **Chip** - Chips on a board. Fields: brand (FK to ChipBrand), qty, note.
+
+## Business Hierarchy
+
+```
+Vendor → SO → Pallet (weight/qty data)
+            → Board → Chip (brand + qty)
+            → Photos (multiple)
+```
+
+## Pages I Need
+
+### Page 1: SO List (Home Page)
+- Top toolbar: search bar (by SO number), filter by vendor, date range picker, "+ New SO" button
+- Data table with columns: SO Number, Vendor, Date, Licence No, Payload No, Pallet Count, Board Count, Status, Actions
+- Each row clickable → goes to SO Detail page
+- Pagination at bottom
+- Show about 15-20 rows per page
+
+### Page 2: SO Detail (Most Important Page)
+- Breadcrumb: SO List > SO-001
+- Top section: SO basic info card showing all SO fields, with Edit button
+- Photos section: grid/gallery of SOPhoto thumbnails, with upload button
+- Tabs or stacked sections for:
+  - **Pallets tab**: table of pallets (seq, weight, qty) with inline add/edit, different UI hint based on vendor's weight_rule
+  - **Boards tab**: table of boards with columns (barcode, catalog, mpn, weight, qty, chip count). Each row expandable to show chip list inline, or click to go to Board detail
+- Notes section at bottom
+
+### Page 3: Board Detail
+- Breadcrumb: SO List > SO-001 > Board BC-12345
+- Board info section with photo on the left, info fields on the right
+- Chips table below: columns (Brand, Qty, Note), with add/edit/delete actions
+
+### Page 4: Dashboard (Overview Home)
+- Top KPI cards: Today's SOs, This week's boards, Active vendors, Total pallets this month
+- Chart: Daily SO count for last 30 days (line chart)
+- Chart: Top 5 vendors by board count (bar chart)
+- Recent activity feed: last 10 scanned boards with timestamps
+
+### Page 5: Vendor Management
+- Simple table with columns: Name, Weight Rule, SO Count, Actions
+- Add/edit vendor in modal dialog
+- Weight rule is a dropdown: "Per Pallet (like MSFT)" / "Aggregated (like SMS)"
+
+### Page 6: Chip Brand Management
+- Simple dictionary management: list of brands with add/edit/delete
+
+## Design Requirements
+
+**Style direction:**
+- Clean, professional, enterprise SaaS aesthetic (think Linear, Notion, Retool)
+- Data-dense tables (not bloated card layouts)
+- Neutral color palette as base (white/light gray background, dark gray text)
+- Use accent color sparingly for actions (a single brand color like indigo or teal)
+- Status pills with semantic colors: green=completed, amber=in progress, red=issue
+- Rounded corners, subtle borders, minimal shadows
+- Sans-serif system font
+
+**Layout:**
+- Left sidebar navigation with icons + labels: Dashboard, SOs, Vendors, Chip Brands, Settings
+- Top bar with: search, notifications icon, user avatar
+- Main content area with breadcrumbs at top
+- Responsive: sidebar collapses to icons on medium screens, full drawer on mobile
+
+**Components to include:**
+- Data tables with sortable columns, hover highlighting, sticky header
+- Filter chips / dropdown filters above tables
+- Inline editing for tabular data (double-click to edit)
+- Modal dialogs for create/edit forms
+- Image gallery with lightbox for photos
+- Breadcrumbs for navigation
+- Toast notifications for actions
+
+**Do NOT include:**
+- Dark mode variants (I'll add later)
+- Too many illustrations or mascots
+- Overly rounded/playful design (this is B2B warehouse software)
+- Authentication/login pages (handled by Django built-in auth)
+
+## What I Want You to Produce
+
+Please create **a single React artifact** that showcases the main pages of this system as a clickable prototype. Use:
+- React with Tailwind for styling
+- Lucide icons
+- Mock data that represents realistic warehouse scenarios (2-3 vendors like MSFT/SMS/Dell, 5-10 sample SOs, sample boards with chip data)
+- Simple state-based navigation between pages (no router needed)
+- Focus on the SO List page and SO Detail page as they're most used
+
+Make the Dashboard and SO Detail pages visually polished and complete. Other pages can be simpler but should show the consistent design language. Prioritize the information hierarchy and data clarity over visual flourishes.

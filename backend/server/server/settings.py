@@ -17,8 +17,9 @@ from dotenv import load_dotenv
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load environment variables from .env file
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+# Load environment variables — prefer .env.production if it exists
+_env_file = '.env.production' if os.path.exists(os.path.join(BASE_DIR, '.env.production')) else '.env'
+load_dotenv(os.path.join(BASE_DIR, _env_file))
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -140,9 +141,12 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'False') == 'True'
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if origin.strip()]
 
+from corsheaders.defaults import default_headers
+CORS_ALLOW_HEADERS = list(default_headers) + ['x-api-key']
+
 AUTH_USER_MODEL = 'account.CustomUser'
 
-MEDIA_ROOT = os.getenv('MEDIA_ROOT', r'D:\workplace\Images')  # use raw string or double backslashes
+MEDIA_ROOT = os.getenv('MEDIA_ROOT', '/var/www/toyoshima/media')
 MEDIA_URL = '/media/'
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv('MAX_UPLOAD_SIZE', '52428800'))
 

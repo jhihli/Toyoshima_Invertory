@@ -16,7 +16,16 @@
       "Bash(netsh advfirewall:*)",
       "Bash(net start postgresql-x64-14)",
       "Bash(tree:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run dev:*)",
+      "Bash(timeout /t 10 /nobreak)",
+      "Bash(npm run build:*)",
+      "Bash(timeout /t 15 /nobreak)",
+      "Bash(powershell -Command:*)",
+      "WebFetch(domain:api.anthropic.com)",
+      "Read(//d/Projects/TGTscan/lib/**)",
+      "Read(//d/Projects/TGTscan/**)"
     ],
     "deny": [],
     "ask": []

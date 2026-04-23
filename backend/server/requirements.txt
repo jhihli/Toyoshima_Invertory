@@ -7,3 +7,5 @@ pytz
 sqlparse
 psycopg2-binary
 python-dotenv
+gunicorn
+Pillow

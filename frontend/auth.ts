@@ -50,12 +50,28 @@ export const authOptions = {
                         }
 
                         const user: User = await response.json();
+
+                        // Also obtain a JWT token for API calls
+                        let accessToken: string | null = null;
+                        try {
+                            const tokenRes = await fetch(`${API_URL}/api/token/`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ username, password }),
+                            });
+                            if (tokenRes.ok) {
+                                const tokenData = await tokenRes.json();
+                                accessToken = tokenData.access;
+                            }
+                        } catch {}
+
                         return {
                             ...user,
                             id: user.id.toString(),
                             username: user.username,
                             role: user.role,
-                        };
+                            accessToken,
+                        } as any;
                     } catch (error) {
                         console.error("Error in authorization:", error);
                         return null;
@@ -86,15 +102,17 @@ export const authOptions = {
     callbacks: {
         async jwt({ token, user }) {
             if (user) {
-                token.role = user.role ?? "user"; // Store role in token, Ensure role is always a string
-                token.name = user.username; // Store username in token as 'name'
+                token.role = (user as any).role ?? "user";
+                token.name = (user as any).username;
+                token.accessToken = (user as any).accessToken ?? null;
             }
             return token;
         },
         async session({ session, token }) {
             if (session.user) {
-                session.user.role = token.role ?? "user"; // Pass role to session
-                session.user.name = token.name ?? null; // Pass username to session as 'name'
+                session.user.role = (token.role as string) ?? "user";
+                session.user.name = (token.name as string) ?? null;
+                (session as any).accessToken = token.accessToken ?? null;
             }
             return session;
         },

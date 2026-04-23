@@ -1,83 +1,142 @@
 from rest_framework import serializers
 from django.conf import settings
-from .models import Product, Photo, Cargo
+from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip
 import os
 
 
-class CargoSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Cargo
-        fields = ['id', 'name']
-
-
-class PhotoSerializer(serializers.ModelSerializer):
-    url = serializers.SerializerMethodField()
+class VendorSerializer(serializers.ModelSerializer):
+    so_count = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
-        model = Photo
-        fields = ['id', 'path', 'url']
+        model = Vendor
+        fields = ['id', 'name', 'default_weight_rule', 'so_count']
 
-    def get_url(self, obj):
-        """
-        Return the full URL to access the photo.
-        Uses PUBLIC_DOMAIN from settings or falls back to request host.
-        """
-        if not obj.path:
+    def get_so_count(self, obj):
+        return obj.sos.count()
+
+
+class SOPhotoSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = SOPhoto
+        fields = ['id', 'so', 'image', 'caption', 'uploaded_at', 'image_url']
+        read_only_fields = ['uploaded_at']
+
+    def get_image_url(self, obj):
+        if not obj.image:
             return None
-
-        # Get the public domain from environment or use request host
         public_domain = os.getenv('PUBLIC_DOMAIN', '')
-
         if public_domain:
-            # Use the configured public domain
-            media_path = obj.path.url  # e.g., /media/so123_1.png
-            return f"{public_domain}{media_path}"
-        else:
-            # Fallback to request-based URL building
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.path.url)
-            else:
-                return obj.path.url
+            return f"{public_domain}{obj.image.url}"
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.image.url)
+        return obj.image.url
 
 
-class ProductSerializer(serializers.ModelSerializer):
-    photos = PhotoSerializer(many=True, read_only=True)
-    created_by_username = serializers.SerializerMethodField(read_only=True)
-    cargo_name = serializers.SerializerMethodField(read_only=True)
+class PalletSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Pallet
+        fields = ['id', 'so', 'pallet_seq', 'weight', 'qty', 'created_at']
+        read_only_fields = ['created_at']
 
-    number = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    vender = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    client = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    category = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    so_number = serializers.CharField(required=True, allow_blank=False, allow_null=False)
-    barcode = serializers.CharField(required=True, allow_blank=False, allow_null=False)
-    date = serializers.DateField(required=True, allow_null=False)
-    weight = serializers.IntegerField(required=False, allow_null=True)
-    noted = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    current_status = serializers.CharField(required=False, allow_blank=True, allow_null=True)
-    ex_date = serializers.DateField(required=False, allow_null=True)
-    created_by = serializers.PrimaryKeyRelatedField(read_only=True, allow_null=True)
-    cargo = serializers.PrimaryKeyRelatedField(queryset=Cargo.objects.all(), required=False, allow_null=True)
+
+class ChipSerializer(serializers.ModelSerializer):
+    brand_name = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
-        model = Product
-        fields = '__all__'
+        model = Chip
+        fields = ['id', 'board', 'brand', 'brand_name', 'qty', 'note']
 
-    def get_created_by_username(self, obj):
-        """
-        Return the username of the user who created this product.
-        Returns 'Unknown' if no user is assigned.
-        """
-        if obj.created_by:
-            return obj.created_by.username
-        return 'Unknown'
-
-    def get_cargo_name(self, obj):
-        """
-        Return the name of the cargo.
-        Returns None if no cargo is assigned.
-        """
-        if obj.cargo:
-            return obj.cargo.name
+    def get_brand_name(self, obj):
+        if obj.brand:
+            return obj.brand.name
         return None
+
+
+class BoardSerializer(serializers.ModelSerializer):
+    chips = ChipSerializer(many=True, read_only=True)
+    chip_count = serializers.SerializerMethodField(read_only=True)
+    photo_url = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Board
+        fields = [
+            'id', 'so', 'barcode', 'catalog', 'weight', 'qty',
+            'mpn', 'photo', 'photo_url', 'note', 'scanned_at',
+            'chips', 'chip_count',
+        ]
+        read_only_fields = ['scanned_at']
+
+    def get_chip_count(self, obj):
+        return obj.total_chip_count
+
+    def get_photo_url(self, obj):
+        if not obj.photo:
+            return None
+        public_domain = os.getenv('PUBLIC_DOMAIN', '')
+        if public_domain:
+            return f"{public_domain}{obj.photo.url}"
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.photo.url)
+        return obj.photo.url
+
+
+class SOSerializer(serializers.ModelSerializer):
+    vendor_name = serializers.SerializerMethodField(read_only=True)
+    vendor_weight_rule = serializers.SerializerMethodField(read_only=True)
+    effective_weight_rule = serializers.SerializerMethodField(read_only=True)
+    total_pallet_count = serializers.SerializerMethodField(read_only=True)
+    pallet_record_count = serializers.SerializerMethodField(read_only=True)
+    total_pallet_weight = serializers.SerializerMethodField(read_only=True)
+    total_board_count = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = SO
+        fields = [
+            'id', 'so_number', 'vendor', 'vendor_name', 'vendor_weight_rule',
+            'weight_rule', 'effective_weight_rule',
+            'date', 'licence_number', 'payload_number', 'note', 'created_at',
+            'total_pallet_count', 'pallet_record_count', 'total_pallet_weight',
+            'total_board_count',
+        ]
+        read_only_fields = ['created_at']
+
+    def get_vendor_name(self, obj):
+        return obj.vendor.name if obj.vendor_id else None
+
+    def get_vendor_weight_rule(self, obj):
+        return obj.vendor.default_weight_rule if obj.vendor_id else None
+
+    def get_effective_weight_rule(self, obj):
+        return obj.effective_weight_rule
+
+    def get_total_pallet_count(self, obj):
+        return obj.total_pallet_count
+
+    def get_pallet_record_count(self, obj):
+        return obj.pallet_record_count
+
+    def get_total_pallet_weight(self, obj):
+        w = obj.total_pallet_weight
+        return str(w) if w is not None else '0'
+
+    def get_total_board_count(self, obj):
+        return obj.total_board_count
+
+
+class SODetailSerializer(SOSerializer):
+    """Extended SO serializer that includes pallets and boards."""
+    pallets = PalletSerializer(many=True, read_only=True)
+    photos = SOPhotoSerializer(many=True, read_only=True)
+
+    class Meta(SOSerializer.Meta):
+        fields = SOSerializer.Meta.fields + ['pallets', 'photos']
+
+
+class ChipBrandSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ChipBrand
+        fields = ['id', 'name']
