@@ -36,34 +36,36 @@ export const authOptions = {
                     }
 
                     try {
-                        const response = await fetch(`${API_URL}/account/users/`, {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                            },
+                        // Step 1: Authenticate via JWT token endpoint
+                        const tokenRes = await fetch(`${API_URL}/api/token/`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ username, password }),
                         });
-    
-                        if (!response.ok) {
+
+                        if (!tokenRes.ok) {
                             console.log("Invalid credentials");
                             return null;
                         }
 
-                        const user: User = await response.json();
+                        const tokenData = await tokenRes.json();
+                        const accessToken = tokenData.access;
 
-                        // Also obtain a JWT token for API calls
-                        let accessToken: string | null = null;
-                        try {
-                            const tokenRes = await fetch(`${API_URL}/api/token/`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ username, password }),
-                            });
-                            if (tokenRes.ok) {
-                                const tokenData = await tokenRes.json();
-                                accessToken = tokenData.access;
-                            }
-                        } catch {}
+                        // Step 2: Fetch user info using the token
+                        const userRes = await fetch(`${API_URL}/account/user-info/`, {
+                            method: 'GET',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${accessToken}`,
+                            },
+                        });
+
+                        if (!userRes.ok) {
+                            console.log("Could not fetch user info");
+                            return null;
+                        }
+
+                        const user: User = await userRes.json();
 
                         return {
                             ...user,
