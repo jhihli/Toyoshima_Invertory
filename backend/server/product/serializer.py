@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.conf import settings
-from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip
+from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN
 import os
 
 
@@ -38,7 +38,7 @@ class SOPhotoSerializer(serializers.ModelSerializer):
 class PalletSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'weight', 'qty', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'payload_number', 'weight', 'qty', 'board_qty', 'created_at']
         read_only_fields = ['created_at']
 
 
@@ -47,7 +47,7 @@ class ChipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Chip
-        fields = ['id', 'board', 'brand', 'brand_name', 'qty', 'note']
+        fields = ['id', 'mpn', 'brand', 'brand_name', 'qty', 'note']
 
     def get_brand_name(self, obj):
         if obj.brand:
@@ -55,22 +55,52 @@ class ChipSerializer(serializers.ModelSerializer):
         return None
 
 
+class MPNField(serializers.Field):
+    """Serializes Board.mpn FK as a plain string; accepts a string on write and auto get_or_creates the MPN record."""
+
+    def to_representation(self, value):
+        return value.name if value else ''
+
+    def to_internal_value(self, data):
+        if not data or not str(data).strip():
+            return None
+        mpn, _ = MPN.objects.get_or_create(name=str(data).strip())
+        return mpn
+
+
 class BoardSerializer(serializers.ModelSerializer):
-    chips = ChipSerializer(many=True, read_only=True)
+    mpn = MPNField(allow_null=True, required=False, default=None)
+    chips = serializers.SerializerMethodField(read_only=True)
     chip_count = serializers.SerializerMethodField(read_only=True)
     photo_url = serializers.SerializerMethodField(read_only=True)
+    pallet_label = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Board
         fields = [
-            'id', 'so', 'barcode', 'catalog', 'weight', 'qty',
-            'mpn', 'photo', 'photo_url', 'note', 'scanned_at',
+            'id', 'so', 'pallet', 'pallet_label', 'barcode', 'catalog',
+            'mpn', 'weight', 'qty',
+            'photo', 'photo_url', 'note', 'scanned_at',
             'chips', 'chip_count',
         ]
         read_only_fields = ['scanned_at']
 
+    def get_chips(self, obj):
+        if not obj.mpn_id:
+            return []
+        return ChipSerializer(obj.mpn.chips.all(), many=True).data
+
     def get_chip_count(self, obj):
-        return obj.total_chip_count
+        if not obj.mpn_id:
+            return 0
+        return sum(c.qty for c in obj.mpn.chips.all())
+
+    def get_pallet_label(self, obj):
+        if not obj.pallet_id:
+            return None
+        p = obj.pallet
+        parts = [x for x in [p.licence_number, p.payload_number] if x]
+        return '-'.join(parts) if parts else f'#{p.pallet_seq:02d}'
 
     def get_photo_url(self, obj):
         if not obj.photo:
@@ -98,7 +128,7 @@ class SOSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'so_number', 'vendor', 'vendor_name', 'vendor_weight_rule',
             'weight_rule', 'effective_weight_rule',
-            'date', 'licence_number', 'payload_number', 'note', 'created_at',
+            'date', 'note', 'created_at',
             'total_pallet_count', 'pallet_record_count', 'total_pallet_weight',
             'total_board_count',
         ]

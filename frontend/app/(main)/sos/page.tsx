@@ -67,18 +67,18 @@ export default function SOListPage() {
       const all = await api.sos.list({ q, vendor: vendorFilter, date_from: dateFrom, date_to: dateTo, page: 1, page_size: 9999 });
       const palletsPerSO = await Promise.all(all.results.map(s => api.pallets.list(s.id)));
 
-      const COL_WIDTHS = [{ wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 10 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
-      const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
-      const HEADER = ['SO Number', 'Vendor', 'Date', 'Licence No', 'Payload No', 'Pallet #', 'Weight (lb)', 'Pallet Qty', 'Boards'];
+      const COL_WIDTHS = [{ wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
+      const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+      const HEADER = ['SO Number', 'Vendor', 'Date', 'Pallet #', 'Licence No', 'Payload No', 'Weight (lb)', 'Pallet Qty', 'Board Qty', 'Boards'];
 
       // ── Sheet 1: Sales Orders (flat pallet rows, no styling needed) ──
       const rows: Record<string, string | number>[] = [];
       all.results.forEach((s, idx) => {
         const pallets = palletsPerSO[idx];
         if (pallets.length === 0) {
-          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Licence No': s.licence_number || '', 'Payload No': s.payload_number || '', 'Pallet #': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards': s.total_board_count });
+          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': '', 'Licence No': '', 'Payload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Board Qty': '', 'Boards': s.total_board_count });
         } else {
-          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Licence No': s.licence_number || '', 'Payload No': s.payload_number || '', 'Pallet #': p.pallet_seq, 'Weight (lb)': parseFloat(p.weight), 'Pallet Qty': p.qty, 'Boards': s.total_board_count }));
+          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Payload No': p.payload_number || '', 'Weight (lb)': parseFloat(p.weight), 'Pallet Qty': p.qty, 'Board Qty': p.board_qty ?? '', 'Boards': s.total_board_count }));
         }
       });
       const ws1 = XLSX.utils.json_to_sheet(rows);
@@ -95,12 +95,12 @@ export default function SOListPage() {
         pallets.forEach(p => {
           totalW += parseFloat(p.weight);
           totalQ += p.qty;
-          aoaData.push([s.so_number, s.vendor_name, s.date, s.licence_number || '', s.payload_number || '', p.pallet_seq, parseFloat(p.weight), p.qty, s.total_board_count]);
+          aoaData.push([s.so_number, s.vendor_name, s.date, p.pallet_seq, p.licence_number || '', p.payload_number || '', parseFloat(p.weight), p.qty, p.board_qty ?? '', s.total_board_count]);
           rowPtr++;
         });
         // Subtotal row for this SO
         summaryRowIndices.push(rowPtr);
-        aoaData.push([s.so_number, '', '', '', '', '', totalW, totalQ, '']);
+        aoaData.push([s.so_number, '', '', '', '', '', totalW, totalQ, '', '']);
         rowPtr++;
       });
 
@@ -189,23 +189,21 @@ export default function SOListPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <Th label="SO Number" sortKey="so_number" w="17%" />
-              <Th label="Vendor" w="10%" />
-              <Th label="Date" sortKey="date" w="11%" />
-              <Th label="Licence No" w="14%" />
-              <Th label="Payload" w="12%" />
-              <Th label="Pallets" align="right" w="8%" />
-              <Th label="Total Weight (lb)" align="right" w="13%" />
-              <Th label="Boards" align="right" w="8%" />
-              <Th label="" w="7%" />
+              <Th label="SO Number" sortKey="so_number" w="22%" />
+              <Th label="Vendor" w="15%" />
+              <Th label="Date" sortKey="date" w="14%" />
+              <Th label="Pallets" align="right" w="10%" />
+              <Th label="Total Weight (lb)" align="right" w="16%" />
+              <Th label="Boards" align="right" w="12%" />
+              <Th label="" w="11%" />
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={9}><Empty label="Loading…" /></td></tr>
+              <tr><td colSpan={7}><Empty label="Loading…" /></td></tr>
             )}
             {!loading && sos.length === 0 && (
-              <tr><td colSpan={9}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
+              <tr><td colSpan={7}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
             )}
             {!loading && sos.map(s => (
               <SORow key={s.id} so={s} onClick={() => router.push(`/sos/${s.id}`)} />
@@ -242,8 +240,6 @@ function SORow({ so, onClick }: { so: SO; onClick: () => void }) {
       <td style={tdS}><span className="mono" style={{ fontSize: 12.5 }}>{so.so_number}</span></td>
       <td style={{ ...tdS, fontSize: 12.5 }}>{so.vendor_name}</td>
       <td style={{ ...tdS, fontSize: 12.5 }} className="num">{so.date}</td>
-      <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }} className="mono">{so.licence_number || '—'}</td>
-      <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }} className="mono">{so.payload_number || '—'}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_pallet_count}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(so.total_pallet_weight).toFixed(2)}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_board_count}</td>
@@ -266,15 +262,13 @@ function NewSOModal({ open, vendors, onClose, onCreate }: {
   const [soNumber, setSoNumber] = useState('');
   const [vendorId, setVendorId] = useState('');
   const [date, setDate] = useState(today);
-  const [licence, setLicence] = useState('');
-  const [payload, setPayload] = useState('');
   const [weightRule, setWeightRule] = useState('');
   const [note, setNote] = useState('');
 
   useEffect(() => {
     if (open) {
       setSoNumber(''); setVendorId(''); setDate(today);
-      setLicence(''); setPayload(''); setWeightRule(''); setNote('');
+      setWeightRule(''); setNote('');
     }
   }, [open]);
 
@@ -285,7 +279,7 @@ function NewSOModal({ open, vendors, onClose, onCreate }: {
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={!soNumber || !vendorId || !date}
-          onClick={() => onCreate({ so_number: soNumber, vendor: +vendorId, date, licence_number: licence, payload_number: payload, weight_rule: weightRule, note })}>
+          onClick={() => onCreate({ so_number: soNumber, vendor: +vendorId, date, weight_rule: weightRule, note })}>
           Create
         </Button>
       </>}>
@@ -320,9 +314,7 @@ function NewSOModal({ open, vendors, onClose, onCreate }: {
           <Select value={vendorId} onChange={setVendorId} placeholder="Select vendor"
             options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
         </Field>
-        <Field label="Date"><Input value={date} onChange={setDate} type="date" /></Field>
-        <Field label="Licence Number"><Input value={licence} onChange={setLicence} placeholder="TRK-00123" /></Field>
-        <Field label="Payload Number" span={2}><Input value={payload} onChange={setPayload} placeholder="PLD-0200" /></Field>
+        <Field label="Date" span={2}><Input value={date} onChange={setDate} type="date" /></Field>
         <Field label="Weight Rule" span={2}>
           <WeightRuleField vendor={vendor ?? null} value={weightRule} onChange={setWeightRule} />
         </Field>

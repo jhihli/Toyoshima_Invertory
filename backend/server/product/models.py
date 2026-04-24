@@ -29,8 +29,6 @@ class SO(models.Model):
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='sos')
     weight_rule = models.CharField(max_length=20, blank=True)
     date = models.DateField()
-    licence_number = models.CharField(max_length=50, blank=True)
-    payload_number = models.CharField(max_length=50, blank=True)
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -86,8 +84,11 @@ class SOPhoto(models.Model):
 class Pallet(models.Model):
     so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='pallets')
     pallet_seq = models.IntegerField()
+    licence_number = models.CharField(max_length=50, blank=True)
+    payload_number = models.CharField(max_length=50, blank=True)
     weight = models.DecimalField(max_digits=10, decimal_places=2)
     qty = models.IntegerField()
+    board_qty = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -99,13 +100,25 @@ class Pallet(models.Model):
         return f"{self.so.so_number} - Pallet #{self.pallet_seq}"
 
 
+class MPN(models.Model):
+    name = models.CharField(max_length=100, unique=True, db_index=True)
+
+    class Meta:
+        db_table = 'mpn'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class Board(models.Model):
     so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='boards')
-    barcode = models.CharField(max_length=100, db_index=True)
+    pallet = models.ForeignKey(Pallet, on_delete=models.SET_NULL, null=True, blank=True, related_name='boards')
+    barcode = models.CharField(max_length=100, blank=True, db_index=True)
     catalog = models.CharField(max_length=100, blank=True)
+    mpn = models.ForeignKey(MPN, on_delete=models.SET_NULL, null=True, blank=True, related_name='boards')
     weight = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     qty = models.IntegerField(default=1)
-    mpn = models.CharField(max_length=100, blank=True, db_index=True)
     photo = models.ImageField(upload_to='boards/%Y/%m/', blank=True, null=True)
     note = models.TextField(blank=True)
     scanned_at = models.DateTimeField(auto_now_add=True)
@@ -115,16 +128,21 @@ class Board(models.Model):
         ordering = ['-scanned_at']
 
     def __str__(self):
-        return f"{self.barcode} (SO: {self.so.so_number})"
+        mpn_str = self.mpn.name if self.mpn_id else ''
+        return f"{self.barcode or mpn_str or 'Unknown'} (SO: {self.so.so_number})"
 
     @property
     def total_chip_count(self):
-        result = self.chips.aggregate(total=Sum('qty'))['total']
+        if not self.mpn_id:
+            return 0
+        result = self.mpn.chips.aggregate(total=Sum('qty'))['total']
         return result or 0
 
     @property
     def chip_brand_count(self):
-        return self.chips.values('brand').distinct().count()
+        if not self.mpn_id:
+            return 0
+        return self.mpn.chips.values('brand').distinct().count()
 
 
 class ChipBrand(models.Model):
@@ -139,7 +157,7 @@ class ChipBrand(models.Model):
 
 
 class Chip(models.Model):
-    board = models.ForeignKey(Board, on_delete=models.CASCADE, related_name='chips')
+    mpn = models.ForeignKey(MPN, on_delete=models.CASCADE, null=True, blank=True, related_name='chips')
     brand = models.ForeignKey(
         ChipBrand, on_delete=models.PROTECT, null=True, blank=True
     )
@@ -148,7 +166,7 @@ class Chip(models.Model):
 
     class Meta:
         db_table = 'chip'
-        indexes = [models.Index(fields=['board', 'brand'])]
+        indexes = [models.Index(fields=['mpn', 'brand'])]
         ordering = ['brand__name']
 
     def __str__(self):

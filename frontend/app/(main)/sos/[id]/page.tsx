@@ -39,6 +39,7 @@ export default function SODetailPage() {
   const [boardPage, setBoardPage] = useState(1);
   const [boardDateFrom, setBoardDateFrom] = useState('');
   const [boardDateTo, setBoardDateTo] = useState('');
+  const [boardPalletFilter, setBoardPalletFilter] = useState('');
 
   const loadSO = useCallback(async () => {
     try {
@@ -51,14 +52,16 @@ export default function SODetailPage() {
   const loadBoards = useCallback(async () => {
     if (!soId) return;
     try {
-      const res = await api.boards.listBySO(soId, {
+      const params: Record<string, string | number> = {
         date_from: boardDateFrom, date_to: boardDateTo,
         page: boardPage, page_size: BOARDS_PAGE_SIZE,
-      });
+      };
+      if (boardPalletFilter) params.pallet = boardPalletFilter;
+      const res = await api.boards.listBySO(soId, params);
       setBoards(res.results);
       setBoardTotal(res.total);
     } catch {}
-  }, [soId, boardDateFrom, boardDateTo, boardPage]);
+  }, [soId, boardDateFrom, boardDateTo, boardPage, boardPalletFilter]);
 
   useEffect(() => { loadSO(); }, [loadSO]);
   useEffect(() => { if (tab === 'boards') loadBoards(); }, [tab, loadBoards]);
@@ -76,7 +79,8 @@ export default function SODetailPage() {
   const palletTotal = so.pallets.reduce((acc, p) => ({
     weight: acc.weight + parseFloat(p.weight),
     qty: acc.qty + p.qty,
-  }), { weight: 0, qty: 0 });
+    boardQty: acc.boardQty + (p.board_qty ?? 0),
+  }), { weight: 0, qty: 0, boardQty: 0 });
 
   // Pallet handlers
   const handleUpdatePallet = async (pId: number, patch: Partial<Pallet>) => {
@@ -95,9 +99,15 @@ export default function SODetailPage() {
     } catch { toast('Failed to delete pallet'); }
   };
 
-  const handleAddPallet = async (weight: string, qty: string) => {
+  const handleAddPallet = async (data: { weight: string; qty: string; licence_number: string; payload_number: string; board_qty: string }) => {
     try {
-      const created = await api.pallets.create(soId, { weight: weight as any, qty: +qty });
+      const created = await api.pallets.create(soId, {
+        weight: data.weight as any,
+        qty: +data.qty,
+        licence_number: data.licence_number,
+        payload_number: data.payload_number,
+        board_qty: data.board_qty ? +data.board_qty : null,
+      });
       setSo(s => s ? { ...s, pallets: [...s.pallets, created] } : s);
       toast('Pallet added');
     } catch { toast('Failed to add pallet'); }
@@ -144,12 +154,13 @@ export default function SODetailPage() {
     } catch { toast('Failed to delete SO'); }
   };
 
-  const handleAddBoard = async (data: { barcode: string; catalog: string; mpn: string; weight: string; qty: string; note: string }) => {
+  const handleAddBoard = async (data: { barcode: string; catalog: string; mpn: string; weight: string; qty: string; note: string; pallet: string }) => {
     try {
       await api.boards.create(soId, {
         so: soId, barcode: data.barcode, catalog: data.catalog,
         mpn: data.mpn, weight: data.weight as any, qty: +data.qty, note: data.note,
-      });
+        pallet: data.pallet ? +data.pallet : null,
+      } as any);
       toast('Board added');
       loadBoards();
       setSo(s => s ? { ...s, total_board_count: s.total_board_count + 1 } : s);
@@ -173,8 +184,6 @@ export default function SODetailPage() {
         { Field: 'Vendor', Value: so.vendor_name },
         { Field: 'Date', Value: so.date },
         { Field: 'Weight Rule', Value: so.effective_weight_rule === 'per_pallet' ? 'Per Pallet' : 'Aggregated' },
-        { Field: 'Licence No', Value: so.licence_number || '' },
-        { Field: 'Payload No', Value: so.payload_number || '' },
         { Field: 'Note', Value: so.note || '' },
         { Field: 'Total Pallets', Value: so.total_pallet_count },
         { Field: 'Total Weight (lb)', Value: parseFloat(so.total_pallet_weight) },
@@ -188,20 +197,24 @@ export default function SODetailPage() {
       // Sheet 2: Pallets
       const palletRows = so.pallets.map(p => ({
         'Seq': p.pallet_seq,
+        'Licence No': p.licence_number || '',
+        'Payload No': p.payload_number || '',
         'Weight (lb)': parseFloat(p.weight),
         'Qty': p.qty,
+        'Board Qty': p.board_qty ?? '',
       }));
       if (palletRows.length > 0) {
         const wsPallets = XLSX.utils.json_to_sheet(palletRows);
-        wsPallets['!cols'] = [{ wch: 8 }, { wch: 14 }, { wch: 8 }];
+        wsPallets['!cols'] = [{ wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 8 }, { wch: 10 }];
         XLSX.utils.book_append_sheet(wb, wsPallets, 'Pallets');
       }
 
       // Sheet 3: Boards
       const boardRows = allBoardData.map(b => ({
-        'Barcode': b.barcode,
-        'Catalog': b.catalog,
-        'MPN': b.mpn,
+        'MPN': b.mpn || '',
+        'Pallet': b.pallet_label || '',
+        'Barcode': b.barcode || '',
+        'Catalog': b.catalog || '',
         'Weight (lb)': b.weight ? parseFloat(b.weight) : '',
         'Qty': b.qty,
         'Chip Brands': b.chips.map(c => c.brand_name || 'Unknown').join(', '),
@@ -211,22 +224,25 @@ export default function SODetailPage() {
       }));
       if (boardRows.length > 0) {
         const wsBoards = XLSX.utils.json_to_sheet(boardRows);
-        wsBoards['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 6 }, { wch: 24 }, { wch: 12 }, { wch: 30 }, { wch: 18 }];
+        wsBoards['!cols'] = [{ wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 6 }, { wch: 24 }, { wch: 12 }, { wch: 30 }, { wch: 18 }];
         XLSX.utils.book_append_sheet(wb, wsBoards, 'Boards');
       }
 
-      // Sheet 4: Chips (flat list)
-      const chipRows = allBoardData.flatMap(b =>
-        b.chips.map(c => ({
-          'Board Barcode': b.barcode,
+      // Sheet 4: Chips — deduplicated per MPN (chips are shared across boards with the same MPN)
+      const seenMpns = new Set<string>();
+      const chipRows = allBoardData.flatMap(b => {
+        if (!b.mpn || b.chips.length === 0 || seenMpns.has(b.mpn)) return [];
+        seenMpns.add(b.mpn);
+        return b.chips.map(c => ({
+          'MPN': b.mpn,
           'Brand': c.brand_name || '',
           'Qty': c.qty,
           'Note': c.note || '',
-        }))
-      );
+        }));
+      });
       if (chipRows.length > 0) {
         const wsChips = XLSX.utils.json_to_sheet(chipRows);
-        wsChips['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 8 }, { wch: 30 }];
+        wsChips['!cols'] = [{ wch: 16 }, { wch: 14 }, { wch: 8 }, { wch: 30 }];
         XLSX.utils.book_append_sheet(wb, wsChips, 'Chips');
       }
 
@@ -265,16 +281,14 @@ export default function SODetailPage() {
 
       {/* Meta card */}
       <Card pad={0} style={{ marginBottom: 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
           {([
             ['Vendor', so.vendor_name],
             ['Weight Rule', effectiveRule === 'per_pallet' ? 'Per Pallet' : 'Aggregated', ruleIsOverride ? 'override' : null],
-            ['Licence No', so.licence_number],
-            ['Payload No', so.payload_number],
             ['Pallets', so.total_pallet_count],
             ['Boards', so.total_board_count],
           ] as [string, any, string?][]).map(([k, v, tag], i) => (
-            <div key={k} style={{ padding: '16px 20px', borderRight: i < 5 ? '1px solid var(--hair)' : 'none' }}>
+            <div key={k} style={{ padding: '16px 20px', borderRight: i < 3 ? '1px solid var(--hair)' : 'none' }}>
               <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 6 }}>{k}</div>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
                 <div className={typeof v === 'number' ? 'num' : ''} style={{ fontSize: 14, color: 'var(--ink)' }}>
@@ -347,16 +361,19 @@ export default function SODetailPage() {
         {tab === 'boards' && (
           <BoardsTab
             boards={boards}
+            pallets={so.pallets}
             total={boardTotal}
             page={boardPage}
             pageCount={boardPageCount}
             dateFrom={boardDateFrom}
             dateTo={boardDateTo}
+            palletFilter={boardPalletFilter}
             expandedBoard={expandedBoard}
             chipBrands={chipBrands}
             onPageChange={setBoardPage}
             onDateFromChange={setBoardDateFrom}
             onDateToChange={setBoardDateTo}
+            onPalletFilterChange={v => { setBoardPalletFilter(v); setBoardPage(1); }}
             onExpand={id => setExpandedBoard(expandedBoard === id ? null : id)}
             onOpenBoard={boardId => router.push(`/sos/${soId}/boards/${boardId}`)}
             onChipAdded={loadBoards}
@@ -377,7 +394,7 @@ export default function SODetailPage() {
       <AddPalletModal open={addPalletOpen} rule={effectiveRule} onClose={() => setAddPalletOpen(false)} onAdd={handleAddPallet} />
 
       {/* Add board modal */}
-      <AddBoardModal open={addBoardOpen} onClose={() => setAddBoardOpen(false)} onAdd={handleAddBoard} />
+      <AddBoardModal open={addBoardOpen} pallets={so.pallets} onClose={() => setAddBoardOpen(false)} onAdd={handleAddBoard} />
 
       {/* Delete SO confirmation modal */}
       <Modal
@@ -421,26 +438,16 @@ export default function SODetailPage() {
 // ─── Pallets Tab ──────────────────────────────────────────────────
 function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete }: {
   pallets: Pallet[]; effectiveRule: string; ruleIsOverride: boolean; vendorName: string;
-  palletTotal: { weight: number; qty: number }; addDisabled: boolean;
+  palletTotal: { weight: number; qty: number; boardQty: number }; addDisabled: boolean;
   onAdd: () => void; onUpdate: (id: number, p: Partial<Pallet>) => void; onDelete: (id: number) => void;
 }) {
+  const [editingPallet, setEditingPallet] = useState<Pallet | null>(null);
+
   return (
     <>
       <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <div style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-            {effectiveRule === 'per_pallet'
-              ? <>Rule: <b style={{ color: 'var(--ink-2)', fontWeight: 500 }}>Per-pallet</b>. Record each pallet's weight separately.</>
-              : <>Rule: <b style={{ color: 'var(--ink-2)', fontWeight: 500 }}>Aggregated</b>. Each row represents a batch — enter total weight and physical pallet count per batch.</>}
-            <span style={{ marginLeft: 6, color: 'var(--ink-4)' }}>
-              ({ruleIsOverride ? `override of ${vendorName} default` : `from vendor ${vendorName}`})
-            </span>
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 4 }}>
-            <span className="num">{pallets.length}</span> record{pallets.length === 1 ? '' : 's'}
-            {' · '}
-            <span className="num" style={{ color: 'var(--ink-2)' }}>{palletTotal.qty}</span> physical pallet{palletTotal.qty === 1 ? '' : 's'} total
-          </div>
+        <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+          <span className="num">{pallets.length}</span> record{pallets.length === 1 ? '' : 's'}
         </div>
         <Button size="sm" variant="outline" icon={<PlusIcon />} onClick={onAdd} disabled={addDisabled}>
           Add pallet
@@ -448,13 +455,25 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
       </div>
 
       <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+          <colgroup>
+            <col style={{ width: '7%' }} />
+            <col style={{ width: '21%' }} />
+            <col style={{ width: '21%' }} />
+            <col style={{ width: '16%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '15%' }} />
+          </colgroup>
           <thead>
             <tr>
               <th style={thS}>Seq</th>
+              <th style={thS}>Licence No</th>
+              <th style={thS}>Payload No</th>
               <th style={{ ...thS, textAlign: 'right' }}>Weight (lb)</th>
               <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
-              <th style={{ ...thS, width: 60, textAlign: 'right' }}></th>
+              <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
+              <th style={{ ...thS, textAlign: 'right' }}></th>
             </tr>
           </thead>
           <tbody>
@@ -463,56 +482,143 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 <td style={tdS}>
                   <span className="mono" style={{ color: 'var(--ink-3)' }}>#{String(p.pallet_seq).padStart(2, '0')}</span>
                 </td>
+                <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.licence_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
+                <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.payload_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
+                <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(p.weight).toFixed(2)}</td>
+                <td style={{ ...tdS, textAlign: 'right' }} className="num">{p.qty}</td>
                 <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                  <EditableCell value={parseFloat(p.weight).toFixed(2)} type="number" align="right"
-                    onSave={v => onUpdate(p.id, { weight: v as any })} />
-                </td>
-                <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                  {effectiveRule === 'per_pallet'
-                    ? <span style={{ color: 'var(--ink-3)' }}>1</span>
-                    : <EditableCell value={p.qty} type="number" align="right"
-                        onSave={v => onUpdate(p.id, { qty: +v })} />}
+                  {p.board_qty != null ? p.board_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                 </td>
                 <td style={{ ...tdS, textAlign: 'right' }}>
-                  <button onClick={() => onDelete(p.id)} style={ghostBtn}><TrashIcon /></button>
+                  <div style={{ display: 'inline-flex', gap: 4 }}>
+                    <button onClick={() => setEditingPallet(p)} style={ghostBtn} title="Edit"><EditIcon /></button>
+                    <button onClick={() => onDelete(p.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                  </div>
                 </td>
               </tr>
             ))}
             {pallets.length > 0 && (
               <tr style={{ background: 'var(--surface-2)' }}>
                 <td style={{ ...tdS, fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  Total <span style={{ color: 'var(--ink-4)', textTransform: 'none', letterSpacing: 0 }}>({palletTotal.qty} physical)</span>
+                  Total
                 </td>
+                <td /><td />
                 <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.weight.toFixed(2)}</td>
                 <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.qty}</td>
+                <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.boardQty || '—'}</td>
                 <td />
               </tr>
             )}
             {pallets.length === 0 && (
-              <tr><td colSpan={4}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
+              <tr><td colSpan={7}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
             )}
           </tbody>
         </table>
-        <div style={{ padding: '10px 14px', fontSize: 11, color: 'var(--ink-4)', borderTop: '1px solid var(--hair)' }}>
-          Double-click any cell to edit inline.
-        </div>
       </div>
+
+      {editingPallet && (
+        <EditPalletModal
+          open={!!editingPallet}
+          pallet={editingPallet}
+          effectiveRule={effectiveRule}
+          onClose={() => setEditingPallet(null)}
+          onSave={async patch => {
+            await onUpdate(editingPallet.id, patch);
+            setEditingPallet(null);
+          }}
+        />
+      )}
     </>
   );
 }
 
+// ─── Edit Pallet Modal ────────────────────────────────────────────
+function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
+  open: boolean; pallet: Pallet; effectiveRule: string;
+  onClose: () => void; onSave: (patch: Partial<Pallet>) => Promise<void>;
+}) {
+  const aggregated = effectiveRule === 'aggregated';
+  const [licence, setLicence] = useState(pallet.licence_number);
+  const [payload, setPayload] = useState(pallet.payload_number);
+  const [weight, setWeight] = useState(parseFloat(pallet.weight).toFixed(2));
+  const [qty, setQty] = useState(String(pallet.qty));
+  const [boardQty, setBoardQty] = useState(pallet.board_qty != null ? String(pallet.board_qty) : '');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      setLicence(pallet.licence_number);
+      setPayload(pallet.payload_number);
+      setWeight(parseFloat(pallet.weight).toFixed(2));
+      setQty(String(pallet.qty));
+      setBoardQty(pallet.board_qty != null ? String(pallet.board_qty) : '');
+      setSaving(false);
+    }
+  }, [open, pallet]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    await onSave({
+      licence_number: licence,
+      payload_number: payload,
+      weight: weight as any,
+      qty: +qty,
+      board_qty: boardQty !== '' ? +boardQty : null,
+    });
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`Edit Pallet #${String(pallet.pallet_seq).padStart(2, '0')}`} width={480}
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" disabled={!weight || !qty || saving} onClick={handleSave}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+      </>}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <Field label="Licence No">
+          <Input value={licence} onChange={setLicence} placeholder="TRK-00123" autoFocus />
+        </Field>
+        <Field label="Payload No">
+          <Input value={payload} onChange={setPayload} placeholder="PLD-0200" />
+        </Field>
+        <Field label="Weight (lb)">
+          <Input value={weight} onChange={setWeight} type="number" placeholder="0.00" />
+        </Field>
+        <Field label={aggregated ? 'Qty (physical pallets)' : 'Qty'}>
+          {aggregated
+            ? <Input value={qty} onChange={setQty} type="number" placeholder="0" />
+            : <Input value="1" onChange={() => {}} type="number" disabled />}
+        </Field>
+        <Field label="Board Qty" span={2}>
+          <Input value={boardQty} onChange={setBoardQty} type="number" placeholder="Optional" />
+        </Field>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Boards Tab ───────────────────────────────────────────────────
-function BoardsTab({ boards, total, page, pageCount, dateFrom, dateTo, expandedBoard, chipBrands,
-  onPageChange, onDateFromChange, onDateToChange, onExpand, onOpenBoard, onChipAdded, onAddBoard }: {
-  boards: Board[]; total: number; page: number; pageCount: number;
-  dateFrom: string; dateTo: string; expandedBoard: number | null; chipBrands: ChipBrand[];
+function BoardsTab({ boards, pallets, total, page, pageCount, dateFrom, dateTo, palletFilter, expandedBoard, chipBrands,
+  onPageChange, onDateFromChange, onDateToChange, onPalletFilterChange, onExpand, onOpenBoard, onChipAdded, onAddBoard }: {
+  boards: Board[]; pallets: Pallet[]; total: number; page: number; pageCount: number;
+  dateFrom: string; dateTo: string; palletFilter: string; expandedBoard: number | null; chipBrands: ChipBrand[];
   onPageChange: (p: number) => void; onDateFromChange: (v: string) => void;
-  onDateToChange: (v: string) => void; onExpand: (id: number) => void;
+  onDateToChange: (v: string) => void; onPalletFilterChange: (v: string) => void; onExpand: (id: number) => void;
   onOpenBoard: (id: number) => void; onChipAdded: () => void; onAddBoard: () => void;
 }) {
   const from = (page - 1) * BOARDS_PAGE_SIZE + 1;
   const to = Math.min(page * BOARDS_PAGE_SIZE, total);
-  const hasFilter = dateFrom || dateTo;
+  const hasFilter = dateFrom || dateTo || palletFilter;
+
+  const palletOptions = [
+    { value: '', label: 'All pallets' },
+    ...pallets.map(p => {
+      const parts = [p.licence_number, p.payload_number].filter(Boolean);
+      const label = parts.length ? parts.join('-') : `#${String(p.pallet_seq).padStart(2, '0')}`;
+      return { value: String(p.id), label: `#${String(p.pallet_seq).padStart(2, '0')} · ${label}` };
+    }),
+  ];
 
   return (
     <div>
@@ -521,6 +627,10 @@ function BoardsTab({ boards, total, page, pageCount, dateFrom, dateTo, expandedB
         display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10,
         padding: '10px 12px', border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)',
       }}>
+        <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Pallet</span>
+        <div style={{ minWidth: 180 }}>
+          <Select value={palletFilter} onChange={onPalletFilterChange} options={palletOptions} />
+        </div>
         <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Scanned</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <input type="date" value={dateFrom} onChange={e => { onDateFromChange(e.target.value); onPageChange(1); }}
@@ -529,12 +639,12 @@ function BoardsTab({ boards, total, page, pageCount, dateFrom, dateTo, expandedB
           <input type="date" value={dateTo} onChange={e => { onDateToChange(e.target.value); onPageChange(1); }}
             style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
         </div>
-        {hasFilter && <Button size="sm" variant="ghost" onClick={() => { onDateFromChange(''); onDateToChange(''); onPageChange(1); }}>Clear</Button>}
+        {hasFilter && <Button size="sm" variant="ghost" onClick={() => { onDateFromChange(''); onDateToChange(''); onPalletFilterChange(''); onPageChange(1); }}>Clear</Button>}
         <div style={{ flex: 1 }} />
         <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
           <span className="num">{total}</span> boards
         </span>
-        <Button size="sm" variant="outline" icon={<PlusIcon />} onClick={onAddBoard}>
+        <Button size="sm" variant="outline" icon={<PlusIcon />} onClick={onAddBoard} disabled={pallets.length === 0}>
           Add board
         </Button>
       </div>
@@ -542,16 +652,17 @@ function BoardsTab({ boards, total, page, pageCount, dateFrom, dateTo, expandedB
       <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <colgroup>
-            <col style={{ width: 28 }} /><col style={{ width: '18%' }} /><col style={{ width: '12%' }} />
-            <col style={{ width: '18%' }} /><col style={{ width: '10%' }} /><col style={{ width: '10%' }} />
-            <col style={{ width: '10%' }} /><col />
+            <col style={{ width: 28 }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} />
+            <col style={{ width: '10%' }} /><col style={{ width: '16%' }} /><col style={{ width: '9%' }} />
+            <col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col />
           </colgroup>
           <thead>
             <tr>
               <th style={thS}></th>
-              <th style={thS}>Barcode</th>
-              <th style={thS}>Catalog</th>
               <th style={thS}>MPN</th>
+              <th style={thS}>Pallet</th>
+              <th style={thS}>Catalog</th>
+              <th style={thS}>Barcode</th>
               <th style={{ ...thS, textAlign: 'right' }}>Weight</th>
               <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
               <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
@@ -574,11 +685,16 @@ function BoardsTab({ boards, total, page, pageCount, dateFrom, dateTo, expandedB
                     <td style={tdS}>
                       <button onClick={() => onOpenBoard(b.id)}
                         className="mono" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--ink)', fontSize: 12.5, textDecoration: 'underline', textDecorationColor: 'var(--ink-5)', textUnderlineOffset: 3, fontFamily: 'inherit' }}>
-                        {b.barcode}
+                        {b.mpn || '—'}
                       </button>
                     </td>
+                    <td style={{ ...tdS, fontSize: 12 }} className="mono">
+                      {b.pallet_label
+                        ? <span style={{ color: 'var(--ink-2)' }}>{b.pallet_label}</span>
+                        : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                    </td>
                     <td style={{ ...tdS, fontSize: 12 }} className="mono">{b.catalog || '—'}</td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }} className="mono">{b.mpn || '—'}</td>
+                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }} className="mono">{b.barcode || '—'}</td>
                     <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.weight ? parseFloat(b.weight).toFixed(2) : '—'}</td>
                     <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.qty}</td>
                     <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.chip_count}</td>
@@ -587,7 +703,7 @@ function BoardsTab({ boards, total, page, pageCount, dateFrom, dateTo, expandedB
                   {open && (
                     <tr style={{ borderBottom: '1px solid var(--hair)' }}>
                       <td />
-                      <td colSpan={7} style={{ padding: '8px 14px 16px' }}>
+                      <td colSpan={8} style={{ padding: '8px 14px 16px' }}>
                         <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 8 }}>Chips on board</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                           {b.chips.map(c => {
@@ -607,7 +723,7 @@ function BoardsTab({ boards, total, page, pageCount, dateFrom, dateTo, expandedB
               );
             })}
             {boards.length === 0 && (
-              <tr><td colSpan={8} style={{ padding: '28px 14px', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>
+              <tr><td colSpan={9} style={{ padding: '28px 14px', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>
                 No boards found.
               </td></tr>
             )}
@@ -646,21 +762,18 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
   const [soNumber, setSoNumber] = useState(so.so_number);
   const [vendorId, setVendorId] = useState(String(so.vendor));
   const [date, setDate] = useState(so.date);
-  const [licence, setLicence] = useState(so.licence_number);
-  const [payload, setPayload] = useState(so.payload_number);
   const [note, setNote] = useState(so.note);
   useEffect(() => {
     if (open) {
       setSoNumber(so.so_number); setVendorId(String(so.vendor));
-      setDate(so.date); setLicence(so.licence_number);
-      setPayload(so.payload_number); setNote(so.note);
+      setDate(so.date); setNote(so.note);
     }
   }, [open]);
   return (
     <Modal open={open} onClose={onClose} title={`Edit ${so.so_number}`} width={560}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" onClick={() => onSave({ so_number: soNumber, vendor: +vendorId, date, licence_number: licence, payload_number: payload, note })}>Save</Button>
+        <Button variant="primary" onClick={() => onSave({ so_number: soNumber, vendor: +vendorId, date, note })}>Save</Button>
       </>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="SO Number"><Input value={soNumber} onChange={setSoNumber} /></Field>
@@ -668,9 +781,7 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
           <Select value={vendorId} onChange={setVendorId}
             options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
         </Field>
-        <Field label="Date"><Input value={date} onChange={setDate} type="date" /></Field>
-        <Field label="Licence Number"><Input value={licence} onChange={setLicence} /></Field>
-        <Field label="Payload Number" span={2}><Input value={payload} onChange={setPayload} /></Field>
+        <Field label="Date" span={2}><Input value={date} onChange={setDate} type="date" /></Field>
         <Field label="Note" span={2}>
           <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
             style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--hair-strong)', background: 'var(--surface)', borderRadius: 3, fontFamily: 'inherit', fontSize: 13, resize: 'vertical', outline: 'none', color: 'var(--ink)' }} />
@@ -682,17 +793,26 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
 
 // ─── Add Pallet Modal ─────────────────────────────────────────────
 function AddPalletModal({ open, rule, onClose, onAdd }: {
-  open: boolean; rule: string; onClose: () => void; onAdd: (w: string, q: string) => void;
+  open: boolean; rule: string; onClose: () => void;
+  onAdd: (data: { weight: string; qty: string; licence_number: string; payload_number: string; board_qty: string }) => void;
 }) {
   const aggregated = rule === 'aggregated';
   const [w, setW] = useState('');
   const [q, setQ] = useState('');
-  useEffect(() => { if (open) { setW(''); setQ(aggregated ? '' : '1'); } }, [open, aggregated]);
+  const [licence, setLicence] = useState('');
+  const [payload, setPayload] = useState('');
+  const [boardQty, setBoardQty] = useState('');
+  useEffect(() => {
+    if (open) { setW(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload(''); setBoardQty(''); }
+  }, [open, aggregated]);
   return (
-    <Modal open={open} onClose={onClose} title={aggregated ? 'Add aggregated record' : 'Add pallet'} width={440}
+    <Modal open={open} onClose={onClose} title={aggregated ? 'Add aggregated record' : 'Add pallet'} width={500}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!w || !q} onClick={() => { onAdd(w, q); onClose(); }}>Add</Button>
+        <Button variant="primary" disabled={!w || !q}
+          onClick={() => { onAdd({ weight: w, qty: q, licence_number: licence, payload_number: payload, board_qty: boardQty }); onClose(); }}>
+          Add
+        </Button>
       </>}>
       <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.5, padding: '10px 12px', background: 'var(--surface-2)', border: '1px solid var(--hair)', borderRadius: 3, marginBottom: 14 }}>
         {aggregated
@@ -700,13 +820,22 @@ function AddPalletModal({ open, rule, onClose, onAdd }: {
           : <>One row = <b style={{ color: 'var(--ink-2)', fontWeight: 500 }}>one physical pallet</b>. Qty is locked to <span className="num">1</span>.</>}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <Field label="Licence No">
+          <Input value={licence} onChange={setLicence} placeholder="TRK-00123" autoFocus />
+        </Field>
+        <Field label="Payload No">
+          <Input value={payload} onChange={setPayload} placeholder="PLD-0200" />
+        </Field>
         <Field label={aggregated ? 'Total Weight (lb)' : 'Weight (lb)'}>
-          <Input value={w} onChange={setW} type="number" placeholder="0.00" autoFocus />
+          <Input value={w} onChange={setW} type="number" placeholder="0.00" />
         </Field>
         <Field label={aggregated ? 'Qty (physical pallets)' : 'Qty'}>
           {aggregated
             ? <Input value={q} onChange={setQ} type="number" placeholder="0" />
             : <Input value="1" onChange={() => {}} type="number" disabled />}
+        </Field>
+        <Field label="Board Qty" span={2}>
+          <Input value={boardQty} onChange={setBoardQty} type="number" placeholder="Optional" />
         </Field>
       </div>
     </Modal>
@@ -748,47 +877,62 @@ function PhotoThumb({ url, caption, size = 120, onClick, onDelete }: {
 }
 
 // ─── Add Board Modal ──────────────────────────────────────────────
-function AddBoardModal({ open, onClose, onAdd }: {
-  open: boolean; onClose: () => void;
-  onAdd: (d: { barcode: string; catalog: string; mpn: string; weight: string; qty: string; note: string }) => void;
+function AddBoardModal({ open, pallets, onClose, onAdd }: {
+  open: boolean; pallets: Pallet[]; onClose: () => void;
+  onAdd: (d: { barcode: string; catalog: string; mpn: string; weight: string; qty: string; note: string; pallet: string }) => void;
 }) {
   const [barcode, setBarcode] = useState('');
   const [catalog, setCatalog] = useState('');
   const [mpn, setMpn] = useState('');
   const [weight, setWeight] = useState('');
-  const [qty, setQty] = useState('1');
+  const [qty, setQty] = useState('0');
   const [note, setNote] = useState('');
+  const [pallet, setPallet] = useState('');
   useEffect(() => {
-    if (open) { setBarcode(''); setCatalog(''); setMpn(''); setWeight(''); setQty('1'); setNote(''); }
+    if (open) { setBarcode(''); setCatalog(''); setMpn(''); setWeight(''); setQty('0'); setNote(''); setPallet(''); }
   }, [open]);
-  const canSave = barcode.trim() && catalog.trim() && mpn.trim() && weight.trim() && qty.trim();
+  const canSave = mpn.trim() && pallet !== '';
+
+  const palletOptions = [
+    { value: '', label: '— No pallet —' },
+    ...pallets.map(p => {
+      const parts = [p.licence_number, p.payload_number].filter(Boolean);
+      const label = parts.length ? parts.join('-') : `#${String(p.pallet_seq).padStart(2, '0')}`;
+      return { value: String(p.id), label: `#${String(p.pallet_seq).padStart(2, '0')} · ${label}` };
+    }),
+  ];
+
   return (
     <Modal open={open} onClose={onClose} title="Add board" width={520}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={!canSave}
-          onClick={() => { onAdd({ barcode, catalog, mpn, weight, qty, note }); onClose(); }}>Add</Button>
+          onClick={() => { onAdd({ barcode, catalog, mpn, weight, qty, note, pallet }); onClose(); }}>Add</Button>
       </>}>
       <div style={{ fontSize: 11.5, color: 'var(--ink-3)', lineHeight: 1.5, padding: '10px 12px',
         background: 'var(--surface-2)', border: '1px solid var(--hair)', borderRadius: 3, marginBottom: 14 }}>
         Scan or enter the board's identifiers. Timestamp is set to now automatically; chips can be added after from the board detail page.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <Field label="Barcode" span={2}>
-          <Input value={barcode} onChange={setBarcode} placeholder="BC-000-0000" autoFocus
+        <Field label="MPN" span={2}>
+          <Input value={mpn} onChange={setMpn} placeholder="NVMe-PCIe4-1T" autoFocus
             style={{ fontFamily: 'ui-monospace, monospace' }} />
+        </Field>
+        <Field label="Pallet" span={2}>
+          <Select value={pallet} onChange={setPallet} options={palletOptions} />
         </Field>
         <Field label="Catalog">
           <Input value={catalog} onChange={setCatalog} placeholder="SSD-C3" />
         </Field>
-        <Field label="MPN">
-          <Input value={mpn} onChange={setMpn} placeholder="NVMe-PCIe4-1T" />
+        <Field label="Barcode">
+          <Input value={barcode} onChange={setBarcode} placeholder="BC-000-0000"
+            style={{ fontFamily: 'ui-monospace, monospace' }} />
         </Field>
         <Field label="Weight (lb)">
           <Input value={weight} onChange={setWeight} type="number" placeholder="0.00" />
         </Field>
         <Field label="Qty">
-          <Input value={qty} onChange={setQty} type="number" placeholder="1" />
+          <Input value={qty} onChange={v => setQty(v.replace(/^0+(\d)/, '$1'))} type="number" placeholder="0" />
         </Field>
         <Field label="Note" span={2}>
           <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Optional…" rows={2}

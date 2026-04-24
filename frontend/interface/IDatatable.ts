@@ -14,8 +14,6 @@ export interface SO {
   weight_rule: string;
   effective_weight_rule: 'per_pallet' | 'aggregated';
   date: string;
-  licence_number: string;
-  payload_number: string;
   note: string;
   created_at: string;
   total_pallet_count: number;
@@ -42,14 +40,19 @@ export interface Pallet {
   id: number;
   so: number;
   pallet_seq: number;
+  licence_number: string;
+  payload_number: string;
   weight: string;
   qty: number;
+  board_qty: number | null;
   created_at: string;
 }
 
 export interface Board {
   id: number;
   so: number;
+  pallet: number | null;
+  pallet_label: string | null;
   barcode: string;
   catalog: string;
   weight: string | null;
@@ -70,7 +73,7 @@ export interface ChipBrand {
 
 export interface Chip {
   id: number;
-  board: number;
+  mpn: number | null;
   brand: number | null;
   brand_name: string | null;
   qty: number;

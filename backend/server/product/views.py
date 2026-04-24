@@ -5,7 +5,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip
+from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
     SOPhotoSerializer, PalletSerializer, BoardSerializer,
@@ -54,11 +54,7 @@ def so_list(request):
         date_from = request.query_params.get('date_from', '').strip()
         date_to = request.query_params.get('date_to', '').strip()
         if q:
-            qs = qs.filter(
-                Q(so_number__icontains=q) |
-                Q(licence_number__icontains=q) |
-                Q(payload_number__icontains=q)
-            )
+            qs = qs.filter(Q(so_number__icontains=q))
         if vendor_id:
             qs = qs.filter(vendor_id=vendor_id)
         if date_from:
@@ -167,16 +163,19 @@ def board_list_by_so(request, so_pk):
         serializer = BoardSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
-            board = Board.objects.prefetch_related('chips__brand').get(pk=serializer.data['id'])
+            board = Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand').get(pk=serializer.data['id'])
             return Response(BoardSerializer(board, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    qs = so.boards.prefetch_related('chips__brand')
+    qs = so.boards.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand')
     date_from = request.query_params.get('date_from', '').strip()
     date_to = request.query_params.get('date_to', '').strip()
+    pallet_id = request.query_params.get('pallet', '').strip()
     if date_from:
         qs = qs.filter(scanned_at__date__gte=date_from)
     if date_to:
         qs = qs.filter(scanned_at__date__lte=date_to)
+    if pallet_id:
+        qs = qs.filter(pallet_id=pallet_id)
     page = int(request.query_params.get('page', 1))
     page_size = int(request.query_params.get('page_size', 8))
     total = qs.count()
@@ -188,7 +187,7 @@ def board_list_by_so(request, so_pk):
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def board_detail(request, pk):
-    board = get_object_or_404(Board.objects.prefetch_related('chips__brand'), pk=pk)
+    board = get_object_or_404(Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand'), pk=pk)
     if request.method == 'GET':
         return Response(BoardSerializer(board, context={'request': request}).data)
     if request.method == 'PUT':
@@ -228,8 +227,10 @@ def board_photo(request, pk):
 @permission_classes([IsAuthenticated])
 def chip_create(request, board_pk):
     board = get_object_or_404(Board, pk=board_pk)
+    if not board.mpn_id:
+        return Response({'error': 'Board has no MPN set'}, status=status.HTTP_400_BAD_REQUEST)
     data = request.data.copy()
-    data['board'] = board.pk
+    data['mpn'] = board.mpn_id
     serializer = ChipSerializer(data=data)
     if serializer.is_valid():
         serializer.save()
@@ -240,7 +241,8 @@ def chip_create(request, board_pk):
 @api_view(['PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def chip_detail(request, board_pk, pk):
-    chip = get_object_or_404(Chip, pk=pk, board_id=board_pk)
+    board = get_object_or_404(Board, pk=board_pk)
+    chip = get_object_or_404(Chip, pk=pk, mpn=board.mpn)
     if request.method == 'PUT':
         serializer = ChipSerializer(chip, data=request.data, partial=True)
         if serializer.is_valid():
@@ -368,8 +370,6 @@ def _lot_inbound(data):
     so_defaults = {
         'vendor': vendor,
         'date': date_str or '2000-01-01',
-        'licence_number': data.get('licence_number', ''),
-        'payload_number': data.get('payload_number', ''),
     }
     if weight_rule in ('per_pallet', 'aggregated'):
         so_defaults['weight_rule'] = weight_rule
@@ -404,6 +404,10 @@ def _board_inbound(data):
         if bc:
             barcodes = [bc]
 
+    mpn_name = data.get('mpn', '').strip()
+    mpn_obj = None
+    if mpn_name:
+        mpn_obj, _ = MPN.objects.get_or_create(name=mpn_name)
     created = []
     for bc in barcodes:
         board = Board.objects.create(
@@ -412,7 +416,7 @@ def _board_inbound(data):
             catalog=data.get('catalog', ''),
             weight=data.get('weight') or None,
             qty=data.get('qty', 1),
-            mpn=data.get('mpn', ''),
+            mpn=mpn_obj,
             note=data.get('noted', data.get('note', '')),
         )
         created.append(board)
@@ -423,9 +427,7 @@ def _so_search(data):
     if not q:
         return Response({'success': True, 'data': []})
     sos = SO.objects.select_related('vendor').filter(
-        Q(so_number__icontains=q) |
-        Q(licence_number__icontains=q) |
-        Q(payload_number__icontains=q)
+        Q(so_number__icontains=q)
     )[:20]
     results = [
         {
@@ -475,14 +477,14 @@ def dashboard_stats(request):
         .values('name', 'board_count')
     )
 
-    recent_boards = Board.objects.select_related('so__vendor').order_by('-scanned_at')[:10]
+    recent_boards = Board.objects.select_related('so__vendor', 'mpn').order_by('-scanned_at')[:10]
     recent_data = [{
         'id': b.id,
         'barcode': b.barcode,
         'so_number': b.so.so_number,
         'so_id': b.so_id,
         'vendor': b.so.vendor.name,
-        'mpn': b.mpn,
+        'mpn': b.mpn.name if b.mpn_id else '',
         'qty': b.qty,
         'scanned_at': b.scanned_at.strftime('%Y-%m-%d %H:%M'),
     } for b in recent_boards]

@@ -118,12 +118,12 @@ export default function BoardDetailPage() {
         { label: 'Home', onClick: () => router.push('/dashboard') },
         { label: 'Sales Orders', onClick: () => router.push('/sos') },
         { label: `SO ${soId}`, onClick: () => router.push(`/sos/${soId}`) },
-        { label: board.barcode },
+        { label: board.mpn || board.barcode || `Board #${board.id}` },
       ]} />
 
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px' }}>
         <div>
-          <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.barcode}</h1>
+          <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.mpn || board.barcode || `Board #${board.id}`}</h1>
           <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>
             SO {soId} · Scanned {board.scanned_at?.slice(0, 10)}
           </div>
@@ -245,7 +245,7 @@ export default function BoardDetailPage() {
           </Button>
         </>}>
         <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
-          Delete board <span className="mono" style={{ color: 'var(--ink)' }}>{board.barcode}</span> from
+          Delete board <span className="mono" style={{ color: 'var(--ink)' }}>{board.mpn || board.barcode}</span> from
           SO <span className="mono" style={{ color: 'var(--ink)' }}>{soId}</span>?
         </div>
         {board.chips.length > 0 && (
@@ -284,7 +284,7 @@ function EditBoardModal({ open, board, onClose, onSave }: {
       setNote(board.note || '');
     }
   }, [open, board]);
-  const canSave = barcode.trim() && catalog.trim() && mpn.trim() && weight.trim() && qty.trim();
+  const canSave = mpn.trim() && catalog.trim() && qty.trim();
   return (
     <Modal open={open} onClose={onClose} title="Edit board" width={520}
       footer={<>
@@ -295,12 +295,15 @@ function EditBoardModal({ open, board, onClose, onSave }: {
         </Button>
       </>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <Field label="Barcode" span={2}>
-          <Input value={barcode} onChange={setBarcode} placeholder="BC-000-0000" autoFocus
+        <Field label="MPN" span={2}>
+          <Input value={mpn} onChange={setMpn} placeholder="NVMe-PCIe4-1T" autoFocus
             style={{ fontFamily: 'ui-monospace, monospace' }} />
         </Field>
         <Field label="Catalog"><Input value={catalog} onChange={setCatalog} placeholder="SSD-C3" /></Field>
-        <Field label="MPN"><Input value={mpn} onChange={setMpn} placeholder="NVMe-PCIe4-1T" /></Field>
+        <Field label="Barcode">
+          <Input value={barcode} onChange={setBarcode} placeholder="BC-000-0000"
+            style={{ fontFamily: 'ui-monospace, monospace' }} />
+        </Field>
         <Field label="Weight (lb)"><Input value={weight} onChange={setWeight} type="number" placeholder="0.00" /></Field>
         <Field label="Qty"><Input value={qty} onChange={setQty} type="number" placeholder="1" /></Field>
         <Field label="Note" span={2}>
