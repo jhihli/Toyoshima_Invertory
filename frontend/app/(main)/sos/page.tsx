@@ -69,22 +69,22 @@ export default function SOListPage() {
 
       const COL_WIDTHS = [{ wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
       const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-      const HEADER = ['SO Number', 'Vendor', 'Date', 'Pallet #', 'Licence No', 'Payload No', 'Weight (lb)', 'Pallet Qty', 'Board Qty', 'Boards'];
+      const HEADER = ['SO Number', 'Vendor', 'Date', 'Pallet #', 'Licence No', 'Payload No', 'Weight (lb)', 'Pallet Qty', 'Boards(REAL)', 'Boards(Scan)'];
 
       // ── Sheet 1: Sales Orders (flat pallet rows, no styling needed) ──
       const rows: Record<string, string | number>[] = [];
       all.results.forEach((s, idx) => {
         const pallets = palletsPerSO[idx];
         if (pallets.length === 0) {
-          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': '', 'Licence No': '', 'Payload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Board Qty': '', 'Boards': s.total_board_count });
+          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': '', 'Licence No': '', 'Payload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards(REAL)': '', 'Boards(Scan)': s.total_board_count });
         } else {
-          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Payload No': p.payload_number || '', 'Weight (lb)': parseFloat(p.weight), 'Pallet Qty': p.qty, 'Board Qty': p.board_qty ?? '', 'Boards': s.total_board_count }));
+          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Payload No': p.payload_number || '', 'Weight (lb)': parseFloat(p.weight), 'Pallet Qty': p.qty, 'Boards(REAL)': p.board_qty ?? '', 'Boards(Scan)': s.total_board_count }));
         }
       });
       const ws1 = XLSX.utils.json_to_sheet(rows);
       ws1['!cols'] = COL_WIDTHS;
 
-      // ── Sheet 2: Weight Qty Sum (pallet rows + yellow subtotal per SO) ──
+      // ── Sheet 2: Sum (pallet rows + yellow subtotal per SO) ──
       const aoaData: (string | number)[][] = [HEADER];
       const summaryRowIndices: number[] = [];
       let rowPtr = 1; // 0 = header row
@@ -98,9 +98,9 @@ export default function SOListPage() {
           aoaData.push([s.so_number, s.vendor_name, s.date, p.pallet_seq, p.licence_number || '', p.payload_number || '', parseFloat(p.weight), p.qty, p.board_qty ?? '', s.total_board_count]);
           rowPtr++;
         });
-        // Subtotal row for this SO
+        // Subtotal row for this SO — includes Boards(REAL) and Boards(Scan) totals
         summaryRowIndices.push(rowPtr);
-        aoaData.push([s.so_number, '', '', '', '', '', totalW, totalQ, '', '']);
+        aoaData.push([s.so_number, '', '', '', '', '', totalW, totalQ, s.total_board_qty ?? 0, s.total_board_count]);
         rowPtr++;
       });
 
@@ -120,7 +120,7 @@ export default function SOListPage() {
       // ── Write workbook ──
       const wb = XLSXStyle.utils.book_new() as any;
       XLSXStyle.utils.book_append_sheet(wb, ws1 as any, 'Sales Orders');
-      XLSXStyle.utils.book_append_sheet(wb, ws2, 'Weight Qty Sum');
+      XLSXStyle.utils.book_append_sheet(wb, ws2, 'Sum');
       const buf = XLSXStyle.write(wb, { type: 'array', bookType: 'xlsx' });
       saveAs(new Blob([buf], { type: 'application/octet-stream' }), `sales-orders-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch { toast('Export failed'); }
@@ -189,21 +189,22 @@ export default function SOListPage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
           <thead>
             <tr>
-              <Th label="SO Number" sortKey="so_number" w="22%" />
-              <Th label="Vendor" w="15%" />
-              <Th label="Date" sortKey="date" w="14%" />
-              <Th label="Pallets" align="right" w="10%" />
-              <Th label="Total Weight (lb)" align="right" w="16%" />
-              <Th label="Boards" align="right" w="12%" />
-              <Th label="" w="11%" />
+              <Th label="SO Number" sortKey="so_number" w="20%" />
+              <Th label="Vendor" w="13%" />
+              <Th label="Date" sortKey="date" w="12%" />
+              <Th label="Pallets" align="right" w="9%" />
+              <Th label="Total Weight (lb)" align="right" w="14%" />
+              <Th label="Boards(Real)" align="right" w="11%" />
+              <Th label="Boards(Scan)" align="right" w="11%" />
+              <Th label="" w="10%" />
             </tr>
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={7}><Empty label="Loading…" /></td></tr>
+              <tr><td colSpan={8}><Empty label="Loading…" /></td></tr>
             )}
             {!loading && sos.length === 0 && (
-              <tr><td colSpan={7}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
+              <tr><td colSpan={8}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
             )}
             {!loading && sos.map(s => (
               <SORow key={s.id} so={s} onClick={() => router.push(`/sos/${s.id}`)} />
@@ -242,6 +243,7 @@ function SORow({ so, onClick }: { so: SO; onClick: () => void }) {
       <td style={{ ...tdS, fontSize: 12.5 }} className="num">{so.date}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_pallet_count}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(so.total_pallet_weight).toFixed(2)}</td>
+      <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_board_qty ?? '—'}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_board_count}</td>
       <td style={{ ...tdS, textAlign: 'right', color: 'var(--ink-4)' }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"

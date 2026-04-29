@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
+from django.db import transaction
 from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
@@ -184,6 +185,27 @@ def board_list_by_so(request, so_pk):
     return Response({'total': total, 'page': page, 'page_size': page_size, 'results': data})
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def board_bulk_create(request, so_pk):
+    so = get_object_or_404(SO, pk=so_pk)
+    items = request.data if isinstance(request.data, list) else []
+    if not items:
+        return Response({'error': 'No boards provided'}, status=status.HTTP_400_BAD_REQUEST)
+    with transaction.atomic():
+        created_ids = []
+        for item in items:
+            data = dict(item)
+            data['so'] = so.pk
+            serializer = BoardSerializer(data=data, context={'request': request})
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            serializer.save()
+            created_ids.append(serializer.data['id'])
+    boards = Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand').filter(pk__in=created_ids)
+    return Response(BoardSerializer(boards, many=True, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def board_detail(request, pk):
@@ -197,7 +219,10 @@ def board_detail(request, pk):
             board.refresh_from_db()
             return Response(BoardSerializer(board, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    mpn_id = board.mpn_id
     board.delete()
+    if mpn_id and not Board.objects.filter(mpn_id=mpn_id).exists():
+        MPN.objects.filter(pk=mpn_id).delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -310,6 +335,13 @@ def scanner_board_photo(request, board_pk):
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
+def scanner_so_pallets(request, so_pk):
+    so = get_object_or_404(SO, pk=so_pk)
+    return Response(PalletSerializer(so.pallets.all(), many=True).data)
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def scanner_vendor_list(request):
     vendors = Vendor.objects.all()
     return Response(VendorSerializer(vendors, many=True).data)
@@ -383,6 +415,9 @@ def _lot_inbound(data):
         pallet_seq=(last_seq or 0) + 1,
         weight=pallet_weight or 0,
         qty=pallet_qty or 1,
+        licence_number=data.get('licence_number', ''),
+        payload_number=data.get('payload_number', ''),
+        board_qty=data.get('board_qty') or None,
     )
     return Response({'success': True, 'data': {
         'so': SOSerializer(so).data,
@@ -404,6 +439,12 @@ def _board_inbound(data):
         if bc:
             barcodes = [bc]
 
+    pallet_id = data.get('pallet_id')
+    pallet_obj = None
+    if pallet_id:
+        pallet_obj = Pallet.objects.filter(pk=pallet_id, so=so).first()
+
+
     mpn_name = data.get('mpn', '').strip()
     mpn_obj = None
     if mpn_name:
@@ -412,6 +453,7 @@ def _board_inbound(data):
     for bc in barcodes:
         board = Board.objects.create(
             so=so,
+            pallet=pallet_obj,
             barcode=bc,
             catalog=data.get('catalog', ''),
             weight=data.get('weight') or None,

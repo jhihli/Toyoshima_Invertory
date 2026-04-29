@@ -109,7 +109,7 @@ export default function BoardDetailPage() {
     ['MPN', board.mpn || '—', 'mono'],
     ['Weight (lb)', board.weight ? parseFloat(board.weight).toFixed(2) : '—', 'num'],
     ['Quantity', board.qty, 'num'],
-    ['Scanned At', board.scanned_at?.slice(0, 16), 'num'],
+    ['Scanned At', board.scanned_at?.slice(0, 16).replace('T', ' '), 'num'],
   ];
 
   return (
@@ -175,17 +175,23 @@ export default function BoardDetailPage() {
       </div>
 
       {/* Chips */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 10, borderBottom: '1px solid var(--hair)', marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
-          <span style={{ fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>Chips</span>
-          <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-            <span className="num" style={{ color: 'var(--ink)' }}>{board.chips.length}</span>
-            <span style={{ color: 'var(--ink-4)' }}> brand{board.chips.length === 1 ? '' : 's'} · </span>
-            <span className="num" style={{ color: 'var(--ink)' }}>{totalChips}</span>
-            <span style={{ color: 'var(--ink-4)' }}> total chip{totalChips === 1 ? '' : 's'}</span>
-          </span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 10,
+          background: 'var(--accent-light)', padding: '9px 16px',
+          borderRadius: 3,
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--accent-2)', letterSpacing: '0.02em' }}>Chips</span>
+          <span className="num" style={{
+            fontSize: 11, color: 'var(--accent-2)',
+            background: 'rgba(45,106,79,0.15)', padding: '1px 7px', borderRadius: 10, lineHeight: 1.6,
+          }}>{board.chips.length} brand{board.chips.length === 1 ? '' : 's'}</span>
+          <span className="num" style={{
+            fontSize: 11, color: 'var(--accent-2)',
+            background: 'rgba(45,106,79,0.15)', padding: '1px 7px', borderRadius: 10, lineHeight: 1.6,
+          }}>{totalChips} chip{totalChips === 1 ? '' : 's'}</span>
         </div>
-        <Button size="sm" variant="outline" icon={<PlusIcon />} onClick={() => setAddChipOpen(true)}>Add chip</Button>
+        <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={() => setAddChipOpen(true)}>Add chip</Button>
       </div>
 
       <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>

@@ -131,6 +131,7 @@ export const api = {
     },
     get: (id: number) => apiGet<Board>(`/boards/${id}/`),
     create: (soId: number, d: Partial<Board>) => apiPost<Board>(`/sos/${soId}/boards/`, d),
+    createBulk: (soId: number, boards: Partial<Board>[]) => apiPost<Board[]>(`/sos/${soId}/boards/bulk/`, boards),
     update: (id: number, d: Partial<Board>) => apiPut<Board>(`/boards/${id}/`, d),
     delete: (id: number) => apiDelete(`/boards/${id}/`),
     uploadPhoto: (id: number, file: File) => {

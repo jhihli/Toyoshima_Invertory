@@ -16,6 +16,10 @@
   --ink-5:       #c4c0b8;
   --err:         #a8402b;
   --warn:        #a56b1f;
+  --accent:        #2d6a4f;
+  --accent-2:      #1f5038;
+  --accent-light:  #e8f2ec;
+  --accent-border: #bcd8ca;
 }
 
 /* ── Numeric / monospace utilities ── */

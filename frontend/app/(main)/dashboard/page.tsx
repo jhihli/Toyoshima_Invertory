@@ -77,7 +77,7 @@ export default function DashboardPage() {
           <div key={k.label} style={{ padding: '20px 22px', borderRight: i < 1 ? '1px solid var(--hair)' : 'none' }}>
             <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-4)', lineHeight: 1.5, whiteSpace: 'nowrap' }}>{k.label}</div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 10 }}>
-              <div className="num" style={{ fontSize: 28, fontWeight: 400, letterSpacing: '-0.02em' }}>{k.value}</div>
+              <div className="num" style={{ fontSize: 28, fontWeight: 400, letterSpacing: '-0.02em', color: 'var(--accent)' }}>{k.value}</div>
             </div>
             <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 4 }}>{k.sub}</div>
           </div>
@@ -93,8 +93,8 @@ export default function DashboardPage() {
               <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>Last 30 days</div>
             </div>
             <div style={{ display: 'flex', gap: 16, fontSize: 11, color: 'var(--ink-3)' }}>
-              <span><span className="num" style={{ color: 'var(--ink)' }}>{total}</span> total</span>
-              <span><span className="num" style={{ color: 'var(--ink)' }}>{avg}</span> avg/day</span>
+              <span><span className="num" style={{ color: 'var(--accent)' }}>{total}</span> total</span>
+              <span><span className="num" style={{ color: 'var(--accent)' }}>{avg}</span> avg/day</span>
             </div>
           </div>
           <div style={{ padding: '16px 10px' }}>
@@ -111,11 +111,11 @@ export default function DashboardPage() {
                   <text key={i} x={P.l - 6} y={ys(v) + 3} textAnchor="end"
                     style={{ fontSize: 9, fill: 'var(--ink-4)', fontFamily: 'inherit' }}>{v}</text>
                 ))}
-                <path d={areaPath} fill="#1a1917" fillOpacity="0.06" />
-                <path d={linePath} fill="none" stroke="var(--ink)" strokeWidth="1.25"
+                <path d={areaPath} fill="var(--accent)" fillOpacity="0.1" />
+                <path d={linePath} fill="none" stroke="var(--accent)" strokeWidth="1.25"
                   strokeLinejoin="round" strokeLinecap="round" />
                 {d.map((p, i) => i === d.length - 1 && (
-                  <circle key={i} cx={xs(i)} cy={ys(p.count)} r="2.5" fill="var(--ink)" />
+                  <circle key={i} cx={xs(i)} cy={ys(p.count)} r="2.5" fill="var(--accent)" />
                 ))}
                 {[0, 7, 14, 21, 29].filter(i => i < d.length).map(i => (
                   <text key={i} x={xs(i)} y={H - 6} textAnchor="middle"
@@ -145,7 +145,7 @@ export default function DashboardPage() {
                     <span className="num" style={{ fontSize: 12, color: 'var(--ink-3)' }}>{v.board_count}</span>
                   </div>
                   <div style={{ height: 4, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden' }}>
-                    <div style={{ width: `${pct * 100}%`, height: '100%', background: 'var(--ink)' }} />
+                    <div style={{ width: `${pct * 100}%`, height: '100%', background: 'var(--accent)' }} />
                   </div>
                 </div>
               );

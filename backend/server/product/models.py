@@ -34,7 +34,7 @@ class SO(models.Model):
 
     class Meta:
         db_table = 'so'
-        ordering = ['-date', '-created_at']
+        ordering = ['-created_at']
 
     def __str__(self):
         return self.so_number
@@ -60,6 +60,11 @@ class SO(models.Model):
     @property
     def total_board_count(self):
         return self.boards.count()
+
+    @property
+    def total_board_qty(self):
+        result = self.pallets.aggregate(total=Sum('board_qty'))['total']
+        return result
 
     def save(self, *args, **kwargs):
         if not self.weight_rule and self.vendor_id:

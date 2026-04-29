@@ -122,6 +122,7 @@ class SOSerializer(serializers.ModelSerializer):
     pallet_record_count = serializers.SerializerMethodField(read_only=True)
     total_pallet_weight = serializers.SerializerMethodField(read_only=True)
     total_board_count = serializers.SerializerMethodField(read_only=True)
+    total_board_qty = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = SO
@@ -130,7 +131,7 @@ class SOSerializer(serializers.ModelSerializer):
             'weight_rule', 'effective_weight_rule',
             'date', 'note', 'created_at',
             'total_pallet_count', 'pallet_record_count', 'total_pallet_weight',
-            'total_board_count',
+            'total_board_count', 'total_board_qty',
         ]
         read_only_fields = ['created_at']
 
@@ -155,6 +156,9 @@ class SOSerializer(serializers.ModelSerializer):
 
     def get_total_board_count(self, obj):
         return obj.total_board_count
+
+    def get_total_board_qty(self, obj):
+        return obj.total_board_qty
 
 
 class SODetailSerializer(SOSerializer):

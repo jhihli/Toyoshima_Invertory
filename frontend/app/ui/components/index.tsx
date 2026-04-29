@@ -33,16 +33,16 @@ export const Button: React.FC<ButtonProps> = ({
   };
   const variants: Record<ButtonVariant, CSSProperties> = {
     default: { background: 'var(--surface)', borderColor: 'var(--hair-strong)', color: 'var(--ink)' },
-    primary: { background: 'var(--ink)', borderColor: 'var(--ink)', color: '#fcfbf8' },
+    primary: { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fcfbf8' },
     ghost:   { background: 'transparent', borderColor: 'transparent', color: 'var(--ink-2)' },
     danger:  { background: 'transparent', borderColor: 'var(--hair-strong)', color: 'var(--err)' },
     outline: { background: 'transparent', borderColor: 'var(--hair-strong)', color: 'var(--ink)' },
   };
   const hovers: Record<ButtonVariant, CSSProperties> = {
     default: { background: 'var(--surface-2)', borderColor: 'var(--ink-4)' },
-    primary: { background: 'var(--ink-2)' },
+    primary: { background: 'var(--accent-2)' },
     ghost:   { background: 'var(--surface-2)' },
-    danger:  { background: 'var(--surface-2)' },
+    danger:  { background: '#fde8e4', borderColor: 'var(--err)' },
     outline: { background: 'var(--surface-2)' },
   };
   const base: CSSProperties = {
@@ -153,16 +153,17 @@ export const Select: React.FC<SelectProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────── Badge
-type BadgeTone = 'neutral' | 'ok' | 'warn' | 'err' | 'ink';
+type BadgeTone = 'neutral' | 'ok' | 'warn' | 'err' | 'ink' | 'blue';
 interface BadgeProps { children: ReactNode; tone?: BadgeTone; style?: CSSProperties; }
 
 export const Badge: React.FC<BadgeProps> = ({ children, tone = 'neutral', style }) => {
   const tones: Record<BadgeTone, { background: string; color: string; border: string }> = {
     neutral: { background: 'var(--surface-2)', color: 'var(--ink-2)', border: 'var(--hair)' },
-    ok:      { background: '#eef2ea', color: '#4a6b3f', border: '#d5dcce' },
+    ok:      { background: 'var(--accent-light)', color: 'var(--accent-2)', border: 'var(--accent-border)' },
     warn:    { background: '#f5eedf', color: '#a87a2b', border: '#e4d9b6' },
     err:     { background: '#f3e2dd', color: '#a8402b', border: '#e4c4bb' },
     ink:     { background: 'var(--ink)', color: '#fcfbf8', border: 'var(--ink)' },
+    blue:    { background: '#ddeef8', color: '#1a5f8b', border: '#afd2ea' },
   };
   const t = tones[tone];
   return (
@@ -272,37 +273,74 @@ export const Modal: React.FC<ModalProps> = ({ open, onClose, title, children, wi
 };
 
 // ─────────────────────────────────────────────────────────── Toast
-type ToastFn = (msg: string, tone?: BadgeTone) => void;
+type ToastFn = (msg: string) => void;
 const ToastContext = createContext<ToastFn | null>(null);
 export const useToast = () => useContext(ToastContext)!;
 
-interface Toast { id: string; msg: string; }
+type ToastTone = 'ok' | 'err' | 'warn';
+interface Toast { id: string; msg: string; tone: ToastTone; }
+
+function detectToastTone(msg: string): ToastTone {
+  const lower = msg.toLowerCase();
+  if (/removed|deleted/.test(lower)) return 'err';
+  if (/failed|please|error/.test(lower)) return 'warn';
+  return 'ok';
+}
+
+const toastToneStyle: Record<ToastTone, { bg: string; text: string }> = {
+  ok:   { bg: 'var(--accent)',  text: '#f0f7f3' },
+  err:  { bg: 'var(--err)',     text: '#fdf2f0' },
+  warn: { bg: 'var(--warn)',    text: '#fdf4e8' },
+};
+
+function ToastIcon({ tone }: { tone: ToastTone }) {
+  if (tone === 'err') return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+    </svg>
+  );
+  if (tone === 'warn') return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
+    </svg>
+  );
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
 
 export const ToastProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const push: ToastFn = (msg) => {
     const id = Math.random().toString(36).slice(2);
-    setToasts(t => [...t, { id, msg }]);
+    const tone = detectToastTone(msg);
+    setToasts(t => [...t, { id, msg, tone }]);
     setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 2800);
   };
   return (
     <ToastContext.Provider value={push}>
       {children}
       <div style={{ position: 'fixed', bottom: 20, right: 20, display: 'flex', flexDirection: 'column', gap: 8, zIndex: 2000 }}>
-        {toasts.map(t => (
-          <div key={t.id} className="toast-in" style={{
-            background: 'var(--ink)', color: '#fcfbf8',
-            padding: '10px 14px', borderRadius: 3, fontSize: 12,
-            minWidth: 220, display: 'flex', alignItems: 'center', gap: 8,
-            boxShadow: '0 8px 24px rgba(26,25,23,0.18)',
-          }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            {t.msg}
-          </div>
-        ))}
+        {toasts.map(t => {
+          const s = toastToneStyle[t.tone];
+          return (
+            <div key={t.id} className="toast-in" style={{
+              background: s.bg, color: s.text,
+              padding: '10px 14px', borderRadius: 3, fontSize: 12,
+              minWidth: 220, display: 'flex', alignItems: 'center', gap: 8,
+              boxShadow: '0 8px 24px rgba(26,25,23,0.18)',
+            }}>
+              <ToastIcon tone={t.tone} />
+              {t.msg}
+            </div>
+          );
+        })}
       </div>
     </ToastContext.Provider>
   );
@@ -330,8 +368,8 @@ export const Pagination: React.FC<PaginationProps> = ({ page, pageCount, onChang
       onClick={() => { if (!disabled && p !== null) onChange(p); }}
       style={{
         minWidth: 28, height: 28, padding: '0 8px',
-        border: '1px solid ' + (active ? 'var(--ink)' : 'var(--hair)'),
-        background: active ? 'var(--ink)' : 'var(--surface)',
+        border: '1px solid ' + (active ? 'var(--accent)' : 'var(--hair)'),
+        background: active ? 'var(--accent)' : 'var(--surface)',
         color: active ? '#fcfbf8' : 'var(--ink-2)',
         cursor: disabled ? 'default' : 'pointer', borderRadius: 3,
         fontSize: 12, opacity: disabled ? 0.4 : 1, fontFamily: 'inherit',
@@ -385,24 +423,31 @@ interface TabItem { value: string; label: string; count?: number; }
 interface TabsProps { value: string; onChange: (v: string) => void; tabs: TabItem[]; }
 
 export const Tabs: React.FC<TabsProps> = ({ value, onChange, tabs }) => (
-  <div style={{ display: 'flex', borderBottom: '1px solid var(--hair)' }}>
+  <div style={{ display: 'flex', borderBottom: '1px solid var(--hair)', gap: 2 }}>
     {tabs.map(t => {
       const active = t.value === value;
       return (
         <button key={t.value} onClick={() => onChange(t.value)} style={{
-          background: 'none', border: 0, padding: '10px 0',
-          marginRight: 24, cursor: 'pointer',
-          color: active ? 'var(--ink)' : 'var(--ink-3)',
-          borderBottom: active ? '1.5px solid var(--ink)' : '1.5px solid transparent',
+          background: active ? 'var(--accent-light)' : 'none',
+          border: 0, padding: '9px 16px',
+          cursor: 'pointer',
+          color: active ? 'var(--accent-2)' : 'var(--ink-3)',
+          borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
           marginBottom: -1, fontSize: 13,
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          fontFamily: 'inherit',
-        }}>
+          fontWeight: active ? 500 : 400,
+          borderRadius: '3px 3px 0 0',
+          display: 'inline-flex', alignItems: 'center', gap: 7,
+          fontFamily: 'inherit', transition: 'background .1s, color .1s',
+        }}
+        onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
+        onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'none'; }}>
           {t.label}
           {t.count != null && (
             <span className="num" style={{
-              fontSize: 11, color: 'var(--ink-4)',
-              background: 'var(--surface-2)', padding: '0 6px', borderRadius: 2,
+              fontSize: 11,
+              color: active ? 'var(--accent-2)' : 'var(--ink-4)',
+              background: active ? 'rgba(45,106,79,0.15)' : 'var(--surface-2)',
+              padding: '1px 7px', borderRadius: 10, lineHeight: 1.6,
             }}>{t.count}</span>
           )}
         </button>
@@ -463,7 +508,7 @@ export const EditableCell: React.FC<EditableCellProps> = ({
 };
 
 // ─────────────────────────────────────────────────────────── Field label
-interface FieldProps { label: string; children: ReactNode; span?: number; }
+interface FieldProps { label: ReactNode; children: ReactNode; span?: number; }
 export const Field: React.FC<FieldProps> = ({ label, children, span = 1 }) => (
   <label style={{ gridColumn: `span ${span}`, display: 'flex', flexDirection: 'column', gap: 5 }}>
     <span style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>

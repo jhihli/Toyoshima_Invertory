@@ -141,18 +141,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
                 display: 'flex', alignItems: 'center', gap: 12,
                 padding: collapsed ? '8px' : '8px 12px',
                 justifyContent: collapsed ? 'center' : 'flex-start',
-                border: 0, background: active ? 'var(--surface)' : 'transparent',
-                color: active ? 'var(--ink)' : 'var(--ink-2)',
+                border: 0, background: active ? 'var(--accent-light)' : 'transparent',
+                color: active ? 'var(--accent-2)' : 'var(--ink-2)',
                 borderRadius: 3, cursor: 'pointer', fontSize: 12.5,
                 position: 'relative', textAlign: 'left', transition: 'background .1s',
                 fontFamily: 'inherit',
               }}
-              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--surface)'; }}
+              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--accent-light)'; }}
               onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
               {active && (
                 <span style={{
                   position: 'absolute', left: 0, top: 6, bottom: 6,
-                  width: 2, background: 'var(--ink)', borderRadius: 1,
+                  width: 2, background: 'var(--accent)', borderRadius: 1,
                 }} />
               )}
               <Icon size={15} />
@@ -224,7 +224,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
       <IconBell size={15} />
       <span style={{
         position: 'absolute', top: 4, right: 4, width: 5, height: 5,
-        background: 'var(--ink)', borderRadius: '50%',
+        background: 'var(--err)', borderRadius: '50%',
       }} />
     </button>
   </div>

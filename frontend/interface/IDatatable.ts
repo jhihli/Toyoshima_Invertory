@@ -20,6 +20,7 @@ export interface SO {
   pallet_record_count: number;
   total_pallet_weight: string;
   total_board_count: number;
+  total_board_qty: number | null;
 }
 
 export interface SODetail extends SO {
