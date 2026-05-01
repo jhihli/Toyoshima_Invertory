@@ -9,22 +9,23 @@ This is a warehouse receiving management system with two separate applications:
 - **Backend:** Django 5.1 REST API at `backend/server/` — authentication, business logic, data storage
 - **Frontend:** Next.js 14 (TypeScript, App Router) at `frontend/` — warehouse manager UI
 
-They communicate via JWT-authenticated REST calls. The frontend is **not** Django-templated — it is a separate Next.js SPA. The `htmx` patterns described in older planning notes were **not** implemented; all interactivity is React/Next.js.
+They communicate via JWT-authenticated REST calls. The frontend is **not** Django-templated — it is a separate Next.js SPA.
 
 ### Django apps
 
 | App | Purpose |
 |-----|---------|
 | `account` | CustomUser (AbstractUser + `role`), JWT auth, user registration |
-| `product` | All business models: Vendor, SO, Pallet, Board, Chip, ChipBrand, SOPhoto |
+| `product` | All business models: Vendor, SO, Pallet, Board, MPN, Chip, ChipBrand, SOPhoto |
 
 ### Key URL prefixes
 
 ```
 /api/token/          POST — get JWT access+refresh tokens
 /api/token/refresh/  POST — refresh access token
-/account/            User management (keep existing)
-/product/            All business endpoints (vendors, sos, pallets, boards, chips, scanner, dashboard)
+/account/            User management
+/product/            All business endpoints (vendors, sos, pallets, boards, chips, mpns, scanner, dashboard)
+/admin/              Django admin
 ```
 
 ### Frontend pages (Next.js App Router)
@@ -48,8 +49,9 @@ They communicate via JWT-authenticated REST calls. The frontend is **not** Djang
 ```bash
 cd backend/server
 
-# Activate venv (Windows)
-source venv/Scripts/activate
+# Activate venv
+source venv/Scripts/activate   # Windows
+source venv/bin/activate       # Linux/Mac
 
 # Run dev server
 python manage.py runserver
@@ -60,7 +62,7 @@ python manage.py migrate
 # Create migration after model changes
 python manage.py makemigrations
 
-# Load seed data (50 SOs, realistic pallets/boards/chips)
+# Load seed data
 python manage.py seed_data
 
 # Create admin user
@@ -75,22 +77,72 @@ cd frontend
 npm install
 npm run dev     # dev server on http://localhost:3000
 npm run build
+npm run start   # production serve on port 3000
 npm run lint
-```
-
-### Docker (runs both services)
-
-```bash
-docker-compose up    # Django on :8000, Postgres on :5432
 ```
 
 ### Environment
 
-Copy `.env` settings are at `backend/server/.env`. Key variables:
+Backend config at `backend/server/.env`. Key variables:
 - `SECRET_KEY`, `DEBUG`
 - `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`
 - `SCANNER_API_KEY` — used by Zebra scanner endpoints
-- `MEDIA_ROOT` — local path for uploaded images
+- `MEDIA_ROOT` — local path for uploaded images (production: `/var/www/toyoshima/media`)
+- `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`
+
+Frontend config at `frontend/.env.local`:
+- `NEXT_PUBLIC_Django_API_URL` — backend URL (e.g. `http://localhost:8000`)
+- `NEXTAUTH_URL`, `NEXTAUTH_SECRET`
+- `NEXT_PUBLIC_API_KEY` — matches backend `SCANNER_API_KEY`
+
+---
+
+## Production Deployment
+
+The server runs bare Python + native Postgres (no Docker). Stack:
+- **nginx** — reverse proxy (port 80/443 → internal services)
+- **gunicorn** — serves Django on port 8000
+- **Next.js** — serves frontend on port 3000
+- **PostgreSQL** — database
+- **Let's Encrypt** — SSL cert (auto-renews via certbot)
+
+### Update procedure
+
+```bash
+cd ~/Toyoshima_Inventory
+git pull origin main
+
+# Backend
+cd backend/server
+source venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+pkill -f gunicorn
+gunicorn server.wsgi:application --bind 0.0.0.0:8000 --workers 3 --daemon --log-file /tmp/gunicorn.log
+
+# Frontend
+cd ../../frontend
+npm install
+npm run build
+pkill -f "next start"
+nohup npm run start -- -p 3000 > /tmp/nextjs.log 2>&1 &
+
+# Reload nginx if config changed
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+### nginx config location
+`/etc/nginx/sites-enabled/toyoshimainventory` — proxies:
+- `/api/`, `/product/`, `/account/`, `/token/` → gunicorn on port 8000
+- `/admin/` → gunicorn on port 8000
+- `/media/` → static files at `/var/www/toyoshima/media/`
+- `/` → Next.js on port 3000
+
+### Server network notes
+- Server LAN IP: `192.168.0.15` (may change on reboot — router port forwarding must match)
+- Router public IP: `72.183.39.29` (domain `toyoshimainventory.com` points here)
+- Port forwarding on router: 80, 443 → server LAN IP
+- **Hairpin NAT limitation:** devices on the same WiFi band as the server cannot access via domain name. Use the 5GHz band (`toyoshima-5G`) when accessing the site from within the office.
 
 ---
 
@@ -118,6 +170,20 @@ Always use these SO properties — never `count()` on the queryset directly:
 
 When `pallet_record_count != total_pallet_count`, the UI must show "X records · Y physical pallets total" above the pallets table.
 
+### Model relationships
+
+```
+Vendor → SO → Pallet → Board → Chip → ChipBrand
+                               Board → MPN (FK, nullable)
+         SO → SOPhoto
+```
+
+Key field notes:
+- `Board.mpn` — FK to `MPN` model (nullable), replaces old free-text MPN field
+- `Board.pallet` — FK to `Pallet` (nullable), links boards to a specific pallet
+- `Pallet.board_qty` — total board count for this pallet row
+- `Chip.mpn` — FK to `MPN` (nullable)
+
 ### Pallet mode rules for seed data / tests
 
 - Per Pallet vendors (MSFT, Dell, Lenovo): `qty=1` on every Pallet row
@@ -141,7 +207,7 @@ User roles: `admin`, `manager`, `vz_user`, `r2_user`, `n_user`. Role-based menu 
 ## API Conventions
 
 - All list endpoints support `page` and `page_size` query params
-- SO list supports: `q` (searches `so_number`, `licence_number`), `vendor`, `date_from`, `date_to`
+- SO list supports: `q` (searches `so_number`), `vendor`, `date_from`, `date_to`
 - SO serializers include computed fields: `total_pallet_count`, `total_pallet_weight`, `total_board_count`, `pallet_record_count`
 - Scanner endpoints at `/product/scanner/` use API key auth (`SCANNER_API_KEY`) and return `{ "success": true/false, "data": {...}, "error": "..." }`
 - Delete success: HTTP 204 empty body
@@ -151,8 +217,6 @@ User roles: `admin`, `manager`, `vz_user`, `r2_user`, `n_user`. Role-based menu 
 ---
 
 ## Data Semantics Cheat Sheet
-
-Three scenarios that define exact storage and computed values:
 
 **Scenario 1 — MSFT, Per Pallet (3 physical pallets, 3 rows)**
 ```
@@ -181,20 +245,14 @@ vendor.default_weight_rule=per_pallet (unchanged)
 
 ---
 
-## Feature Implementation Notes
+## Scanner Integration
 
-### Pages to implement (remaining work)
+The Zebra scanner app calls `/product/scanner/` endpoints using `SCANNER_API_KEY` header auth. Do not change the scanner response format:
+```json
+{ "success": true, "data": { ... } }
+{ "success": false, "error": "reason" }
+```
 
-See the `Pages to Implement` section in older planning notes. The agreed design is a clean, data-dense Linear/Notion/Retool-inspired aesthetic. Reference UI code is at `.claude/claude design ui/inventory-web/`.
+## Media Files
 
-### New SO modal behavior
-
-Weight rule section is collapsed by default, showing "Per Pallet INHERITED FROM [Vendor]" + "Change" button. On override, display: "⚠️ Overriding [Vendor] default. This applies only to this SO."
-
-### Future Zebra scanner integration
-
-The companion Zebra scanner app will call `/product/scanner/` endpoints using the `SCANNER_API_KEY`. Do not change the scanner response format.
-
-### Media files
-
-Board photos and SO photos are stored at `MEDIA_ROOT` (configured in `.env`). Django serves them in dev via `MEDIA_URL`.
+Board photos and SO photos stored at `MEDIA_ROOT` (configured in `.env`). Production path: `/var/www/toyoshima/media/`. nginx serves `/media/` directly from filesystem in production.

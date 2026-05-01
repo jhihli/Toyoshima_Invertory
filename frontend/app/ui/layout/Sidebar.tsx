@@ -53,15 +53,6 @@ const IconSettings: React.FC<{ size?: number }> = ({ size = 15 }) => (
   </svg>
 );
 
-const IconLogout: React.FC<{ size?: number }> = ({ size = 15 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-    <polyline points="16 17 21 12 16 7" />
-    <line x1="21" y1="12" x2="9" y2="12" />
-  </svg>
-);
-
 const IconPanelLeft: React.FC<{ size?: number }> = ({ size = 16 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -83,28 +74,46 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'sos',       label: 'Sales Orders', href: '/sos',        icon: IconSO },
   { key: 'vendors',   label: 'Vendors',      href: '/vendors',    icon: IconVendor },
   { key: 'chipbrands',label: 'Chip Brands',  href: '/chipbrands', icon: IconChip },
+  { key: 'settings',  label: 'Settings',     href: '/settings',   icon: IconSettings },
 ];
+
+const ROLE_LABELS: Record<string, string> = {
+  admin: 'Administrator',
+  manager: 'Floor Manager',
+  vz_user: 'VZ User',
+  r2_user: 'R2 User',
+  n_user: 'User',
+};
+
+function getInitials(name: string) {
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
 
 interface SidebarProps { collapsed: boolean; }
 
 export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
   const pathname = usePathname();
   const router = useRouter();
+  const { data: session } = useSession();
   const W = collapsed ? 64 : 220;
+
+  const username = session?.user?.name ?? session?.user?.email ?? '';
+  const roleLabel = ROLE_LABELS[session?.user?.role ?? ''] ?? (session?.user?.role ?? '');
+  const initials = username ? getInitials(username) : '??';
 
   const isActive = (item: NavItem) => pathname.startsWith(item.href);
 
   return (
     <aside style={{
       width: W, flexShrink: 0, height: '100vh', position: 'sticky', top: 0,
-      borderRight: '1px solid var(--hair)', background: 'var(--bg)',
+      borderRight: '1px solid rgba(255,255,255,0.08)', background: '#30523b',
       display: 'flex', flexDirection: 'column', transition: 'width .18s ease',
       zIndex: 40,
     }}>
       {/* Brand */}
       <div style={{
         padding: collapsed ? '20px 0' : '22px 20px',
-        borderBottom: '1px solid var(--hair)',
+        borderBottom: '1px solid rgba(255,255,255,0.08)',
         display: 'flex', alignItems: 'center',
         justifyContent: collapsed ? 'center' : 'flex-start', gap: 10,
       }}>
@@ -114,8 +123,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
         </div>
         {!collapsed && (
           <div>
-            <div style={{ fontSize: 12.5, fontWeight: 500, letterSpacing: '-0.01em' }}>Toyoshima</div>
-            <div style={{ fontSize: 10.5, color: 'var(--ink-3)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 1 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 500, letterSpacing: '-0.01em', color: '#fff' }}>Toyoshima</div>
+            <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 1 }}>
               Inventory
             </div>
           </div>
@@ -123,7 +132,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
       </div>
 
       {!collapsed && (
-        <div style={{ padding: '18px 20px 8px', fontSize: 10, color: 'var(--ink-4)', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
+        <div style={{ padding: '18px 20px 8px', fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
           Menu
         </div>
       )}
@@ -141,20 +150,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
                 display: 'flex', alignItems: 'center', gap: 12,
                 padding: collapsed ? '8px' : '8px 12px',
                 justifyContent: collapsed ? 'center' : 'flex-start',
-                border: 0, background: active ? 'var(--accent-light)' : 'transparent',
-                color: active ? 'var(--accent-2)' : 'var(--ink-2)',
-                borderRadius: 3, cursor: 'pointer', fontSize: 12.5,
-                position: 'relative', textAlign: 'left', transition: 'background .1s',
-                fontFamily: 'inherit',
+                border: 0, background: active ? '#d4a820' : 'transparent',
+                color: active ? '#fff' : 'rgba(255,255,255,0.7)',
+                borderRadius: 6, cursor: 'pointer', fontSize: 12.5,
+                textAlign: 'left', transition: 'background .1s',
+                fontFamily: 'inherit', fontWeight: active ? 500 : 400,
               }}
-              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--accent-light)'; }}
+              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'; }}
               onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-              {active && (
-                <span style={{
-                  position: 'absolute', left: 0, top: 6, bottom: 6,
-                  width: 2, background: 'var(--accent)', borderRadius: 1,
-                }} />
-              )}
               <Icon size={15} />
               {!collapsed && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
             </button>
@@ -164,26 +167,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
 
       <div style={{ flex: 1 }} />
 
-      {/* Footer user + logout */}
+      {/* Footer user info — click to logout */}
       <button
         onClick={() => signOut({ callbackUrl: '/login' })}
         title={collapsed ? 'Logout' : ''}
         style={{
-          padding: collapsed ? 14 : '14px 16px',
+          padding: collapsed ? '14px 0' : '14px 16px',
           display: 'flex', alignItems: 'center', gap: 10,
           justifyContent: collapsed ? 'center' : 'flex-start',
-          width: '100%', border: 0, borderTop: '1px solid var(--hair)',
+          width: '100%', border: 0, borderTop: '1px solid rgba(255,255,255,0.08)',
           background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
           transition: 'background .1s', textAlign: 'left',
         }}
-        onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface)')}
+        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-        <div style={{ width: 28, height: 28, flexShrink: 0 }}>
-          <Image src="/logout.png" alt="Logout" width={28} height={28}
-            style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
+        <div style={{
+          width: 30, height: 30, flexShrink: 0, borderRadius: '50%',
+          background: '#8b6914', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', fontSize: 11, fontWeight: 600, color: '#fff',
+          letterSpacing: '0.02em',
+        }}>
+          {initials}
         </div>
         {!collapsed && (
-          <div style={{ fontSize: 13.5, color: 'var(--ink-2)', minWidth: 0 }}>Logout</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12.5, color: '#fff', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {username || 'User'}
+            </div>
+            {roleLabel && (
+              <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.45)', marginTop: 1 }}>{roleLabel}</div>
+            )}
+          </div>
         )}
       </button>
     </aside>
