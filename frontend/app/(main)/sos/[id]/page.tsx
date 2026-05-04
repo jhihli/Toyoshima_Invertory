@@ -351,8 +351,8 @@ export default function SODetailPage() {
               onClick={() => setActionMenuOpen(o => !o)}
               style={{
                 background: actionMenuOpen ? 'var(--surface-2)' : 'var(--surface)',
-                border: '1px solid var(--hair-strong)', borderRadius: 4,
-                width: 36, height: 36, cursor: 'pointer',
+                border: '1px solid var(--hair-strong)', borderRadius: 3,
+                width: 28, height: 28, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 color: 'var(--ink)',
               }}
@@ -401,52 +401,56 @@ export default function SODetailPage() {
       </div>
 
       {/* Meta card */}
-      <Card pad={0} style={{ marginBottom: isMobile ? 12 : 20 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
-          {([
-            ['Vendor', so.vendor_name, null],
-            ['Weight Rule', effectiveRule === 'per_pallet' ? 'Per Pallet' : 'Aggregated', ruleIsOverride ? 'override' : null],
-            ['Pallets', so.total_pallet_count, null],
-            ['Boards', so.total_board_count, null],
-          ] as [string, any, string | null][]).map(([k, v, tag], i) => (
-            <div key={k} style={{ padding: '16px 20px', borderRight: i < 3 ? '1px solid var(--hair)' : 'none' }}>
-              <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 6 }}>{k}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                {k === 'Weight Rule' ? (
-                  <Badge tone={effectiveRule === 'per_pallet' ? 'ok' : 'blue'}>{v}</Badge>
-                ) : (
-                  <div className={typeof v === 'number' ? 'num' : ''} style={{ fontSize: 14, color: 'var(--ink)' }}>
-                    {v || '—'}
-                  </div>
-                )}
-                {tag === 'override' && (
-                  <Badge tone="warn">Override</Badge>
-                )}
+      {isMobile ? (
+        <Card pad={0} style={{ marginBottom: 12 }}>
+          {/* Vendor + Weight Rule — same row, two halves */}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--hair)' }}>
+            <div style={{ flex: 1, padding: '10px 14px', borderRight: '1px solid var(--hair)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', flexShrink: 0 }}>Vendor</span>
+              <span style={{ fontSize: 13, color: 'var(--ink)' }}>{so.vendor_name}</span>
+            </div>
+            <div style={{ flex: 1, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', flexShrink: 0 }}>Rule</span>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <Badge tone={effectiveRule === 'per_pallet' ? 'ok' : 'blue'}>
+                  {effectiveRule === 'per_pallet' ? 'Per Pallet' : 'Aggregated'}
+                </Badge>
+                {ruleIsOverride && <Badge tone="warn">OVR</Badge>}
               </div>
             </div>
-          ))}
-        </div>
-        {/* Editable note */}
-        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--hair)', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-          <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginTop: 3, minWidth: 60 }}>Note</span>
-          <div style={{ flex: 1 }}>
-            <EditableCell value={so.note} onSave={v => handleSaveMeta({ note: v })} />
-            {!so.note && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2, paddingLeft: 6 }}>Double-click to add a note.</div>}
           </div>
-        </div>
-        {/* Mobile: compact photo strip combined into this card */}
-        {isMobile && (
-          <div style={{ padding: '10px 14px', borderTop: '1px solid var(--hair)' }}>
+          {/* Pallets + Boards — same row, label and value inline */}
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--hair)' }}>
+            <div style={{ flex: 1, padding: '10px 14px', borderRight: '1px solid var(--hair)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Pallets</span>
+              <span className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>{so.total_pallet_count}</span>
+            </div>
+            <div style={{ flex: 1, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Boards</span>
+              <span className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>{so.total_board_count}</span>
+            </div>
+          </div>
+          {/* Note row — hidden when empty */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '6px 14px', borderBottom: '1px solid var(--hair)' }}>
+            <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', flexShrink: 0 }}>Note</span>
+            {so.note && (
+              <div style={{ flex: 1, textAlign: 'right' }}>
+                <EditableCell value={so.note} onSave={v => handleSaveMeta({ note: v })} />
+              </div>
+            )}
+          </div>
+          {/* Photos row */}
+          <div style={{ padding: '10px 14px' }}>
             <div style={{ display: 'flex', gap: 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 2 }}>
               {so.photos.map(p => (
                 <div key={p.id} onClick={() => setLightbox(p)} style={{
-                  flexShrink: 0, width: 56, height: 56, borderRadius: 3, cursor: 'pointer',
+                  flexShrink: 0, width: 52, height: 52, borderRadius: 3, cursor: 'pointer',
                   background: `url(${p.image_url}) center/cover no-repeat var(--surface-2)`,
                   border: '1px solid var(--hair)',
                 }} />
               ))}
               <div onClick={() => fileInputRef.current?.click()} style={{
-                flexShrink: 0, width: 56, height: 56,
+                flexShrink: 0, width: 52, height: 52,
                 border: '1px dashed var(--hair-strong)', borderRadius: 3,
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                 gap: 3, color: 'var(--ink-4)', fontSize: 9, cursor: 'pointer',
@@ -456,8 +460,40 @@ export default function SODetailPage() {
               </div>
             </div>
           </div>
-        )}
-      </Card>
+        </Card>
+      ) : (
+        <Card pad={0} style={{ marginBottom: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+            {([
+              ['Vendor', so.vendor_name, null],
+              ['Weight Rule', effectiveRule === 'per_pallet' ? 'Per Pallet' : 'Aggregated', ruleIsOverride ? 'override' : null],
+              ['Pallets', so.total_pallet_count, null],
+              ['Boards', so.total_board_count, null],
+            ] as [string, any, string | null][]).map(([k, v, tag], i) => (
+              <div key={k} style={{ padding: '16px 20px', borderRight: i < 3 ? '1px solid var(--hair)' : 'none' }}>
+                <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 6 }}>{k}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  {k === 'Weight Rule' ? (
+                    <Badge tone={effectiveRule === 'per_pallet' ? 'ok' : 'blue'}>{v}</Badge>
+                  ) : (
+                    <div className={typeof v === 'number' ? 'num' : ''} style={{ fontSize: 14, color: 'var(--ink)' }}>
+                      {v || '—'}
+                    </div>
+                  )}
+                  {tag === 'override' && <Badge tone="warn">Override</Badge>}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding: '14px 20px', borderTop: '1px solid var(--hair)', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginTop: 3, minWidth: 60 }}>Note</span>
+            <div style={{ flex: 1 }}>
+              <EditableCell value={so.note} onSave={v => handleSaveMeta({ note: v })} />
+              {!so.note && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2, paddingLeft: 6 }}>Double-click to add a note.</div>}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Photos — desktop only; mobile shows compact strip inside meta card */}
       {!isMobile && (
@@ -664,14 +700,13 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   <button onClick={() => onDelete(p.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
                 </div>
               </div>
-              {(p.licence_number || p.payload_number) && (
-                <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)', marginTop: 6 }}>
-                  {[p.licence_number, p.payload_number].filter(Boolean).join(' · ')}
-                </div>
-              )}
-              <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 11.5, color: 'var(--ink-3)' }}>
+              <div className="mono" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, fontSize: 11.5, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
+                {(p.licence_number || p.payload_number) && (
+                  <span style={{ color: 'var(--ink-2)' }}>{[p.licence_number, p.payload_number].filter(Boolean).join(' · ')}</span>
+                )}
+                {(p.licence_number || p.payload_number) && <span style={{ color: 'var(--hair-strong)' }}>·</span>}
                 <span>Pallet qty <span className="num" style={{ color: 'var(--ink-2)' }}>{p.qty}</span></span>
-                {p.board_qty != null && <span>Boards <span className="num" style={{ color: 'var(--ink-2)' }}>{p.board_qty}</span></span>}
+                {p.board_qty != null && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span>Boards <span className="num" style={{ color: 'var(--ink-2)' }}>{p.board_qty}</span></span></>}
               </div>
             </div>
           ))}
