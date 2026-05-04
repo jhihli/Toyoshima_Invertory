@@ -160,29 +160,57 @@ export default function SOListPage() {
       </div>
 
       {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <Input value={q} onChange={v => { setQ(v); setPage(1); }}
-          placeholder="Filter by SO number or licence…" icon={<SearchIcon />}
-          style={{ flex: 1, minWidth: 120, maxWidth: 300 }} />
-        <Select value={vendorFilter} onChange={v => { setVendorFilter(v); setPage(1); }}
-          placeholder="All vendors"
-          options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          border: '1px solid var(--hair-strong)', borderRadius: 3,
-          background: 'var(--surface)', padding: '0 10px', height: 30,
-        }}>
-          <CalendarIcon />
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', width: 110 }} />
-          <span style={{ color: 'var(--ink-4)' }}>→</span>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', width: 110 }} />
+      {isMobile ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <Input value={q} onChange={v => { setQ(v); setPage(1); }}
+              placeholder="Filter by SO number or licence…" icon={<SearchIcon />}
+              style={{ flex: 1, minWidth: 0 }} />
+            <Select value={vendorFilter} onChange={v => { setVendorFilter(v); setPage(1); }}
+              placeholder="All vendors"
+              options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 4, flex: 1,
+              border: '1px solid var(--hair-strong)', borderRadius: 3,
+              background: 'var(--surface)', padding: '0 8px', height: 30,
+            }}>
+              <CalendarIcon />
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', flex: 1, minWidth: 0 }} />
+              <span style={{ color: 'var(--ink-4)', flexShrink: 0, padding: '0 2px' }}>→</span>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', flex: 1, minWidth: 0 }} />
+            </div>
+            {hasFilter && <Button variant="ghost" onClick={clearFilters}>Clear</Button>}
+          </div>
         </div>
-        {hasFilter && <Button variant="ghost" onClick={clearFilters}>Clear</Button>}
-        <div style={{ flex: 1 }} />
-        <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
-      </div>
+      ) : (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Input value={q} onChange={v => { setQ(v); setPage(1); }}
+            placeholder="Filter by SO number or licence…" icon={<SearchIcon />}
+            style={{ flex: 1, minWidth: 120, maxWidth: 300 }} />
+          <Select value={vendorFilter} onChange={v => { setVendorFilter(v); setPage(1); }}
+            placeholder="All vendors"
+            options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            border: '1px solid var(--hair-strong)', borderRadius: 3,
+            background: 'var(--surface)', padding: '0 10px', height: 30,
+          }}>
+            <CalendarIcon />
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', width: 110 }} />
+            <span style={{ color: 'var(--ink-4)' }}>→</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', width: 110 }} />
+          </div>
+          {hasFilter && <Button variant="ghost" onClick={clearFilters}>Clear</Button>}
+          <div style={{ flex: 1 }} />
+          <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
+        </div>
+      )}
 
       {/* Table (desktop) / Cards (mobile) */}
       {isMobile ? (

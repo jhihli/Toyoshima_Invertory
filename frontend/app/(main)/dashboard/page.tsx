@@ -6,10 +6,12 @@ import {
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
 import type { DashboardStats } from '@/interface/IDatatable';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 export default function DashboardPage() {
   const router = useRouter();
   const toast = useToast();
+  const isMobile = useIsMobile();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [range, setRange] = useState('30');
@@ -64,7 +66,7 @@ export default function DashboardPage() {
             { value: '30', label: 'Last 30 days' },
             { value: '90', label: 'Last 90 days' },
           ]} />
-          <Button variant="outline" icon={<DownloadIcon />} onClick={() => toast('Report generated')}>Report</Button>
+          {!isMobile && <Button variant="outline" icon={<DownloadIcon />} onClick={() => toast('Report generated')}>Report</Button>}
         </div>
       </div>
 
@@ -170,14 +172,11 @@ export default function DashboardPage() {
                 <th style={thS}>Barcode</th>
                 <th style={thS}>SO</th>
                 <th style={thS}>Vendor</th>
-                <th style={thS}>MPN</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Scanned</th>
               </tr>
             </thead>
             <tbody>
               {stats.recent_boards.length === 0 && (
-                <tr><td colSpan={6}><Empty label="No recent scans" /></td></tr>
+                <tr><td colSpan={3}><Empty label="No recent scans" /></td></tr>
               )}
               {stats.recent_boards.map(b => (
                 <RecentRow key={b.id} board={b} onClick={() => router.push(`/sos/${b.so_id}`)} />
@@ -199,9 +198,6 @@ function RecentRow({ board, onClick }: { board: any; onClick: () => void }) {
       <td style={tdS} className="mono">{board.barcode}</td>
       <td style={tdS} className="mono">{board.so_number}</td>
       <td style={tdS}>{board.vendor}</td>
-      <td style={{ ...tdS, color: 'var(--ink-3)' }} className="mono">{board.mpn || '—'}</td>
-      <td style={{ ...tdS, textAlign: 'right' }} className="num">{board.qty}</td>
-      <td style={{ ...tdS, textAlign: 'right', color: 'var(--ink-3)' }} className="num">{board.scanned_at?.slice(0, 16)}</td>
     </tr>
   );
 }
