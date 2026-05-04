@@ -693,16 +693,18 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   #{String(p.pallet_seq).padStart(2, '0')}
                 </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="num" style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
-                    {parseFloat(p.weight).toFixed(2)} <span style={{ fontSize: 10, color: 'var(--ink-4)', marginLeft: 2 }}>lb</span>
-                  </span>
+                  <Badge tone="warn" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                    {parseFloat(p.weight).toFixed(2)} lb
+                  </Badge>
                   <button onClick={() => setEditingPallet(p)} style={ghostBtn} title="Edit"><EditIcon /></button>
                   <button onClick={() => onDelete(p.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
                 </div>
               </div>
-              <div className="mono" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, fontSize: 11.5, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: 11.5, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
                 {(p.licence_number || p.payload_number) && (
-                  <span style={{ color: 'var(--ink-2)' }}>{[p.licence_number, p.payload_number].filter(Boolean).join(' · ')}</span>
+                  <Badge tone="blue" style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
+                    {[p.licence_number, p.payload_number].filter(Boolean).join(' · ')}
+                  </Badge>
                 )}
                 {(p.licence_number || p.payload_number) && <span style={{ color: 'var(--hair-strong)' }}>·</span>}
                 <span>Pallet qty <span className="num" style={{ color: 'var(--ink-2)' }}>{p.qty}</span></span>
