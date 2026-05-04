@@ -27,9 +27,9 @@ export const Button: React.FC<ButtonProps> = ({
 }) => {
   const [hover, setHover] = useState(false);
   const sizes: Record<ButtonSize, CSSProperties> = {
-    sm: { padding: '4px 10px', fontSize: 12, height: 26 },
-    md: { padding: '6px 12px', fontSize: 13, height: 30 },
-    lg: { padding: '8px 16px', fontSize: 13, height: 36 },
+    sm: { padding: '0 10px', fontSize: 12, height: 30 },
+    md: { padding: '0 14px', fontSize: 13, height: 36 },
+    lg: { padding: '0 18px', fontSize: 14, height: 44 },
   };
   const variants: Record<ButtonVariant, CSSProperties> = {
     default: { background: 'var(--surface)', borderColor: 'var(--hair-strong)', color: 'var(--ink)' },
@@ -83,7 +83,7 @@ export const Input: React.FC<InputProps> = ({
   const ref = useRef<HTMLInputElement>(null);
   const [focused, setFocused] = useState(false);
   useEffect(() => { if (autoFocus && ref.current) ref.current.focus(); }, [autoFocus]);
-  const h = size === 'sm' ? 26 : 30;
+  const h = size === 'sm' ? 30 : 36;
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
@@ -124,7 +124,7 @@ interface SelectProps {
 export const Select: React.FC<SelectProps> = ({
   value, onChange, options, placeholder, style, size = 'md',
 }) => {
-  const h = size === 'sm' ? 26 : 30;
+  const h = size === 'sm' ? 30 : 36;
   return (
     <div style={{ position: 'relative', display: 'inline-block', ...style }}>
       <select value={value} onChange={e => onChange(e.target.value)}
@@ -423,7 +423,7 @@ interface TabItem { value: string; label: string; count?: number; }
 interface TabsProps { value: string; onChange: (v: string) => void; tabs: TabItem[]; }
 
 export const Tabs: React.FC<TabsProps> = ({ value, onChange, tabs }) => (
-  <div style={{ display: 'flex', borderBottom: '1px solid var(--hair)', gap: 2 }}>
+  <div style={{ display: 'flex', borderBottom: '1px solid var(--hair)', gap: 2, overflowX: 'auto', WebkitOverflowScrolling: 'touch' as any }}>
     {tabs.map(t => {
       const active = t.value === value;
       return (

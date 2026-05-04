@@ -11,6 +11,7 @@ import {
 import { api } from '@/app/lib/api';
 import type { SO, Vendor } from '@/interface/IDatatable';
 import { WeightRuleField } from './WeightRuleField';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 const PAGE_SIZE = 30;
 
@@ -19,6 +20,7 @@ type SortKey = 'so_number' | 'date';
 export default function SOListPage() {
   const router = useRouter();
   const toast = useToast();
+  const isMobile = useIsMobile();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const [sos, setSos] = useState<SO[]>([]);
@@ -146,24 +148,22 @@ export default function SOListPage() {
   );
 
   return (
-    <div className="fade-in" style={{ padding: '24px 28px 40px' }}>
+    <>
+    <div className="fade-in page-pad">
       <Breadcrumbs items={[{ label: 'Home', onClick: () => router.push('/dashboard') }, { label: 'Sales Orders' }]} />
 
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px' }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>Sales Orders</h1>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>
-            <span className="num">{total}</span> records
-          </div>
-        </div>
-        <Button variant="primary" icon={<PlusIcon />} onClick={() => setNewOpen(true)}>New SO</Button>
+        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>Sales Orders</h1>
+        {!isMobile && (
+          <Button variant="primary" icon={<PlusIcon />} onClick={() => setNewOpen(true)}>New SO</Button>
+        )}
       </div>
 
       {/* Filter bar */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         <Input value={q} onChange={v => { setQ(v); setPage(1); }}
           placeholder="Filter by SO number or licence…" icon={<SearchIcon />}
-          style={{ width: 300 }} />
+          style={{ flex: 1, minWidth: 120, maxWidth: 300 }} />
         <Select value={vendorFilter} onChange={v => { setVendorFilter(v); setPage(1); }}
           placeholder="All vendors"
           options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
@@ -184,35 +184,54 @@ export default function SOListPage() {
         <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
       </div>
 
-      {/* Table */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 3 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <thead>
-            <tr>
-              <Th label="SO Number" sortKey="so_number" w="20%" />
-              <Th label="Vendor" w="13%" />
-              <Th label="Date" sortKey="date" w="12%" />
-              <Th label="Pallets" align="right" w="9%" />
-              <Th label="Total Weight (lb)" align="right" w="14%" />
-              <Th label="Boards(Real)" align="right" w="11%" />
-              <Th label="Boards(Scan)" align="right" w="11%" />
-              <Th label="" w="10%" />
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr><td colSpan={8}><Empty label="Loading…" /></td></tr>
-            )}
-            {!loading && sos.length === 0 && (
-              <tr><td colSpan={8}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
-            )}
+      {/* Table (desktop) / Cards (mobile) */}
+      {isMobile ? (
+        <div style={{ paddingBottom: 80 }}>
+          {loading && <Empty label="Loading…" />}
+          {!loading && sos.length === 0 && (
+            <Empty label="No matching SOs" sub="Try clearing filters or a different search." />
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {!loading && sos.map(s => (
-              <SORow key={s.id} so={s} onClick={() => router.push(`/sos/${s.id}`)} />
+              <SOCard key={s.id} so={s} onClick={() => router.push(`/sos/${s.id}`)} />
             ))}
-          </tbody>
-        </table>
-        <Pagination page={page} pageCount={pageCount} onChange={setPage} total={total} pageSize={PAGE_SIZE} />
-      </div>
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Pagination page={page} pageCount={pageCount} onChange={setPage} total={total} pageSize={PAGE_SIZE} />
+          </div>
+        </div>
+      ) : (
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 3 }}>
+          <div className="table-scroll">
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <thead>
+              <tr>
+                <Th label="SO Number" sortKey="so_number" w="20%" />
+                <Th label="Vendor" w="13%" />
+                <Th label="Date" sortKey="date" w="12%" />
+                <Th label="Pallets" align="right" w="9%" />
+                <Th label="Total Weight (lb)" align="right" w="14%" />
+                <Th label="Boards(Real)" align="right" w="11%" />
+                <Th label="Boards(Scan)" align="right" w="11%" />
+                <Th label="" w="10%" />
+              </tr>
+            </thead>
+            <tbody>
+              {loading && (
+                <tr><td colSpan={8}><Empty label="Loading…" /></td></tr>
+              )}
+              {!loading && sos.length === 0 && (
+                <tr><td colSpan={8}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
+              )}
+              {!loading && sos.map(s => (
+                <SORow key={s.id} so={s} onClick={() => router.push(`/sos/${s.id}`)} />
+              ))}
+            </tbody>
+          </table>
+          </div>
+          <Pagination page={page} pageCount={pageCount} onChange={setPage} total={total} pageSize={PAGE_SIZE} />
+        </div>
+      )}
 
       <NewSOModal
         open={newOpen}
@@ -228,6 +247,26 @@ export default function SOListPage() {
         }}
       />
     </div>
+
+    {/* Mobile FAB — outside fade-in div so position:fixed is viewport-relative */}
+    {isMobile && (
+      <button
+        onClick={() => setNewOpen(true)}
+        style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 50,
+          width: 52, height: 52, borderRadius: '50%',
+          background: 'var(--accent)', color: '#fff',
+          border: 0, cursor: 'pointer',
+          boxShadow: '0 4px 16px rgba(26,25,23,0.28)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      </button>
+    )}
+    </>
   );
 }
 
@@ -252,6 +291,32 @@ function SORow({ so, onClick }: { so: SO; onClick: () => void }) {
         </svg>
       </td>
     </tr>
+  );
+}
+
+// ─── SO Card (mobile) ─────────────────────────────────────────────
+function SOCard({ so, onClick }: { so: SO; onClick: () => void }) {
+  return (
+    <div onClick={onClick} style={{
+      background: 'var(--surface)', border: '1px solid var(--hair)',
+      borderRadius: 4, padding: '10px 14px', cursor: 'pointer',
+      display: 'flex', alignItems: 'center', gap: 8,
+    }}>
+      <span className="mono" style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500, flexShrink: 0 }}>{so.so_number}</span>
+      <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
+      <span style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>{so.vendor_name}</span>
+      <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
+      <span className="num" style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>{so.date}</span>
+      <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
+      <span className="num" style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>
+        {so.total_pallet_count}P · {so.total_board_count}B · {parseFloat(so.total_pallet_weight).toFixed(0)}lb
+      </span>
+      <div style={{ flex: 1 }} />
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--ink-4)"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    </div>
   );
 }
 

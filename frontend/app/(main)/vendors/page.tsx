@@ -56,7 +56,7 @@ export default function VendorsPage() {
   };
 
   return (
-    <div className="fade-in" style={{ padding: '24px 28px 40px' }}>
+    <div className="fade-in page-pad">
       <Breadcrumbs items={[
         { label: 'Home', onClick: () => router.push('/dashboard') },
         { label: 'Vendors' },
@@ -73,6 +73,7 @@ export default function VendorsPage() {
       </div>
 
       <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
+        <div className="table-scroll">
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
@@ -106,6 +107,7 @@ export default function VendorsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)}

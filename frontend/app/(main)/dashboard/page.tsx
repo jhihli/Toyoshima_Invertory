@@ -48,7 +48,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="fade-in" style={{ padding: '24px 28px 40px' }}>
+    <div className="fade-in page-pad">
       <Breadcrumbs items={[{ label: 'Home' }, { label: 'Dashboard' }]} />
 
       <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px' }}>
@@ -70,7 +70,7 @@ export default function DashboardPage() {
 
       {/* KPIs */}
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 0,
+        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 0,
         border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)', marginBottom: 24,
       }}>
         {kpis.map((k, i) => (
@@ -85,7 +85,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts row */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr', gap: 20, marginBottom: 24 }}>
+      <div className="charts-grid" style={{ marginBottom: 24 }}>
         <Card pad={0}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--hair)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
@@ -163,26 +163,28 @@ export default function DashboardPage() {
           </div>
           <Button size="sm" variant="ghost" onClick={() => router.push('/sos')}>View all →</Button>
         </div>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr>
-              <th style={thS}>Barcode</th>
-              <th style={thS}>SO</th>
-              <th style={thS}>Vendor</th>
-              <th style={thS}>MPN</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Scanned</th>
-            </tr>
-          </thead>
-          <tbody>
-            {stats.recent_boards.length === 0 && (
-              <tr><td colSpan={6}><Empty label="No recent scans" /></td></tr>
-            )}
-            {stats.recent_boards.map(b => (
-              <RecentRow key={b.id} board={b} onClick={() => router.push(`/sos/${b.so_id}`)} />
-            ))}
-          </tbody>
-        </table>
+        <div className="table-scroll">
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr>
+                <th style={thS}>Barcode</th>
+                <th style={thS}>SO</th>
+                <th style={thS}>Vendor</th>
+                <th style={thS}>MPN</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Scanned</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stats.recent_boards.length === 0 && (
+                <tr><td colSpan={6}><Empty label="No recent scans" /></td></tr>
+              )}
+              {stats.recent_boards.map(b => (
+                <RecentRow key={b.id} board={b} onClick={() => router.push(`/sos/${b.so_id}`)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

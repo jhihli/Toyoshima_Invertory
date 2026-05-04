@@ -11,6 +11,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>TGT Inventory</title>
         <link rel="icon" href="/logo.png" />
       </head>

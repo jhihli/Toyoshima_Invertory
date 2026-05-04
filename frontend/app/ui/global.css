@@ -16,6 +16,8 @@
   --ink-5:       #c4c0b8;
   --err:         #a8402b;
   --warn:        #a56b1f;
+  --warn-soft:   #fef3cd;
+  --warn-ink:    #7a4f0d;
   --accent:        #2d6a4f;
   --accent-2:      #1f5038;
   --accent-light:  #e8f2ec;
@@ -86,3 +88,12 @@ input[type='number']::-webkit-outer-spin-button {
 ::-webkit-scrollbar        { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track  { background: var(--surface-2); }
 ::-webkit-scrollbar-thumb  { background: var(--hair-strong); border-radius: 3px; }
+
+/* ── Responsive utilities ── */
+.page-pad { padding: 24px 28px 40px; }
+@media (max-width: 1023px) { .page-pad { padding: 16px 16px 32px; } }
+
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+.charts-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; }
+@media (max-width: 1023px) { .charts-grid { grid-template-columns: 1fr; } }

@@ -7,6 +7,7 @@ import { ToastProvider } from '@/app/ui/components';
 export default function MainLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // If the session exists but has no JWT accessToken, the user logged in with
   // an old session before the JWT changes. Force a re-login.
@@ -34,9 +35,9 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
   return (
     <ToastProvider>
       <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg)' }}>
-        <Sidebar collapsed={collapsed} />
+        <Sidebar collapsed={collapsed} isMobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
-          <TopBar onToggleSidebar={toggle} />
+          <TopBar onToggleSidebar={toggle} onToggleMobile={() => setMobileOpen(o => !o)} />
           <div style={{ flex: 1 }}>
             {children}
           </div>

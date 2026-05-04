@@ -11,6 +11,7 @@ import {
 import { api } from '@/app/lib/api';
 import { WeightRuleField } from '../WeightRuleField';
 import type { SODetail, Pallet, Board, Chip, ChipBrand, Vendor } from '@/interface/IDatatable';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 const BOARDS_PAGE_SIZE = 20;
 
@@ -33,7 +34,10 @@ export default function SODetailPage() {
   const [expandedBoard, setExpandedBoard] = useState<number | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteBoardId, setDeleteBoardId] = useState<number | null>(null);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
+  const isMobile = useIsMobile();
 
   // Board pagination + filter state
   const [boards, setBoards] = useState<Board[]>([]);
@@ -69,9 +73,19 @@ export default function SODetailPage() {
   useEffect(() => { if (tab === 'boards') loadBoards(); }, [tab, loadBoards]);
   useEffect(() => { api.vendors.list().then(setVendors).catch(() => {}); }, []);
   useEffect(() => { api.chipBrands.list().then(setChipBrands).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!actionMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(e.target as Node)) {
+        setActionMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [actionMenuOpen]);
 
   if (loading || !so) {
-    return <div style={{ padding: '24px 28px', color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>;
+    return <div className="page-pad" style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>;
   }
 
   const vendor = vendors.find(v => v.id === so.vendor);
@@ -310,7 +324,7 @@ export default function SODetailPage() {
   };
 
   return (
-    <div className="fade-in" style={{ padding: '24px 28px 40px' }}>
+    <div className="fade-in page-pad">
       <Breadcrumbs items={[
         { label: 'Home', onClick: () => router.push('/dashboard') },
         { label: 'Sales Orders', onClick: () => router.push('/sos') },
@@ -318,26 +332,76 @@ export default function SODetailPage() {
       ]} />
 
       {/* Title row */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', margin: isMobile ? '10px 0 12px' : '14px 0 20px', gap: 10 }}>
         <div>
           <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400, letterSpacing: '-0.01em' }}>
             {so.so_number}
           </h1>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>
-            Received {so.date} · {so.vendor_name} · Created {so.created_at?.slice(0, 10)}
+          {!isMobile && (
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>
+              Received {so.date} · {so.vendor_name} · Created {so.created_at?.slice(0, 10)}
+            </div>
+          )}
+        </div>
+
+        {isMobile ? (
+          /* Mobile: single "⋮" menu button */
+          <div ref={actionMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
+            <button
+              onClick={() => setActionMenuOpen(o => !o)}
+              style={{
+                background: actionMenuOpen ? 'var(--surface-2)' : 'var(--surface)',
+                border: '1px solid var(--hair-strong)', borderRadius: 4,
+                width: 36, height: 36, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: 'var(--ink)',
+              }}
+            >
+              <DotsVerticalIcon />
+            </button>
+            {actionMenuOpen && (
+              <div style={{
+                position: 'absolute', right: 0, top: 42, zIndex: 60,
+                background: 'var(--surface)', border: '1px solid var(--hair)',
+                borderRadius: 4, boxShadow: '0 4px 16px rgba(26,25,23,0.12)',
+                minWidth: 148, overflow: 'hidden',
+              }}>
+                {([
+                  { label: 'Edit', icon: <EditIcon />, danger: false, action: () => { setEditMeta(true); setActionMenuOpen(false); } },
+                  { label: 'Export', icon: <DownloadIcon />, danger: false, action: () => { handleExport(); setActionMenuOpen(false); } },
+                  { label: 'Upload photo', icon: <UploadIcon />, danger: false, action: () => { fileInputRef.current?.click(); setActionMenuOpen(false); } },
+                  { label: 'Delete', icon: <TrashIcon />, danger: true, action: () => { setDeleteConfirmOpen(true); setActionMenuOpen(false); } },
+                ] as { label: string; icon: React.ReactNode; danger: boolean; action: () => void }[]).map((item, i, arr) => (
+                  <button key={item.label} onClick={item.action} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    width: '100%', padding: '11px 14px', border: 0,
+                    borderBottom: i < arr.length - 1 ? '1px solid var(--hair)' : 'none',
+                    background: 'none', cursor: 'pointer', fontSize: 13,
+                    color: item.danger ? 'var(--err)' : 'var(--ink)',
+                    textAlign: 'left',
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button variant="danger" icon={<TrashIcon />} onClick={() => setDeleteConfirmOpen(true)}>
-            Delete
-          </Button>
-          <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
-          <Button variant="outline" icon={<EditIcon />} onClick={() => setEditMeta(true)}>Edit</Button>
-        </div>
+        ) : (
+          /* Desktop: three separate buttons */
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <Button variant="danger" icon={<TrashIcon />} onClick={() => setDeleteConfirmOpen(true)}>Delete</Button>
+            <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
+            <Button variant="outline" icon={<EditIcon />} onClick={() => setEditMeta(true)}>Edit</Button>
+          </div>
+        )}
       </div>
 
       {/* Meta card */}
-      <Card pad={0} style={{ marginBottom: 20 }}>
+      <Card pad={0} style={{ marginBottom: isMobile ? 12 : 20 }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
           {([
             ['Vendor', so.vendor_name, null],
@@ -370,32 +434,57 @@ export default function SODetailPage() {
             {!so.note && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2, paddingLeft: 6 }}>Double-click to add a note.</div>}
           </div>
         </div>
+        {/* Mobile: compact photo strip combined into this card */}
+        {isMobile && (
+          <div style={{ padding: '10px 14px', borderTop: '1px solid var(--hair)' }}>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: 2 }}>
+              {so.photos.map(p => (
+                <div key={p.id} onClick={() => setLightbox(p)} style={{
+                  flexShrink: 0, width: 56, height: 56, borderRadius: 3, cursor: 'pointer',
+                  background: `url(${p.image_url}) center/cover no-repeat var(--surface-2)`,
+                  border: '1px solid var(--hair)',
+                }} />
+              ))}
+              <div onClick={() => fileInputRef.current?.click()} style={{
+                flexShrink: 0, width: 56, height: 56,
+                border: '1px dashed var(--hair-strong)', borderRadius: 3,
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 3, color: 'var(--ink-4)', fontSize: 9, cursor: 'pointer',
+              }}>
+                <PlusIcon />
+                <span style={{ letterSpacing: '0.04em', textTransform: 'uppercase' }}>Photo</span>
+              </div>
+            </div>
+          </div>
+        )}
       </Card>
 
-      {/* Photos */}
-      <div style={{ marginBottom: 24 }}>
-        <SectionHeader label="Photos" count={so.photos.length}
-          action={<Button size="sm" variant="outline" icon={<UploadIcon />} onClick={() => fileInputRef.current?.click()}>Upload</Button>} />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
-          {so.photos.map(p => (
-            <PhotoThumb key={p.id} url={p.image_url} caption={p.caption}
-              onClick={() => setLightbox(p)}
-              onDelete={() => handleDeletePhoto(p.id)} />
-          ))}
-          <div onClick={() => fileInputRef.current?.click()} style={{
-            height: 120, border: '1px dashed var(--hair-strong)', borderRadius: 3,
-            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            gap: 4, color: 'var(--ink-3)', fontSize: 11, cursor: 'pointer', background: 'var(--surface)',
-          }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface)')}>
-            <PlusIcon />
-            <span>Add photo</span>
+      {/* Photos — desktop only; mobile shows compact strip inside meta card */}
+      {!isMobile && (
+        <div style={{ marginBottom: 24 }}>
+          <SectionHeader label="Photos" count={so.photos.length}
+            action={<Button size="sm" variant="outline" icon={<UploadIcon />} onClick={() => fileInputRef.current?.click()}>Upload</Button>} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
+            {so.photos.map(p => (
+              <PhotoThumb key={p.id} url={p.image_url} caption={p.caption}
+                onClick={() => setLightbox(p)}
+                onDelete={() => handleDeletePhoto(p.id)} />
+            ))}
+            <div onClick={() => fileInputRef.current?.click()} style={{
+              height: 120, border: '1px dashed var(--hair-strong)', borderRadius: 3,
+              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+              gap: 4, color: 'var(--ink-3)', fontSize: 11, cursor: 'pointer', background: 'var(--surface)',
+            }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface)')}>
+              <PlusIcon />
+              <span>Add photo</span>
+            </div>
           </div>
         </div>
-        <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
-          onChange={e => { handlePhotoFiles(e.target.files); e.target.value = ''; }} />
-      </div>
+      )}
+      <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+        onChange={e => { handlePhotoFiles(e.target.files); e.target.value = ''; }} />
 
       {/* Tabs */}
       <Tabs value={tab} onChange={v => setTab(v as any)} tabs={[
@@ -444,7 +533,10 @@ export default function SODetailPage() {
 
       {/* Lightbox */}
       <Modal open={!!lightbox} onClose={() => setLightbox(null)} title={lightbox?.caption || 'Photo'} width={720}>
-        {lightbox && <PhotoThumb url={lightbox.image_url} size={680} caption={lightbox.caption} />}
+        {lightbox?.image_url && (
+          <img src={lightbox.image_url} alt={lightbox.caption || 'Photo'}
+            style={{ width: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: 3, display: 'block' }} />
+        )}
       </Modal>
 
       {/* Edit meta modal */}
@@ -541,6 +633,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
   onAdd: () => void; onUpdate: (id: number, p: Partial<Pallet>) => void; onDelete: (id: number) => void;
 }) {
   const [editingPallet, setEditingPallet] = useState<Pallet | null>(null);
+  const isMobile = useIsMobile();
 
   return (
     <>
@@ -553,67 +646,108 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
         </Button>
       </div>
 
-      <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: '7%' }} />
-            <col style={{ width: '21%' }} />
-            <col style={{ width: '21%' }} />
-            <col style={{ width: '16%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '10%' }} />
-            <col style={{ width: '15%' }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th style={thS}>Seq</th>
-              <th style={thS}>Licence No</th>
-              <th style={thS}>Payload No</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Weight (lb)</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Pallet Qty</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
-              <th style={{ ...thS, textAlign: 'right' }}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {pallets.map(p => (
-              <tr key={p.id} style={{ borderBottom: '1px solid var(--hair)' }}>
-                <td style={tdS}>
-                  <span className="mono" style={{ color: 'var(--ink-3)' }}>#{String(p.pallet_seq).padStart(2, '0')}</span>
-                </td>
-                <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.licence_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
-                <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.payload_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
-                <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(p.weight).toFixed(2)}</td>
-                <td style={{ ...tdS, textAlign: 'right' }} className="num">{p.qty}</td>
-                <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                  {p.board_qty != null ? p.board_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
-                </td>
-                <td style={{ ...tdS, textAlign: 'right' }}>
-                  <div style={{ display: 'inline-flex', gap: 4 }}>
-                    <button onClick={() => setEditingPallet(p)} style={ghostBtn} title="Edit"><EditIcon /></button>
-                    <button onClick={() => onDelete(p.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
-                  </div>
-                </td>
+      {isMobile ? (
+        /* Mobile: pallet cards */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {pallets.length === 0 && <Empty label="No pallets yet" sub="Click 'Add pallet' to start." />}
+          {pallets.map(p => (
+            <div key={p.id} style={{ background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 4, padding: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span className="mono" style={{ fontSize: 13, color: 'var(--ink-3)' }}>
+                  #{String(p.pallet_seq).padStart(2, '0')}
+                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="num" style={{ fontSize: 14, fontWeight: 500, color: 'var(--ink)' }}>
+                    {parseFloat(p.weight).toFixed(2)} <span style={{ fontSize: 10, color: 'var(--ink-4)', marginLeft: 2 }}>lb</span>
+                  </span>
+                  <button onClick={() => setEditingPallet(p)} style={ghostBtn} title="Edit"><EditIcon /></button>
+                  <button onClick={() => onDelete(p.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                </div>
+              </div>
+              {(p.licence_number || p.payload_number) && (
+                <div className="mono" style={{ fontSize: 11.5, color: 'var(--ink-2)', marginTop: 6 }}>
+                  {[p.licence_number, p.payload_number].filter(Boolean).join(' · ')}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 14, marginTop: 6, fontSize: 11.5, color: 'var(--ink-3)' }}>
+                <span>Pallet qty <span className="num" style={{ color: 'var(--ink-2)' }}>{p.qty}</span></span>
+                {p.board_qty != null && <span>Boards <span className="num" style={{ color: 'var(--ink-2)' }}>{p.board_qty}</span></span>}
+              </div>
+            </div>
+          ))}
+          {pallets.length > 0 && (
+            <div style={{ padding: '10px 14px', border: '1px solid var(--hair)', borderRadius: 4, background: 'var(--surface-2)', fontSize: 12, color: 'var(--ink-3)', display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: 11 }}>Total</span>
+              <span className="num">{palletTotal.weight.toFixed(2)} lb · {palletTotal.qty} pallets{palletTotal.boardQty ? ` · ${palletTotal.boardQty} boards` : ''}</span>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* Desktop: pallet table */
+        <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
+          <div className="table-scroll">
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '21%' }} />
+              <col style={{ width: '21%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '15%' }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={thS}>Seq</th>
+                <th style={thS}>Licence No</th>
+                <th style={thS}>Payload No</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Weight (lb)</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Pallet Qty</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
+                <th style={{ ...thS, textAlign: 'right' }}></th>
               </tr>
-            ))}
-            {pallets.length > 0 && (
-              <tr style={{ background: 'var(--surface-2)' }}>
-                <td style={{ ...tdS, fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                  Total
-                </td>
-                <td /><td />
-                <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.weight.toFixed(2)}</td>
-                <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.qty}</td>
-                <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.boardQty || '—'}</td>
-                <td />
-              </tr>
-            )}
-            {pallets.length === 0 && (
-              <tr><td colSpan={7}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {pallets.map(p => (
+                <tr key={p.id} style={{ borderBottom: '1px solid var(--hair)' }}>
+                  <td style={tdS}>
+                    <span className="mono" style={{ color: 'var(--ink-3)' }}>#{String(p.pallet_seq).padStart(2, '0')}</span>
+                  </td>
+                  <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.licence_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
+                  <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.payload_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(p.weight).toFixed(2)}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{p.qty}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                    {p.board_qty != null ? p.board_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                  </td>
+                  <td style={{ ...tdS, textAlign: 'right' }}>
+                    <div style={{ display: 'inline-flex', gap: 4 }}>
+                      <button onClick={() => setEditingPallet(p)} style={ghostBtn} title="Edit"><EditIcon /></button>
+                      <button onClick={() => onDelete(p.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {pallets.length > 0 && (
+                <tr style={{ background: 'var(--surface-2)' }}>
+                  <td style={{ ...tdS, fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                    Total
+                  </td>
+                  <td /><td />
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.weight.toFixed(2)}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.qty}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.boardQty || '—'}</td>
+                  <td />
+                </tr>
+              )}
+              {pallets.length === 0 && (
+                <tr><td colSpan={7}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
+              )}
+            </tbody>
+          </table>
+          </div>
+        </div>
+      )}
 
       {editingPallet && (
         <EditPalletModal
@@ -709,6 +843,7 @@ function BoardsTab({ boards, pallets, total, page, pageCount, dateFrom, dateTo, 
   const from = (page - 1) * BOARDS_PAGE_SIZE + 1;
   const to = Math.min(page * BOARDS_PAGE_SIZE, total);
   const hasFilter = dateFrom || dateTo || palletFilter;
+  const isMobile = useIsMobile();
 
   const palletOptions = [
     { value: '', label: 'All pallets' },
@@ -719,140 +854,206 @@ function BoardsTab({ boards, pallets, total, page, pageCount, dateFrom, dateTo, 
     }),
   ];
 
-  return (
-    <div>
-      {/* Filter bar */}
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10,
-        padding: '10px 12px', border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)',
-      }}>
-        <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Pallet</span>
-        <div style={{ minWidth: 180 }}>
-          <Select value={palletFilter} onChange={onPalletFilterChange} options={palletOptions} />
-        </div>
-        <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Scanned</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <input type="date" value={dateFrom} onChange={e => { onDateFromChange(e.target.value); onPageChange(1); }}
-            style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
-          <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>→</span>
-          <input type="date" value={dateTo} onChange={e => { onDateToChange(e.target.value); onPageChange(1); }}
-            style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
-        </div>
-        {hasFilter && <Button size="sm" variant="ghost" onClick={() => { onDateFromChange(''); onDateToChange(''); onPalletFilterChange(''); onPageChange(1); }}>Clear</Button>}
-        <div style={{ flex: 1 }} />
-        <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-          <span className="num">{total}</span> boards
-        </span>
+  const filterBar = isMobile ? (
+    /* Mobile filter: stacked rows */
+    <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Select value={palletFilter} onChange={v => { onPalletFilterChange(v); onPageChange(1); }}
+          options={palletOptions} style={{ flex: 1 }} />
         <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={onAddBoard} disabled={pallets.length === 0}>
-          Add board
+          Add
         </Button>
       </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input type="date" value={dateFrom} onChange={e => { onDateFromChange(e.target.value); onPageChange(1); }}
+          style={{ flex: 1, border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '6px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
+        <span style={{ color: 'var(--ink-4)', fontSize: 12, flexShrink: 0 }}>→</span>
+        <input type="date" value={dateTo} onChange={e => { onDateToChange(e.target.value); onPageChange(1); }}
+          style={{ flex: 1, border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '6px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
+        {hasFilter && <Button size="sm" variant="ghost" onClick={() => { onDateFromChange(''); onDateToChange(''); onPalletFilterChange(''); onPageChange(1); }}>Clear</Button>}
+      </div>
+    </div>
+  ) : (
+    /* Desktop filter: single row */
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10,
+      padding: '10px 12px', border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)',
+    }}>
+      <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Pallet</span>
+      <div style={{ minWidth: 180 }}>
+        <Select value={palletFilter} onChange={v => { onPalletFilterChange(v); onPageChange(1); }} options={palletOptions} />
+      </div>
+      <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Scanned</span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input type="date" value={dateFrom} onChange={e => { onDateFromChange(e.target.value); onPageChange(1); }}
+          style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
+        <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>→</span>
+        <input type="date" value={dateTo} onChange={e => { onDateToChange(e.target.value); onPageChange(1); }}
+          style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
+      </div>
+      {hasFilter && <Button size="sm" variant="ghost" onClick={() => { onDateFromChange(''); onDateToChange(''); onPalletFilterChange(''); onPageChange(1); }}>Clear</Button>}
+      <div style={{ flex: 1 }} />
+      <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+        <span className="num">{total}</span> boards
+      </span>
+      <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={onAddBoard} disabled={pallets.length === 0}>
+        Add board
+      </Button>
+    </div>
+  );
 
-      <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <colgroup>
-            <col style={{ width: 28 }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} />
-            <col style={{ width: '10%' }} /><col style={{ width: '14%' }} /><col style={{ width: '9%' }} />
-            <col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col /><col style={{ width: 42 }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th style={thS}></th>
-              <th style={thS}>MPN</th>
-              <th style={thS}>Pallet</th>
-              <th style={thS}>Catalog</th>
-              <th style={thS}>Barcode</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Weight</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
-              <th style={thS}>Scanned</th>
-              <th style={thS}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {boards.map(b => {
-              const open = expandedBoard === b.id;
-              return (
-                <React.Fragment key={b.id}>
-                  <tr style={{ borderBottom: '1px solid var(--hair)', background: open ? 'var(--surface-2)' : 'transparent' }}>
-                    <td style={{ ...tdS, padding: '8px 4px 8px 14px' }}>
-                      <button onClick={() => onExpand(b.id)} style={{ ...ghostBtn, padding: 3 }}>
-                        <span style={{ display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>
-                          <ChevronIcon />
-                        </span>
-                      </button>
-                    </td>
-                    <td style={tdS}>
-                      <button onClick={() => onOpenBoard(b.id)}
-                        className="mono" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--ink)', fontSize: 12.5, textDecoration: 'underline', textDecorationColor: 'var(--ink-5)', textUnderlineOffset: 3, fontFamily: 'inherit' }}>
-                        {b.mpn || '—'}
-                      </button>
-                    </td>
-                    <td style={{ ...tdS, fontSize: 12 }} className="mono">
-                      {b.pallet_label
-                        ? <span style={{ color: 'var(--ink-2)' }}>{b.pallet_label}</span>
-                        : <span style={{ color: 'var(--ink-5)' }}>—</span>}
-                    </td>
-                    <td style={{ ...tdS, fontSize: 12 }} className="mono">{b.catalog || '—'}</td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }} className="mono">{b.barcode || '—'}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.weight ? parseFloat(b.weight).toFixed(2) : '—'}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.qty}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.chip_count}</td>
-                    <td style={{ ...tdS, fontSize: 11.5, color: 'var(--ink-3)' }} className="num">{b.scanned_at?.slice(0, 10)}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }}>
-                      <button onClick={() => onDeleteBoard(b.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
-                    </td>
-                  </tr>
-                  {open && (
-                    <tr style={{ borderBottom: '1px solid var(--hair)' }}>
-                      <td />
-                      <td colSpan={9} style={{ padding: '8px 14px 16px' }}>
-                        <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 8 }}>Chips on board</div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {b.chips.map(c => {
-                            const brand = chipBrands.find(cb => cb.id === c.brand);
-                            return (
-                              <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', border: '1px solid var(--hair-strong)', borderRadius: 3, background: 'var(--surface)', fontSize: 12 }}>
-                                {brand?.name ?? '—'} <span className="num" style={{ color: 'var(--ink-3)' }}>×{c.qty}</span>
-                              </span>
-                            );
-                          })}
-                          {b.chips.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--ink-4)' }}>No chips recorded.</span>}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
-            {boards.length === 0 && (
-              <tr><td colSpan={10} style={{ padding: '28px 14px', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>
-                No boards found.
-              </td></tr>
-            )}
-          </tbody>
-        </table>
+  return (
+    <div>
+      {filterBar}
 
-        {/* Pagination footer */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderTop: '1px solid var(--hair)', fontSize: 11.5, color: 'var(--ink-3)' }}>
-          <span>
-            {total > 0 ? <>Showing <span className="num">{from}</span>–<span className="num">{to}</span> of <span className="num">{total}</span></> : '0 boards'}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1}
-              style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 3, color: page <= 1 ? 'var(--ink-5)' : 'var(--ink-2)', cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? 0.5 : 1 }}>
-              <span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><ChevronIcon /></span>
-            </button>
-            <span style={{ padding: '0 10px', fontSize: 12 }}>
-              <span className="num">{page}</span><span style={{ color: 'var(--ink-4)' }}> / </span><span className="num">{pageCount}</span>
-            </span>
-            <button onClick={() => onPageChange(Math.min(pageCount, page + 1))} disabled={page >= pageCount}
-              style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 3, color: page >= pageCount ? 'var(--ink-5)' : 'var(--ink-2)', cursor: page >= pageCount ? 'default' : 'pointer', opacity: page >= pageCount ? 0.5 : 1 }}>
-              <ChevronIcon />
-            </button>
+      {isMobile ? (
+        /* Mobile: board cards */
+        <div>
+          {boards.length === 0 && (
+            <div style={{ padding: '28px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>No boards found.</div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {boards.map(b => (
+              <div key={b.id} style={{
+                background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 4,
+                padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 6,
+              }}>
+                <button onClick={() => onOpenBoard(b.id)} className="mono" style={{
+                  background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 12.5,
+                  color: 'var(--ink)', textDecoration: 'underline', textDecorationColor: 'var(--ink-5)',
+                  textUnderlineOffset: 3, fontFamily: 'inherit', flexShrink: 0,
+                }}>
+                  {b.barcode || '—'}
+                </button>
+                {b.mpn && <><span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span><span className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>{b.mpn}</span></>}
+                <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
+                <span style={{ fontSize: 11.5, color: 'var(--ink-3)', flexShrink: 0 }}>
+                  Qty <span className="num" style={{ color: 'var(--ink-2)' }}>{b.qty}</span>
+                </span>
+                <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
+                <span style={{ fontSize: 11.5, color: 'var(--ink-3)', flexShrink: 0 }}>
+                  Chips <span className="num" style={{ color: 'var(--ink-2)' }}>{b.chip_count}</span>
+                </span>
+                <div style={{ flex: 1 }} />
+                <span className="num mono" style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>
+                  {b.scanned_at?.slice(11, 16)}
+                </span>
+                <button onClick={() => onDeleteBoard(b.id)} style={{ ...ghostBtn, flexShrink: 0 }} title="Delete"><TrashIcon /></button>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Pagination page={page} pageCount={pageCount} onChange={onPageChange} total={total} pageSize={BOARDS_PAGE_SIZE} />
           </div>
         </div>
-      </div>
+      ) : (
+        /* Desktop: boards table */
+        <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
+          <div className="table-scroll">
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: 28 }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} />
+              <col style={{ width: '10%' }} /><col style={{ width: '14%' }} /><col style={{ width: '9%' }} />
+              <col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col /><col style={{ width: 42 }} />
+            </colgroup>
+            <thead>
+              <tr>
+                <th style={thS}></th>
+                <th style={thS}>MPN</th>
+                <th style={thS}>Pallet</th>
+                <th style={thS}>Catalog</th>
+                <th style={thS}>Barcode</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Weight</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
+                <th style={thS}>Scanned</th>
+                <th style={thS}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {boards.map(b => {
+                const open = expandedBoard === b.id;
+                return (
+                  <React.Fragment key={b.id}>
+                    <tr style={{ borderBottom: '1px solid var(--hair)', background: open ? 'var(--surface-2)' : 'transparent' }}>
+                      <td style={{ ...tdS, padding: '8px 4px 8px 14px' }}>
+                        <button onClick={() => onExpand(b.id)} style={{ ...ghostBtn, padding: 3 }}>
+                          <span style={{ display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>
+                            <ChevronIcon />
+                          </span>
+                        </button>
+                      </td>
+                      <td style={tdS}>
+                        <button onClick={() => onOpenBoard(b.id)}
+                          className="mono" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--ink)', fontSize: 12.5, textDecoration: 'underline', textDecorationColor: 'var(--ink-5)', textUnderlineOffset: 3, fontFamily: 'inherit' }}>
+                          {b.mpn || '—'}
+                        </button>
+                      </td>
+                      <td style={{ ...tdS, fontSize: 12 }} className="mono">
+                        {b.pallet_label ? <span style={{ color: 'var(--ink-2)' }}>{b.pallet_label}</span> : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                      </td>
+                      <td style={{ ...tdS, fontSize: 12 }} className="mono">{b.catalog || '—'}</td>
+                      <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }} className="mono">{b.barcode || '—'}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.weight ? parseFloat(b.weight).toFixed(2) : '—'}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.qty}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.chip_count}</td>
+                      <td style={{ ...tdS, fontSize: 11.5, color: 'var(--ink-3)' }} className="num">{b.scanned_at?.slice(0, 10)}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }}>
+                        <button onClick={() => onDeleteBoard(b.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                      </td>
+                    </tr>
+                    {open && (
+                      <tr style={{ borderBottom: '1px solid var(--hair)' }}>
+                        <td />
+                        <td colSpan={9} style={{ padding: '8px 14px 16px' }}>
+                          <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 8 }}>Chips on board</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {b.chips.map(c => {
+                              const brand = chipBrands.find(cb => cb.id === c.brand);
+                              return (
+                                <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', border: '1px solid var(--hair-strong)', borderRadius: 3, background: 'var(--surface)', fontSize: 12 }}>
+                                  {brand?.name ?? '—'} <span className="num" style={{ color: 'var(--ink-3)' }}>×{c.qty}</span>
+                                </span>
+                              );
+                            })}
+                            {b.chips.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--ink-4)' }}>No chips recorded.</span>}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+              {boards.length === 0 && (
+                <tr><td colSpan={10} style={{ padding: '28px 14px', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>
+                  No boards found.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+          </div>
+
+          {/* Pagination footer */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderTop: '1px solid var(--hair)', fontSize: 11.5, color: 'var(--ink-3)' }}>
+            <span>
+              {total > 0 ? <>Showing <span className="num">{from}</span>–<span className="num">{to}</span> of <span className="num">{total}</span></> : '0 boards'}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1}
+                style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 3, color: page <= 1 ? 'var(--ink-5)' : 'var(--ink-2)', cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? 0.5 : 1 }}>
+                <span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><ChevronIcon /></span>
+              </button>
+              <span style={{ padding: '0 10px', fontSize: 12 }}>
+                <span className="num">{page}</span><span style={{ color: 'var(--ink-4)' }}> / </span><span className="num">{pageCount}</span>
+              </span>
+              <button onClick={() => onPageChange(Math.min(pageCount, page + 1))} disabled={page >= pageCount}
+                style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 3, color: page >= pageCount ? 'var(--ink-5)' : 'var(--ink-2)', cursor: page >= pageCount ? 'default' : 'pointer', opacity: page >= pageCount ? 0.5 : 1 }}>
+                <ChevronIcon />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1351,6 +1552,11 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
 }
 
 // ─── Inline icons ──────────────────────────────────────────────────
+const DotsVerticalIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <circle cx="8" cy="2.5" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="8" cy="13.5" r="1.5" />
+  </svg>
+);
 const PlusIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />

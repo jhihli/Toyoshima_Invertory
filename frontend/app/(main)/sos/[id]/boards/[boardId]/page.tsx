@@ -7,19 +7,24 @@ import {
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
 import type { Board, Chip, ChipBrand } from '@/interface/IDatatable';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 export default function BoardDetailPage() {
   const router = useRouter();
   const { id: soId, boardId } = useParams<{ id: string; boardId: string }>();
   const toast = useToast();
 
+  const isMobile = useIsMobile();
   const [board, setBoard] = useState<Board | null>(null);
   const [chipBrands, setChipBrands] = useState<ChipBrand[]>([]);
   const [loading, setLoading] = useState(true);
   const [addChipOpen, setAddChipOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const actionMenuRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -34,9 +39,19 @@ export default function BoardDetailPage() {
   }, [boardId]);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (!actionMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(e.target as Node)) {
+        setActionMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [actionMenuOpen]);
 
   if (loading || !board) {
-    return <div style={{ padding: '24px 28px', color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>;
+    return <div className="page-pad" style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>;
   }
 
   const totalChips = board.chips.reduce((s, c) => s + c.qty, 0);
@@ -113,7 +128,7 @@ export default function BoardDetailPage() {
   ];
 
   return (
-    <div className="fade-in" style={{ padding: '24px 28px 40px' }}>
+    <div className="fade-in page-pad">
       <Breadcrumbs items={[
         { label: 'Home', onClick: () => router.push('/dashboard') },
         { label: 'Sales Orders', onClick: () => router.push('/sos') },
@@ -121,61 +136,159 @@ export default function BoardDetailPage() {
         { label: board.mpn || board.barcode || `Board #${board.id}` },
       ]} />
 
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', margin: isMobile ? '10px 0 14px' : '14px 0 20px', gap: 10 }}>
         <div>
-          <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.mpn || board.barcode || `Board #${board.id}`}</h1>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>
-            SO {soId} · Scanned {board.scanned_at?.slice(0, 10)}
-          </div>
+          {isMobile ? (
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.mpn || board.barcode || `Board #${board.id}`}</h1>
+              <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>SO {soId} · {board.scanned_at?.slice(0, 10)}</span>
+            </div>
+          ) : (
+            <>
+              <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.mpn || board.barcode || `Board #${board.id}`}</h1>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>SO {soId} · Scanned {board.scanned_at?.slice(0, 10)}</div>
+            </>
+          )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Button variant="outline" icon={<EditIcon />} onClick={() => setEditOpen(true)}>Edit</Button>
-          <Button variant="danger" icon={<TrashIcon />} onClick={() => setConfirmDelete(true)}>Delete</Button>
-        </div>
-      </div>
 
-      {/* Split: photo | fields */}
-      <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20, marginBottom: 24 }}>
-        <div>
-          <PhotoThumb url={board.photo_url} size={320} />
-          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            <Button size="sm" variant="outline" icon={<UploadIcon />}
-              onClick={() => photoInputRef.current?.click()}
-              style={{ flex: 1, justifyContent: 'center' }}>
-              Replace photo
-            </Button>
-            {board.photo_url && (
-              <Button size="sm" variant="ghost" icon={<TrashIcon />} onClick={handlePhotoDelete}
-                style={{ color: 'var(--err)' }} />
+        {isMobile ? (
+          <div ref={actionMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
+            <button onClick={() => setActionMenuOpen(o => !o)} style={{
+              background: actionMenuOpen ? 'var(--surface-2)' : 'var(--surface)',
+              border: '1px solid var(--hair-strong)', borderRadius: 3,
+              width: 36, height: 36, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--ink)',
+            }}>
+              <DotsVerticalIcon />
+            </button>
+            {actionMenuOpen && (
+              <div style={{
+                position: 'absolute', right: 0, top: 42, zIndex: 60,
+                background: 'var(--surface)', border: '1px solid var(--hair)',
+                borderRadius: 4, boxShadow: '0 4px 16px rgba(26,25,23,0.12)',
+                minWidth: 148, overflow: 'hidden',
+              }}>
+                {([
+                  { label: 'Edit', icon: <EditIcon />, danger: false, action: () => { setEditOpen(true); setActionMenuOpen(false); } },
+                  { label: 'Delete', icon: <TrashIcon />, danger: true, action: () => { setConfirmDelete(true); setActionMenuOpen(false); } },
+                ] as { label: string; icon: React.ReactNode; danger: boolean; action: () => void }[]).map((item, i, arr) => (
+                  <button key={item.label} onClick={item.action} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    width: '100%', padding: '11px 14px', border: 0,
+                    borderBottom: i < arr.length - 1 ? '1px solid var(--hair)' : 'none',
+                    background: 'none', cursor: 'pointer', fontSize: 13,
+                    color: item.danger ? 'var(--err)' : 'var(--ink)', textAlign: 'left',
+                  }}
+                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  >
+                    {item.icon}{item.label}
+                  </button>
+                ))}
+              </div>
             )}
           </div>
-          <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }}
-            onChange={e => { handlePhotoUpload(e.target.files?.[0]); e.target.value = ''; }} />
-        </div>
-        <Card pad={0}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-            {fields.map(([k, v, cls], i) => (
-              <div key={k} style={{
-                padding: '18px 22px',
-                borderBottom: i < 4 ? '1px solid var(--hair)' : 'none',
-                borderRight: i % 2 === 0 ? '1px solid var(--hair)' : 'none',
-              }}>
-                <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 6 }}>{k}</div>
-                <div className={cls} style={{ fontSize: 14, color: 'var(--ink)' }}>{v}</div>
-              </div>
-            ))}
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <Button variant="outline" icon={<EditIcon />} onClick={() => setEditOpen(true)}>Edit</Button>
+            <Button variant="danger" icon={<TrashIcon />} onClick={() => setConfirmDelete(true)}>Delete</Button>
           </div>
-          {board.note && (
-            <div style={{ padding: '14px 22px', borderTop: '1px solid var(--hair)', background: 'var(--surface-2)', display: 'flex', gap: 10 }}>
-              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginTop: 2 }}>Note</span>
-              <span style={{ fontSize: 12.5, color: 'var(--ink-2)', flex: 1 }}>{board.note}</span>
-            </div>
-          )}
-        </Card>
+        )}
       </div>
 
+      {/* Hidden file input — shared between mobile and desktop */}
+      <input ref={photoInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={e => { handlePhotoUpload(e.target.files?.[0]); e.target.value = ''; }} />
+
+      {/* Split: photo | fields */}
+      {isMobile ? (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            {/* Compact photo column */}
+            <div style={{ flexShrink: 0 }}>
+              <PhotoThumb url={board.photo_url} size={130} onClick={board.photo_url ? () => setLightboxOpen(true) : undefined} />
+              <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+                <button onClick={() => photoInputRef.current?.click()} style={{
+                  flex: 1, fontSize: 11, color: 'var(--ink-3)',
+                  background: 'none', border: '1px solid var(--hair-strong)',
+                  borderRadius: 3, padding: '4px 0', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                }}>
+                  <UploadIcon /> Replace
+                </button>
+                {board.photo_url && (
+                  <button onClick={handlePhotoDelete} style={{
+                    background: 'none', border: '1px solid var(--hair-strong)',
+                    borderRadius: 3, padding: '4px 6px', cursor: 'pointer',
+                    color: 'var(--err)', display: 'flex', alignItems: 'center',
+                  }}>
+                    <TrashIcon />
+                  </button>
+                )}
+              </div>
+            </div>
+            {/* Key-value list */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {fields.map(([k, v, cls]) => (
+                <div key={k} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                  padding: '6px 0', borderBottom: '1px solid var(--hair)',
+                }}>
+                  <span style={{ fontSize: 10.5, color: 'var(--ink-4)', textTransform: 'uppercase', letterSpacing: '0.1em', flexShrink: 0, marginRight: 8 }}>{k}</span>
+                  <span className={cls as string} style={{ fontSize: 12.5, color: 'var(--ink)', textAlign: 'right', wordBreak: 'break-all' }}>{v}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {board.note && (
+            <div style={{
+              marginTop: 12, padding: '10px 14px',
+              background: 'var(--warn-soft)', border: '1px solid var(--hair)',
+              borderRadius: 3, fontSize: 12, color: 'var(--warn-ink)', fontStyle: 'italic',
+            }}>{board.note}</div>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20, marginBottom: 24 }}>
+          <div>
+            <PhotoThumb url={board.photo_url} size={320} onClick={board.photo_url ? () => setLightboxOpen(true) : undefined} />
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              <Button size="sm" variant="outline" icon={<UploadIcon />}
+                onClick={() => photoInputRef.current?.click()}
+                style={{ flex: 1, justifyContent: 'center' }}>
+                Replace photo
+              </Button>
+              {board.photo_url && (
+                <Button size="sm" variant="ghost" icon={<TrashIcon />} onClick={handlePhotoDelete}
+                  style={{ color: 'var(--err)' }} />
+              )}
+            </div>
+          </div>
+          <Card pad={0}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+              {fields.map(([k, v, cls], i) => (
+                <div key={k} style={{
+                  padding: '18px 22px',
+                  borderBottom: i < 4 ? '1px solid var(--hair)' : 'none',
+                  borderRight: i % 2 === 0 ? '1px solid var(--hair)' : 'none',
+                }}>
+                  <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 6 }}>{k}</div>
+                  <div className={cls as string} style={{ fontSize: 14, color: 'var(--ink)' }}>{v}</div>
+                </div>
+              ))}
+            </div>
+            {board.note && (
+              <div style={{ padding: '14px 22px', borderTop: '1px solid var(--hair)', background: 'var(--surface-2)', display: 'flex', gap: 10 }}>
+                <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginTop: 2 }}>Note</span>
+                <span style={{ fontSize: 12.5, color: 'var(--ink-2)', flex: 1 }}>{board.note}</span>
+              </div>
+            )}
+          </Card>
+        </div>
+      )}
+
       {/* Chips */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: 10,
           background: 'var(--accent-light)', padding: '9px 16px',
@@ -195,6 +308,7 @@ export default function BoardDetailPage() {
       </div>
 
       <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
+        <div className="table-scroll">
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr>
@@ -235,7 +349,16 @@ export default function BoardDetailPage() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
+
+      {/* Photo lightbox */}
+      <Modal open={lightboxOpen && !!board.photo_url} onClose={() => setLightboxOpen(false)} title="Photo" width={720}>
+        {board.photo_url && (
+          <img src={board.photo_url} alt="Board photo"
+            style={{ width: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: 3, display: 'block' }} />
+        )}
+      </Modal>
 
       <AddChipModal open={addChipOpen} chipBrands={chipBrands} onClose={() => setAddChipOpen(false)} onAdd={handleAddChip} />
 
@@ -351,19 +474,28 @@ function AddChipModal({ open, chipBrands, onClose, onAdd }: {
 }
 
 // ─── Photo Thumb ──────────────────────────────────────────────────
-function PhotoThumb({ url, size = 120 }: { url?: string | null; size?: number }) {
+function PhotoThumb({ url, size = 120, onClick }: { url?: string | null; size?: number; onClick?: () => void }) {
   return (
-    <div style={{
-      width: size, height: size, border: '1px solid var(--hair-strong)', borderRadius: 3,
-      background: url ? `url(${url}) center/cover` : 'linear-gradient(135deg, oklch(92% 0.02 30) 0%, oklch(85% 0.015 45) 100%)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-    }}>
+    <div
+      onClick={onClick}
+      style={{
+        width: size, height: size, border: '1px solid var(--hair-strong)', borderRadius: 3,
+        background: url ? `url(${url}) center/cover` : 'linear-gradient(135deg, oklch(92% 0.02 30) 0%, oklch(85% 0.015 45) 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        cursor: onClick ? 'zoom-in' : 'default',
+      }}
+    >
       {!url && <div className="mono" style={{ fontSize: 9, color: 'var(--ink-3)', letterSpacing: '0.05em', opacity: 0.6 }}>PHOTO</div>}
     </div>
   );
 }
 
 // ─── Icons ────────────────────────────────────────────────────────
+const DotsVerticalIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+    <circle cx="8" cy="2.5" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="8" cy="13.5" r="1.5" />
+  </svg>
+);
 const PlusIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />

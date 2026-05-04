@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { signOut, useSession } from 'next-auth/react';
 import Image from 'next/image';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 interface NavItem {
   key: string;
@@ -61,6 +62,15 @@ const IconPanelLeft: React.FC<{ size?: number }> = ({ size = 16 }) => (
   </svg>
 );
 
+const IconMenu: React.FC<{ size?: number }> = ({ size = 18 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <line x1="3" y1="18" x2="21" y2="18" />
+  </svg>
+);
+
 const IconBell: React.FC<{ size?: number }> = ({ size = 15 }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -89,12 +99,17 @@ function getInitials(name: string) {
   return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
 }
 
-interface SidebarProps { collapsed: boolean; }
+interface SidebarProps {
+  collapsed: boolean;
+  isMobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
 
-export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ collapsed, isMobileOpen = false, onMobileClose }) => {
   const pathname = usePathname();
   const router = useRouter();
   const { data: session } = useSession();
+  const isMobile = useIsMobile();
   const W = collapsed ? 64 : 220;
 
   const username = session?.user?.name ?? session?.user?.email ?? '';
@@ -103,25 +118,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
 
   const isActive = (item: NavItem) => pathname.startsWith(item.href);
 
-  return (
+  const handleNav = (href: string) => {
+    if (isMobile && onMobileClose) onMobileClose();
+    router.push(href);
+  };
+
+  const sidebarContent = (mobileMode: boolean) => (
     <aside style={{
-      width: W, flexShrink: 0, height: '100vh', position: 'sticky', top: 0,
-      borderRight: '1px solid rgba(255,255,255,0.08)', background: '#30523b',
-      display: 'flex', flexDirection: 'column', transition: 'width .18s ease',
-      zIndex: 40,
+      width: mobileMode ? 268 : W,
+      flexShrink: 0,
+      height: '100vh',
+      position: mobileMode ? 'relative' : 'sticky',
+      top: 0,
+      borderRight: '1px solid rgba(255,255,255,0.08)',
+      background: '#30523b',
+      display: 'flex',
+      flexDirection: 'column',
+      transition: mobileMode ? 'none' : 'width .18s ease',
+      zIndex: mobileMode ? 'auto' : 40,
     }}>
       {/* Brand */}
       <div style={{
-        padding: collapsed ? '20px 0' : '22px 20px',
+        padding: (!mobileMode && collapsed) ? '20px 0' : '22px 20px',
         borderBottom: '1px solid rgba(255,255,255,0.08)',
         display: 'flex', alignItems: 'center',
-        justifyContent: collapsed ? 'center' : 'flex-start', gap: 10,
+        justifyContent: (!mobileMode && collapsed) ? 'center' : 'flex-start', gap: 10,
       }}>
         <div style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 3, overflow: 'hidden' }}>
           <Image src="/logo.png" alt="TGT Logo" width={30} height={30}
             style={{ objectFit: 'cover', width: '100%', height: '100%' }} />
         </div>
-        {!collapsed && (
+        {(mobileMode || !collapsed) && (
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 500, letterSpacing: '-0.01em', color: '#fff' }}>Toyoshima</div>
             <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.5)', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: 1 }}>
@@ -131,35 +158,37 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
         )}
       </div>
 
-      {!collapsed && (
+      {(mobileMode || !collapsed) && (
         <div style={{ padding: '18px 20px 8px', fontSize: 10, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.18em', textTransform: 'uppercase' }}>
           Menu
         </div>
       )}
-      {collapsed && <div style={{ height: 18 }} />}
+      {!mobileMode && collapsed && <div style={{ height: 18 }} />}
 
       {/* Nav items */}
       <nav style={{ padding: '0 10px', display: 'flex', flexDirection: 'column', gap: 1 }}>
         {NAV_ITEMS.map(item => {
           const active = isActive(item);
           const Icon = item.icon;
+          const showLabel = mobileMode || !collapsed;
           return (
-            <button key={item.key} onClick={() => router.push(item.href)}
-              title={collapsed ? item.label : ''}
+            <button key={item.key} onClick={() => handleNav(item.href)}
+              title={(!mobileMode && collapsed) ? item.label : ''}
               style={{
                 display: 'flex', alignItems: 'center', gap: 12,
-                padding: collapsed ? '8px' : '8px 12px',
-                justifyContent: collapsed ? 'center' : 'flex-start',
+                padding: (!mobileMode && collapsed) ? '8px' : '8px 12px',
+                justifyContent: (!mobileMode && collapsed) ? 'center' : 'flex-start',
                 border: 0, background: active ? '#d4a820' : 'transparent',
                 color: active ? '#fff' : 'rgba(255,255,255,0.7)',
                 borderRadius: 6, cursor: 'pointer', fontSize: 12.5,
                 textAlign: 'left', transition: 'background .1s',
                 fontFamily: 'inherit', fontWeight: active ? 500 : 400,
+                minHeight: mobileMode ? 44 : 'auto',
               }}
               onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'; }}
               onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-              <Icon size={15} />
-              {!collapsed && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
+              <Icon size={mobileMode ? 17 : 15} />
+              {showLabel && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
             </button>
           );
         })}
@@ -170,14 +199,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
       {/* Footer user info — click to logout */}
       <button
         onClick={() => signOut({ callbackUrl: '/login' })}
-        title={collapsed ? 'Logout' : ''}
+        title={(!mobileMode && collapsed) ? 'Logout' : ''}
         style={{
-          padding: collapsed ? '14px 0' : '14px 16px',
+          padding: (!mobileMode && collapsed) ? '14px 0' : '14px 16px',
           display: 'flex', alignItems: 'center', gap: 10,
-          justifyContent: collapsed ? 'center' : 'flex-start',
+          justifyContent: (!mobileMode && collapsed) ? 'center' : 'flex-start',
           width: '100%', border: 0, borderTop: '1px solid rgba(255,255,255,0.08)',
           background: 'transparent', cursor: 'pointer', fontFamily: 'inherit',
           transition: 'background .1s', textAlign: 'left',
+          minHeight: mobileMode ? 56 : 'auto',
         }}
         onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.07)')}
         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
@@ -189,7 +219,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
         }}>
           {initials}
         </div>
-        {!collapsed && (
+        {(mobileMode || !collapsed) && (
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 12.5, color: '#fff', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {username || 'User'}
@@ -202,27 +232,62 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed }) => {
       </button>
     </aside>
   );
+
+  if (isMobile) {
+    return (
+      <>
+        {/* Scrim */}
+        <div
+          onClick={onMobileClose}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 100,
+            background: 'rgba(26,25,23,0.45)',
+            opacity: isMobileOpen ? 1 : 0,
+            pointerEvents: isMobileOpen ? 'auto' : 'none',
+            transition: 'opacity .18s ease',
+          }}
+        />
+        {/* Drawer panel */}
+        <div style={{
+          position: 'fixed', left: 0, top: 0, height: '100vh', zIndex: 101,
+          transform: isMobileOpen ? 'translateX(0)' : 'translateX(-100%)',
+          transition: 'transform .22s cubic-bezier(.2,.7,.3,1)',
+        }}>
+          {sidebarContent(true)}
+        </div>
+      </>
+    );
+  }
+
+  return sidebarContent(false);
 };
 
 // ─────────────────────────────────────────────────────────── TopBar
-interface TopBarProps { onToggleSidebar: () => void; }
+interface TopBarProps {
+  onToggleSidebar: () => void;
+  onToggleMobile?: () => void;
+}
 
-export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar }) => {
+export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onToggleMobile }) => {
   const { data: session } = useSession();
+  const isMobile = useIsMobile();
   const username = session?.user?.name ?? session?.user?.email ?? '';
   return (
   <div style={{
     height: 56, borderBottom: '1px solid var(--hair)', background: 'var(--bg)',
-    display: 'flex', alignItems: 'center', padding: '0 28px', gap: 16,
+    display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12,
     position: 'sticky', top: 0, zIndex: 50,
   }}>
-    <button onClick={onToggleSidebar} title="Toggle sidebar" style={{
-      background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink-3)',
-      padding: 6, display: 'inline-flex', borderRadius: 3,
-    }}
+    <button
+      onClick={isMobile ? onToggleMobile : onToggleSidebar}
+      title={isMobile ? 'Open menu' : 'Toggle sidebar'}
+      style={{
+        background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink-3)',
+        padding: 6, display: 'inline-flex', borderRadius: 3,
+      }}
       onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface)')}
       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-      <IconPanelLeft size={16} />
+      {isMobile ? <IconMenu size={18} /> : <IconPanelLeft size={16} />}
     </button>
     <div style={{ flex: 1 }} />
     {username && (
