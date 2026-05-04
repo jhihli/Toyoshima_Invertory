@@ -22,6 +22,14 @@ export default function SOListPage() {
   const toast = useToast();
   const isMobile = useIsMobile();
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const defaultDateFrom = useMemo(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() - 1, 1).toISOString().slice(0, 10);
+  }, []);
+  const defaultDateTo = useMemo(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth() + 1, 1).toISOString().slice(0, 10);
+  }, []);
 
   const [sos, setSos] = useState<SO[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -31,8 +39,8 @@ export default function SOListPage() {
 
   const [q, setQ] = useState('');
   const [vendorFilter, setVendorFilter] = useState('');
-  const [dateFrom, setDateFrom] = useState(today);
-  const [dateTo, setDateTo] = useState(today);
+  const [dateFrom, setDateFrom] = useState(defaultDateFrom);
+  const [dateTo, setDateTo] = useState(defaultDateTo);
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' });
   const [newOpen, setNewOpen] = useState(false);
 
@@ -59,8 +67,8 @@ export default function SOListPage() {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
   };
 
-  const hasFilter = q || vendorFilter || dateFrom !== today || dateTo !== today;
-  const clearFilters = () => { setQ(''); setVendorFilter(''); setDateFrom(today); setDateTo(today); setPage(1); };
+  const hasFilter = q || vendorFilter || dateFrom !== defaultDateFrom || dateTo !== defaultDateTo;
+  const clearFilters = () => { setQ(''); setVendorFilter(''); setDateFrom(defaultDateFrom); setDateTo(defaultDateTo); setPage(1); };
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleExport = async () => {
