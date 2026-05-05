@@ -1581,29 +1581,26 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
             ))}
           </div>
           {mode === 'bulk' && (
-            <div style={{ display: 'flex', gap: 0, flex: 1, minWidth: 0, alignItems: 'flex-end' }}>
-              {/* Grouped: MPN + Pallet + Catalog */}
-              <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end' }}>
-                <div style={{ flex: '0 0 220px' }}>
-                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>MPN <span style={{ color: 'red' }}>*</span></div>
-                  <MpnComboInput value={bMpn} onChange={setBMpn} mpns={mpns} />
-                </div>
-                {/* Pallet + Catalog side by side with tight gap */}
-                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
-                  <div style={{ flex: '0 0 300px' }}>
-                    <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Pallet <span style={{ color: 'red' }}>*</span></div>
-                    <Select value={bPallet} onChange={setBPallet} options={palletOptions} size="lg" style={{ width: '100%' }} />
-                  </div>
-                  <div style={{ flex: '0 0 150px' }}>
-                    <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Catalog</div>
-                    <Input value={bCatalog} onChange={setBCatalog} placeholder="SSD-C3" style={{ width: '100%' }} />
-                  </div>
-                </div>
+            <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 0, alignItems: 'flex-end', flexWrap: 'wrap', rowGap: 6 }}>
+              {/* MPN */}
+              <div style={{ flex: '0 0 180px', minWidth: 140 }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>MPN <span style={{ color: 'red' }}>*</span></div>
+                <MpnComboInput value={bMpn} onChange={setBMpn} mpns={mpns} />
+              </div>
+              {/* Pallet */}
+              <div style={{ flex: '0 0 200px', minWidth: 140 }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Pallet <span style={{ color: 'red' }}>*</span></div>
+                <Select value={bPallet} onChange={setBPallet} options={palletOptions} size="lg" style={{ width: '100%' }} />
+              </div>
+              {/* Catalog */}
+              <div style={{ flex: '0 0 110px', minWidth: 90 }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Catalog</div>
+                <Input value={bCatalog} onChange={setBCatalog} placeholder="SSD-C3" style={{ width: '100%' }} />
               </div>
               {/* Divider */}
-              <div style={{ width: 1, background: 'var(--hair-strong)', alignSelf: 'stretch', margin: '0 20px' }} />
+              <div style={{ width: 1, background: 'var(--hair-strong)', alignSelf: 'stretch', margin: '0 8px', flexShrink: 0 }} />
               {/* Barcode scan field */}
-              <div style={{ flex: 1, minWidth: 260 }}>
+              <div style={{ flex: '0 0 200px', minWidth: 160 }}>
                 <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Barcode</div>
                 <Input value={bulkBarcode}
                   onChange={v => {
@@ -1631,7 +1628,7 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
           )}
         </div>
       }
-      width={mode === 'single' ? 520 : 1400}
+      width={mode === 'single' ? 520 : 1100}
       footer={mode === 'single'
         ? <>
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
