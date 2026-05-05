@@ -35,8 +35,10 @@ export default function SODetailPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteBoardId, setDeleteBoardId] = useState<number | null>(null);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  const [photosMenuOpen, setPhotosMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
+  const photosMenuRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
 
   // Board pagination + filter state
@@ -84,6 +86,17 @@ export default function SODetailPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, [actionMenuOpen]);
 
+  useEffect(() => {
+    if (!photosMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (photosMenuRef.current && !photosMenuRef.current.contains(e.target as Node)) {
+        setPhotosMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [photosMenuOpen]);
+
   if (loading || !so) {
     return <div className="page-pad" style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>;
   }
@@ -97,6 +110,15 @@ export default function SODetailPage() {
     qty: acc.qty + p.qty,
     boardQty: acc.boardQty + (p.board_qty ?? 0),
   }), { weight: 0, qty: 0, boardQty: 0 });
+
+  const palletOptions = [
+    { value: '', label: 'All pallets' },
+    ...so.pallets.map(p => {
+      const parts = [p.licence_number, p.payload_number].filter(Boolean);
+      const label = parts.length ? parts.join('-') : `#${String(p.pallet_seq).padStart(2, '0')}`;
+      return { value: String(p.id), label: `#${String(p.pallet_seq).padStart(2, '0')} · ${label}` };
+    }),
+  ];
 
   // Pallet handlers
   const handleUpdatePallet = async (pId: number, patch: Partial<Pallet>) => {
@@ -332,15 +354,15 @@ export default function SODetailPage() {
       ]} />
 
       {/* Title row */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', margin: isMobile ? '10px 0 12px' : '14px 0 20px', gap: 10 }}>
-        <div>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', margin: isMobile ? '8px 0 10px' : '8px 0 8px', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
           <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400, letterSpacing: '-0.01em' }}>
             {so.so_number}
           </h1>
           {!isMobile && (
-            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>
+            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
               Received {so.date} · {so.vendor_name} · Created {so.created_at?.slice(0, 10)}
-            </div>
+            </span>
           )}
         </div>
 
@@ -462,73 +484,163 @@ export default function SODetailPage() {
           </div>
         </Card>
       ) : (
-        <Card pad={0} style={{ marginBottom: 20 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
-            {([
-              ['Vendor', so.vendor_name, null],
-              ['Weight Rule', effectiveRule === 'per_pallet' ? 'Per Pallet' : 'Aggregated', ruleIsOverride ? 'override' : null],
-              ['Pallets', so.total_pallet_count, null],
-              ['Boards', so.total_board_count, null],
-            ] as [string, any, string | null][]).map(([k, v, tag], i) => (
-              <div key={k} style={{ padding: '16px 20px', borderRight: i < 3 ? '1px solid var(--hair)' : 'none' }}>
-                <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 6 }}>{k}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  {k === 'Weight Rule' ? (
-                    <Badge tone={effectiveRule === 'per_pallet' ? 'ok' : 'blue'}>{v}</Badge>
-                  ) : (
-                    <div className={typeof v === 'number' ? 'num' : ''} style={{ fontSize: 14, color: 'var(--ink)' }}>
-                      {v || '—'}
-                    </div>
-                  )}
-                  {tag === 'override' && <Badge tone="warn">Override</Badge>}
-                </div>
+        <Card pad={0} style={{ marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'stretch' }}>
+            {/* Vendor */}
+            <div style={{ flex: '0 0 160px', padding: '6px 12px', borderRight: '1px solid var(--hair)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Vendor</div>
+              <div style={{ fontSize: 13, color: 'var(--ink)' }}>{so.vendor_name || '—'}</div>
+            </div>
+            {/* Weight Rule */}
+            <div style={{ flex: '0 0 150px', padding: '6px 12px', borderRight: '1px solid var(--hair)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Weight Rule</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                <Badge tone={effectiveRule === 'per_pallet' ? 'ok' : 'blue'}>
+                  {effectiveRule === 'per_pallet' ? 'Per Pallet' : 'Aggregated'}
+                </Badge>
+                {ruleIsOverride && <Badge tone="warn">Override</Badge>}
               </div>
-            ))}
-          </div>
-          <div style={{ padding: '14px 20px', borderTop: '1px solid var(--hair)', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-            <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginTop: 3, minWidth: 60 }}>Note</span>
-            <div style={{ flex: 1 }}>
+            </div>
+            {/* Pallets */}
+            <div style={{ flex: '0 0 90px', padding: '6px 12px', borderRight: '1px solid var(--hair)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Pallets</div>
+              <div className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>{so.total_pallet_count}</div>
+            </div>
+            {/* Boards */}
+            <div style={{ flex: '0 0 90px', padding: '6px 12px', borderRight: '1px solid var(--hair)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Boards</div>
+              <div className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>{so.total_board_count}</div>
+            </div>
+            {/* Note */}
+            <div style={{ flex: 1, padding: '6px 12px', minWidth: 0, borderRight: '1px solid var(--hair)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
               <EditableCell value={so.note} onSave={v => handleSaveMeta({ note: v })} />
-              {!so.note && <div style={{ fontSize: 11, color: 'var(--ink-4)', marginTop: 2, paddingLeft: 6 }}>Double-click to add a note.</div>}
+            </div>
+            {/* Photos dropdown */}
+            <div ref={photosMenuRef} style={{ flex: '0 0 auto', padding: '6px 12px', position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <button
+                onClick={() => setPhotosMenuOpen(o => !o)}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '4px 10px', borderRadius: 4, border: '1px solid var(--hair-strong)',
+                  background: photosMenuOpen ? 'var(--surface-2)' : 'var(--surface)',
+                  color: 'var(--ink)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <ImageIcon />
+                <span>{so.photos.length} photo{so.photos.length !== 1 ? 's' : ''}</span>
+                <ChevronDownIcon />
+              </button>
+              {photosMenuOpen && (
+                <div style={{
+                  position: 'absolute', right: 0, top: '100%', zIndex: 200,
+                  background: 'var(--surface)', border: '1px solid var(--hair-strong)',
+                  borderRadius: 6, padding: 12, width: 300,
+                  boxShadow: '0 4px 16px rgba(0,0,0,0.10)',
+                }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {so.photos.map(p => (
+                      <PhotoThumb key={p.id} url={p.image_url} caption={p.caption} size={80}
+                        onClick={() => { setLightbox(p); setPhotosMenuOpen(false); }}
+                        onDelete={() => handleDeletePhoto(p.id)} />
+                    ))}
+                    <div onClick={() => { fileInputRef.current?.click(); setPhotosMenuOpen(false); }} style={{
+                      width: 80, height: 80, border: '1px dashed var(--hair-strong)', borderRadius: 3,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      gap: 3, color: 'var(--ink-3)', fontSize: 10, cursor: 'pointer', background: 'var(--surface)',
+                    }}
+                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface)')}>
+                      <PlusIcon />
+                      <span>Add photo</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </Card>
       )}
-
-      {/* Photos — desktop only; mobile shows compact strip inside meta card */}
-      {!isMobile && (
-        <div style={{ marginBottom: 24 }}>
-          <SectionHeader label="Photos" count={so.photos.length}
-            action={<Button size="sm" variant="outline" icon={<UploadIcon />} onClick={() => fileInputRef.current?.click()}>Upload</Button>} />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 10 }}>
-            {so.photos.map(p => (
-              <PhotoThumb key={p.id} url={p.image_url} caption={p.caption}
-                onClick={() => setLightbox(p)}
-                onDelete={() => handleDeletePhoto(p.id)} />
-            ))}
-            <div onClick={() => fileInputRef.current?.click()} style={{
-              height: 120, border: '1px dashed var(--hair-strong)', borderRadius: 3,
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              gap: 4, color: 'var(--ink-3)', fontSize: 11, cursor: 'pointer', background: 'var(--surface)',
-            }}
-              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'var(--surface)')}>
-              <PlusIcon />
-              <span>Add photo</span>
-            </div>
-          </div>
-        </div>
-      )}
       <input ref={fileInputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
         onChange={e => { handlePhotoFiles(e.target.files); e.target.value = ''; }} />
 
-      {/* Tabs */}
-      <Tabs value={tab} onChange={v => setTab(v as any)} tabs={[
-        { value: 'pallets', label: 'Pallets', count: so.pallets.length },
-        { value: 'boards', label: 'Boards', count: so.total_board_count },
-      ]} />
+      {/* Combined tab + action row */}
+      {isMobile ? (
+        <Tabs value={tab} onChange={v => setTab(v as any)} tabs={[
+          { value: 'pallets', label: 'Pallets', count: so.pallets.length },
+          { value: 'boards', label: 'Boards', count: so.total_board_count },
+        ]} />
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--hair)' }}>
+          {/* Tab buttons */}
+          {[
+            { value: 'pallets', label: 'Pallets', count: so.pallets.length },
+            { value: 'boards', label: 'Boards', count: so.total_board_count },
+          ].map(t => {
+            const active = tab === t.value;
+            return (
+              <button key={t.value} onClick={() => setTab(t.value as any)} style={{
+                background: active ? 'var(--accent-light)' : 'none',
+                border: 0, padding: '9px 16px', cursor: 'pointer',
+                color: active ? 'var(--accent-2)' : 'var(--ink-3)',
+                borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
+                marginBottom: -1, fontSize: 13, fontWeight: active ? 500 : 400,
+                borderRadius: '3px 3px 0 0',
+                display: 'inline-flex', alignItems: 'center', gap: 7,
+                fontFamily: 'inherit', transition: 'background .1s, color .1s', flexShrink: 0,
+              }}
+              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
+              onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'none'; }}>
+                {t.label}
+                <span className="num" style={{
+                  fontSize: 11, padding: '1px 7px', borderRadius: 10, lineHeight: 1.6,
+                  color: active ? 'var(--accent-2)' : 'var(--ink-4)',
+                  background: active ? 'rgba(45,106,79,0.15)' : 'var(--surface-2)',
+                }}>{t.count}</span>
+              </button>
+            );
+          })}
+          <div style={{ flex: 1 }} />
+          {/* Pallets actions */}
+          {tab === 'pallets' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 0 12px' }}>
+              <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                <span className="num">{so.pallets.length}</span> record{so.pallets.length === 1 ? '' : 's'}
+              </span>
+              <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={() => setAddPalletOpen(true)}>
+                Add pallet
+              </Button>
+            </div>
+          )}
+          {/* Boards actions */}
+          {tab === 'boards' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 0 12px' }}>
+              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Pallet</span>
+              <div style={{ minWidth: 160 }}>
+                <Select value={boardPalletFilter} onChange={v => { setBoardPalletFilter(v); setBoardPage(1); }} options={palletOptions} />
+              </div>
+              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Scanned</span>
+              <input type="date" value={boardDateFrom} onChange={e => { setBoardDateFrom(e.target.value); setBoardPage(1); }}
+                style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
+              <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>→</span>
+              <input type="date" value={boardDateTo} onChange={e => { setBoardDateTo(e.target.value); setBoardPage(1); }}
+                style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
+              {(boardDateFrom || boardDateTo || boardPalletFilter) && (
+                <Button size="sm" variant="ghost" onClick={() => { setBoardDateFrom(''); setBoardDateTo(''); setBoardPalletFilter(''); setBoardPage(1); }}>Clear</Button>
+              )}
+              <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
+                <span className="num">{boardTotal}</span> boards
+              </span>
+              <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={handleOpenAddBoard} disabled={so.pallets.length === 0}>
+                Add board
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
 
-      <div style={{ padding: '20px 0' }}>
+      <div style={{ padding: isMobile ? '10px 0' : '12px 0' }}>
         {tab === 'pallets' && (
           <PalletsTab
             pallets={so.pallets}
@@ -673,14 +785,16 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
 
   return (
     <>
-      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-          <span className="num">{pallets.length}</span> record{pallets.length === 1 ? '' : 's'}
+      {isMobile && (
+        <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+            <span className="num">{pallets.length}</span> record{pallets.length === 1 ? '' : 's'}
+          </div>
+          <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={onAdd} disabled={addDisabled}>
+            Add pallet
+          </Button>
         </div>
-        <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={onAdd} disabled={addDisabled}>
-          Add pallet
-        </Button>
-      </div>
+      )}
 
       {isMobile ? (
         /* Mobile: pallet cards */
@@ -941,7 +1055,7 @@ function BoardsTab({ boards, pallets, total, page, pageCount, dateFrom, dateTo, 
 
   return (
     <div>
-      {filterBar}
+      {isMobile && filterBar}
 
       {isMobile ? (
         /* Mobile: board cards */
@@ -1152,13 +1266,13 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
 
   // bulk
   const blankRow = (): PalletRowData => ({ licence_number: '', payload_number: '', weight: '', qty: aggregated ? '' : '1', board_qty: '' });
-  const [rows, setRows] = useState<PalletRowData[]>([blankRow(), blankRow(), blankRow()]);
+  const [rows, setRows] = useState<PalletRowData[]>(Array.from({ length: 10 }, blankRow));
 
   useEffect(() => {
     if (open) {
       setMode('single');
       setW(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload(''); setBoardQty('');
-      setRows([blankRow(), blankRow(), blankRow()]);
+      setRows(Array.from({ length: 10 }, blankRow));
     }
   }, [open, aggregated]);
 
@@ -1190,8 +1304,21 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={aggregated ? 'Add Pallet(aggregated)' : 'Add Pallet(per pallet)'}
-      width={mode === 'bulk' ? 880 : 500}
+    <Modal open={open} onClose={onClose}
+      title={
+        <div style={{ display: 'flex', gap: 0, border: '1px solid var(--hair)', borderRadius: 3, padding: 2, width: 'fit-content' }}>
+          {(['single', 'bulk'] as const).map(k => (
+            <button key={k} onClick={() => setMode(k)}
+              style={{ padding: '5px 14px', fontSize: 12, border: 0, cursor: 'pointer',
+                background: mode === k ? 'var(--ink)' : 'transparent',
+                color: mode === k ? '#fff' : 'var(--ink-3)',
+                borderRadius: 2, letterSpacing: 0.2, fontWeight: mode === k ? 500 : 400 }}>
+              {k === 'single' ? 'One' : 'Multi'}
+            </button>
+          ))}
+        </div>
+      }
+      width={mode === 'bulk' ? 1000 : 500}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         {mode === 'single'
@@ -1200,18 +1327,6 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
               Add {filledRows.length || ''} pallet{filledRows.length === 1 ? '' : 's'}
             </Button>}
       </>}>
-      <div style={{ display: 'flex', gap: 0, marginBottom: 16, border: '1px solid var(--hair)',
-        borderRadius: 3, padding: 2, width: 'fit-content' }}>
-        {(['single', 'bulk'] as const).map(k => (
-          <button key={k} onClick={() => setMode(k)}
-            style={{ padding: '5px 14px', fontSize: 12, border: 0, cursor: 'pointer',
-              background: mode === k ? 'var(--ink)' : 'transparent',
-              color: mode === k ? '#fff' : 'var(--ink-3)',
-              borderRadius: 2, letterSpacing: 0.2, fontWeight: mode === k ? 500 : 400 }}>
-            {k === 'single' ? 'Single' : 'Bulk pallets'}
-          </button>
-        ))}
-      </div>
 
       {mode === 'single' && (
         <>
@@ -1249,7 +1364,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Board Qty</div>
               <div />
             </div>
-            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+            <div>
               {rows.map((r, i) => {
                 const isDup = !!r.licence_number && dupLicences.has(r.licence_number.trim());
                 return (
@@ -1357,7 +1472,7 @@ function MpnComboInput({ value, onChange, mpns, autoFocus, placeholder }: {
     <div style={{ position: 'relative' }}>
       <input
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={e => onChange(e.target.value.toUpperCase())}
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         autoFocus={autoFocus}
@@ -1411,12 +1526,15 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
   const [bMpn, setBMpn] = useState('');
   const [bPallet, setBPallet] = useState('');
   const [selectedBulkIdx, setSelectedBulkIdx] = useState<number | null>(null);
+  const [bulkBarcodeFocused, setBulkBarcodeFocused] = useState(false);
+  const [bulkPage, setBulkPage] = useState(1);
+  const BULK_PAGE_SIZE = 108;
 
   useEffect(() => {
     if (open) {
       setMode('single');
       setBarcode(''); setCatalog(''); setMpn(''); setWeight(''); setQty('0'); setNote(''); setPallet('');
-      setBulkBarcode(''); setBulkRows([]); setBCatalog(''); setBMpn(''); setBPallet(''); setSelectedBulkIdx(null);
+      setBulkBarcode(''); setBulkRows([]); setBCatalog(''); setBMpn(''); setBPallet(''); setSelectedBulkIdx(null); setBulkPage(1);
     }
   }, [open]);
 
@@ -1432,19 +1550,88 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
   const canSaveSingle = mpn.trim() !== '' && pallet !== '' && qty.trim() !== '' && +qty > 0;
   const canSaveBulk = bulkRows.length > 0 && bMpn.trim() !== '' && bPallet !== '';
   const dupCount = bulkRows.length - new Set(bulkRows.map(r => r.barcode)).size;
+  const bulkTotalPages = Math.max(1, Math.ceil(bulkRows.length / BULK_PAGE_SIZE));
+  const bulkSafePage = Math.min(bulkPage, bulkTotalPages);
 
   const pushBulk = (raw: string) => {
     const v = (raw || '').trim();
     if (!v) return;
-    setBulkRows(rs => [...rs, { barcode: v }]);
+    setBulkRows(rs => {
+      const next = [...rs, { barcode: v }];
+      setBulkPage(Math.ceil(next.length / BULK_PAGE_SIZE));
+      return next;
+    });
     setBulkBarcode('');
   };
   const removeBulk = (i: number) => { setBulkRows(rs => rs.filter((_, j) => j !== i)); setSelectedBulkIdx(null); };
 
   return (
     <Modal open={open} onClose={onClose}
-      title={mode === 'single' ? 'Add board' : 'Bulk scan boards'}
-      width={mode === 'single' ? 520 : 1080}
+      title={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', gap: 0, border: '1px solid var(--hair)', borderRadius: 3, padding: 2, flexShrink: 0 }}>
+            {(['single', 'bulk'] as const).map((k) => (
+              <button key={k} onClick={() => setMode(k)}
+                style={{ padding: '5px 14px', fontSize: 12, border: 0, cursor: 'pointer',
+                  background: mode === k ? 'var(--ink)' : 'transparent',
+                  color: mode === k ? '#fff' : 'var(--ink-3)',
+                  borderRadius: 2, letterSpacing: 0.2, fontWeight: mode === k ? 500 : 400 }}>
+                {k === 'single' ? 'One' : 'Multi'}
+              </button>
+            ))}
+          </div>
+          {mode === 'bulk' && (
+            <div style={{ display: 'flex', gap: 0, flex: 1, minWidth: 0, alignItems: 'flex-end' }}>
+              {/* Grouped: MPN + Pallet + Catalog */}
+              <div style={{ display: 'flex', gap: 20, alignItems: 'flex-end' }}>
+                <div style={{ flex: '0 0 220px' }}>
+                  <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>MPN <span style={{ color: 'red' }}>*</span></div>
+                  <MpnComboInput value={bMpn} onChange={setBMpn} mpns={mpns} />
+                </div>
+                {/* Pallet + Catalog side by side with tight gap */}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'flex-end' }}>
+                  <div style={{ flex: '0 0 300px' }}>
+                    <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Pallet <span style={{ color: 'red' }}>*</span></div>
+                    <Select value={bPallet} onChange={setBPallet} options={palletOptions} size="lg" style={{ width: '100%' }} />
+                  </div>
+                  <div style={{ flex: '0 0 150px' }}>
+                    <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Catalog</div>
+                    <Input value={bCatalog} onChange={setBCatalog} placeholder="SSD-C3" style={{ width: '100%' }} />
+                  </div>
+                </div>
+              </div>
+              {/* Divider */}
+              <div style={{ width: 1, background: 'var(--hair-strong)', alignSelf: 'stretch', margin: '0 20px' }} />
+              {/* Barcode scan field */}
+              <div style={{ flex: 1, minWidth: 260 }}>
+                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Barcode</div>
+                <Input value={bulkBarcode}
+                  onChange={v => {
+                    if (v.includes('\r') || v.includes('\n')) {
+                      pushBulk(v.replace(/[\r\n]/g, '').trim());
+                    } else {
+                      setBulkBarcode(v);
+                    }
+                  }}
+                  placeholder="Scan or type, then press Enter" autoFocus
+                  onFocus={() => setBulkBarcodeFocused(true)}
+                  onBlur={() => setBulkBarcodeFocused(false)}
+                  onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      pushBulk((e.target as HTMLInputElement).value);
+                    }
+                  }}
+                  style={{
+                    fontFamily: 'ui-monospace, monospace', width: '100%',
+                    ...(bulkBarcodeFocused ? { background: '#e8f5e9', border: '1px solid #4caf50' } : {}),
+                  }} />
+              </div>
+            </div>
+          )}
+        </div>
+      }
+      width={mode === 'single' ? 520 : 1400}
       footer={mode === 'single'
         ? <>
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
@@ -1452,30 +1639,33 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
               onClick={() => { onAdd({ barcode, catalog, mpn, weight, qty, note, pallet }); onClose(); }}>Add</Button>
           </>
         : <>
-            <span style={{ flex: 1, fontSize: 12, color: 'var(--ink-3)' }}>
-              <span className="num" style={{ color: 'var(--ink)', fontWeight: 500 }}>{bulkRows.length}</span> scanned
-              {dupCount > 0 && <span style={{ marginLeft: 10, color: '#b8782a' }}>· {dupCount} duplicate{dupCount > 1 ? 's' : ''}</span>}
+            <span style={{ fontSize: 22, color: 'var(--ink-3)', fontWeight: 500, flexShrink: 0 }}>
+              <span className="num" style={{ color: 'var(--ink)', fontWeight: 700 }}>{bulkRows.length}</span> scanned
+              {dupCount > 0 && <span style={{ marginLeft: 12, color: '#b8782a' }}>· {dupCount} duplicate{dupCount > 1 ? 's' : ''}</span>}
             </span>
+            {bulkTotalPages > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'center' }}>
+                <button onClick={() => setBulkPage(p => Math.max(1, p - 1))} disabled={bulkSafePage === 1}
+                  style={{ padding: '4px 12px', fontSize: 13, border: '1px solid var(--hair-strong)',
+                    borderRadius: 3, background: 'var(--surface)', cursor: bulkSafePage === 1 ? 'not-allowed' : 'pointer',
+                    opacity: bulkSafePage === 1 ? 0.4 : 1, color: 'var(--ink)' }}>‹ Prev</button>
+                <span style={{ fontSize: 13, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                  Page <span style={{ color: 'var(--ink)', fontWeight: 600 }}>{bulkSafePage}</span> / {bulkTotalPages}
+                  <span style={{ marginLeft: 8, fontSize: 12 }}>({(bulkSafePage - 1) * BULK_PAGE_SIZE + 1}–{Math.min(bulkSafePage * BULK_PAGE_SIZE, bulkRows.length)})</span>
+                </span>
+                <button onClick={() => setBulkPage(p => Math.min(bulkTotalPages, p + 1))} disabled={bulkSafePage === bulkTotalPages}
+                  style={{ padding: '4px 12px', fontSize: 13, border: '1px solid var(--hair-strong)',
+                    borderRadius: 3, background: 'var(--surface)', cursor: bulkSafePage === bulkTotalPages ? 'not-allowed' : 'pointer',
+                    opacity: bulkSafePage === bulkTotalPages ? 0.4 : 1, color: 'var(--ink)' }}>Next ›</button>
+              </div>
+            )}
+            {bulkTotalPages <= 1 && <span style={{ flex: 1 }} />}
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
             <Button variant="primary" disabled={!canSaveBulk}
               onClick={() => { onAddBulk(bulkRows, { catalog: bCatalog, mpn: bMpn, pallet: bPallet }); onClose(); }}>
               Add {bulkRows.length || ''} board{bulkRows.length === 1 ? '' : 's'}
             </Button>
           </>}>
-
-      {/* Mode switcher */}
-      <div style={{ display: 'flex', gap: 0, marginBottom: 14, border: '1px solid var(--hair)',
-        borderRadius: 3, padding: 2, width: 'fit-content' }}>
-        {(['single', 'bulk'] as const).map((k) => (
-          <button key={k} onClick={() => setMode(k)}
-            style={{ padding: '5px 14px', fontSize: 12, border: 0, cursor: 'pointer',
-              background: mode === k ? 'var(--ink)' : 'transparent',
-              color: mode === k ? '#fff' : 'var(--ink-3)',
-              borderRadius: 2, letterSpacing: 0.2, fontWeight: mode === k ? 500 : 400 }}>
-            {k === 'single' ? 'Single' : 'Bulk scan'}
-          </button>
-        ))}
-      </div>
 
       {mode === 'single' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -1507,83 +1697,54 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
         </div>
       )}
 
-      {mode === 'bulk' && (
-        <div>
-          {/* Top row: MPN | Catalog | Pallet | Barcode input */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.4fr', gap: 12,
-            marginBottom: 10, alignItems: 'end' }}>
-            <Field label={<>MPN <span style={{ color: 'red' }}>*</span></>}>
-              <MpnComboInput value={bMpn} onChange={setBMpn} mpns={mpns} />
-            </Field>
-            <Field label={<>Pallet <span style={{ color: 'red' }}>*</span></>}>
-              <Select value={bPallet} onChange={setBPallet} options={palletOptions} />
-            </Field>
-            <Field label="Catalog">
-              <Input value={bCatalog} onChange={setBCatalog} placeholder="SSD-C3" />
-            </Field>
-            <Field label="Barcode">
-              <Input value={bulkBarcode}
-                onChange={v => {
-                  if (v.includes('\r') || v.includes('\n')) {
-                    pushBulk(v.replace(/[\r\n]/g, '').trim());
-                  } else {
-                    setBulkBarcode(v);
-                  }
-                }}
-                placeholder="Scan or type, then press Enter" autoFocus
-                onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    pushBulk((e.target as HTMLInputElement).value);
-                  }
-                }}
-                style={{ fontFamily: 'ui-monospace, monospace' }} />
-            </Field>
+      {mode === 'bulk' && (() => {
+        const pageRows = bulkRows.slice((bulkSafePage - 1) * BULK_PAGE_SIZE, bulkSafePage * BULK_PAGE_SIZE);
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* 6-column barcode grid — fixed, no scroll */}
+            <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)', minHeight: 580 }}>
+              {bulkRows.length === 0 && (
+                <div style={{ padding: '120px 16px', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>
+                  <div style={{ fontSize: 22, opacity: 0.25, marginBottom: 6 }}>⌁</div>
+                  No barcodes scanned yet
+                </div>
+              )}
+              {bulkRows.length > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)' }}>
+                  {pageRows.map((r, pi) => {
+                    const i = (bulkSafePage - 1) * BULK_PAGE_SIZE + pi;
+                    const dup = bulkRows.findIndex(x => x.barcode === r.barcode) !== i;
+                    const selected = selectedBulkIdx === i;
+                    const col = pi % 6;
+                    return (
+                      <div key={i}
+                        onClick={() => setSelectedBulkIdx(selected ? null : i)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '0.1px 5px', cursor: 'pointer',
+                          borderBottom: '1px solid var(--hair)',
+                          borderRight: col < 5 ? '1px solid var(--hair)' : 'none',
+                          fontSize: 12, minWidth: 0,
+                          background: dup ? (selected ? '#f87171' : '#fca5a5') : selected ? 'var(--surface-2)' : 'transparent',
+                        }}>
+                        <span style={{ flex: 1, minWidth: 0, fontFamily: 'ui-monospace, monospace',
+                          color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden',
+                          textOverflow: 'ellipsis', fontWeight: 600, fontSize: 20 }}>{r.barcode}</span>
+                        {selected && (
+                          <button onClick={e => { e.stopPropagation(); removeBulk(i); }}
+                            style={{ background: 'none', border: 0, cursor: 'pointer',
+                              color: 'var(--ink-3)', fontSize: 16, lineHeight: 1, padding: 2,
+                              flexShrink: 0 }}>×</button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-
-          {/* 6-column barcode grid */}
-          <div style={{ border: '1px solid var(--hair)', borderRadius: 3,
-            background: 'var(--surface)', height: 520, overflowY: 'auto' }}>
-            {bulkRows.length === 0 && (
-              <div style={{ padding: '120px 16px', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>
-                <div style={{ fontSize: 22, opacity: 0.25, marginBottom: 6 }}>⌁</div>
-                No barcodes scanned yet
-              </div>
-            )}
-            {bulkRows.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)' }}>
-                {bulkRows.map((r, i) => {
-                  const dup = bulkRows.findIndex(x => x.barcode === r.barcode) !== i;
-                  const selected = selectedBulkIdx === i;
-                  const col = i % 6;
-                  return (
-                    <div key={i}
-                      onClick={() => setSelectedBulkIdx(selected ? null : i)}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '6px 8px', cursor: 'pointer',
-                        borderBottom: '1px solid var(--hair)',
-                        borderRight: col < 5 ? '1px solid var(--hair)' : 'none',
-                        fontSize: 12, minWidth: 0,
-                        background: dup ? (selected ? '#f5c6c6' : '#fde8e8') : selected ? 'var(--surface-2)' : 'transparent',
-                      }}>
-                      <span style={{ flex: 1, minWidth: 0, fontFamily: 'ui-monospace, monospace',
-                        color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden',
-                        textOverflow: 'ellipsis' }}>{r.barcode}</span>
-                      {selected && (
-                        <button onClick={e => { e.stopPropagation(); removeBulk(i); }}
-                          style={{ background: 'none', border: 0, cursor: 'pointer',
-                            color: 'var(--ink-3)', fontSize: 14, lineHeight: 1, padding: 2,
-                            flexShrink: 0 }}>×</button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </Modal>
   );
 }
@@ -1627,5 +1788,17 @@ const TrashIcon = () => (
 const ChevronIcon = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="9 18 15 12 9 6" />
+  </svg>
+);
+const ChevronDownIcon = () => (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
+const ImageIcon = () => (
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+    <circle cx="8.5" cy="8.5" r="1.5" />
+    <polyline points="21 15 16 10 5 21" />
   </svg>
 );

@@ -71,6 +71,8 @@ interface InputProps {
   type?: string;
   style?: CSSProperties;
   onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
   autoFocus?: boolean;
   size?: 'sm' | 'md';
   disabled?: boolean;
@@ -78,7 +80,7 @@ interface InputProps {
 
 export const Input: React.FC<InputProps> = ({
   value, onChange, placeholder, icon, type = 'text', style,
-  onKeyDown, autoFocus, size = 'md', disabled = false,
+  onKeyDown, onFocus, onBlur, autoFocus, size = 'md', disabled = false,
 }) => {
   const ref = useRef<HTMLInputElement>(null);
   const [focused, setFocused] = useState(false);
@@ -97,8 +99,8 @@ export const Input: React.FC<InputProps> = ({
       <input ref={ref} type={type} value={value} disabled={disabled}
         onChange={e => onChange?.(e.target.value)}
         placeholder={placeholder} onKeyDown={onKeyDown}
-        onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onFocus={() => { setFocused(true); onFocus?.(); }}
+        onBlur={() => { setFocused(false); onBlur?.(); }}
         style={{
           border: 0, outline: 0, boxShadow: 'none', background: 'transparent',
           color: disabled ? 'var(--ink-3)' : 'var(--ink)',
@@ -118,13 +120,14 @@ interface SelectProps {
   options: SelectOption[];
   placeholder?: string;
   style?: CSSProperties;
-  size?: 'sm' | 'md';
+  size?: 'sm' | 'md' | 'lg';
 }
 
 export const Select: React.FC<SelectProps> = ({
   value, onChange, options, placeholder, style, size = 'md',
 }) => {
-  const h = size === 'sm' ? 30 : 36;
+  const h = size === 'sm' ? 30 : size === 'lg' ? 36 : 36;
+  const fs = size === 'sm' ? 12 : size === 'lg' ? 15 : 13;
   return (
     <div style={{ position: 'relative', display: 'inline-block', ...style }}>
       <select value={value} onChange={e => onChange(e.target.value)}
@@ -133,7 +136,7 @@ export const Select: React.FC<SelectProps> = ({
           border: '1px solid var(--hair-strong)', borderRadius: 3,
           background: 'var(--surface)', height: h,
           padding: '0 28px 0 10px', color: 'var(--ink)',
-          fontSize: size === 'sm' ? 12 : 13, cursor: 'pointer',
+          fontSize: fs, cursor: 'pointer',
           outline: 'none', width: '100%', fontFamily: 'inherit',
         }}>
         {placeholder && <option value="">{placeholder}</option>}
@@ -216,7 +219,7 @@ export const SectionHeader: React.FC<SectionHeaderProps> = ({ label, count, acti
 
 // ─────────────────────────────────────────────────────────── Modal
 interface ModalProps {
-  open: boolean; onClose: () => void; title: string;
+  open: boolean; onClose: () => void; title: ReactNode;
   children: ReactNode; width?: number; footer?: ReactNode;
 }
 
@@ -238,7 +241,7 @@ export const Modal: React.FC<ModalProps> = ({ open, onClose, title, children, wi
     }}>
       <div className="modal-in" onClick={e => e.stopPropagation()} style={{
         background: 'var(--surface)', border: '1px solid var(--hair-strong)',
-        borderRadius: 3, width, maxWidth: '92vw', maxHeight: 'calc(100vh - 96px)',
+        borderRadius: 3, width, maxWidth: '97vw', maxHeight: 'calc(100vh - 96px)',
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
         boxShadow: '0 20px 60px rgba(26,25,23,0.12)',
       }}>
@@ -246,13 +249,14 @@ export const Modal: React.FC<ModalProps> = ({ open, onClose, title, children, wi
           padding: '16px 20px', borderBottom: '1px solid var(--hair)',
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
-          <div style={{ fontSize: 13, fontWeight: 500 }}>{title}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, flex: 1, minWidth: 0 }}>{title}</div>
           <button onClick={onClose} style={{
-            background: 'none', border: 0, cursor: 'pointer',
-            color: 'var(--ink-3)', display: 'inline-flex', padding: 4,
+            background: 'var(--surface-2)', border: '1px solid var(--hair-strong)', cursor: 'pointer',
+            color: 'var(--ink-2)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, borderRadius: 6, flexShrink: 0, marginLeft: 12,
           }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
@@ -524,7 +528,7 @@ export const thS: CSSProperties = {
   fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase',
   color: 'var(--ink-3)', borderBottom: '1px solid var(--hair)',
 };
-export const tdS: CSSProperties = { padding: '10px 14px', fontSize: 12.5, verticalAlign: 'middle' };
+export const tdS: CSSProperties = { padding: '6px 14px', fontSize: 12.5, verticalAlign: 'middle' };
 export const ghostBtn: CSSProperties = {
   background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink-3)',
   padding: 4, borderRadius: 3, display: 'inline-flex',
