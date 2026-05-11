@@ -88,7 +88,7 @@ export default function SOListPage() {
         if (pallets.length === 0) {
           rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': '', 'Licence No': '', 'Gateload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards(REAL)': '', 'Boards(Scan)': s.total_board_count });
         } else {
-          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Gateload No': p.gateload_number || '', 'Weight (lb)': parseFloat(p.weight), 'Pallet Qty': p.qty, 'Boards(REAL)': p.board_qty ?? '', 'Boards(Scan)': s.total_board_count }));
+          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Gateload No': p.gateload_number || '', 'Weight (lb)': parseFloat(p.in_weight_gross), 'Pallet Qty': p.qty, 'Boards(REAL)': p.board_qty ?? '', 'Boards(Scan)': s.total_board_count }));
         }
       });
       const ws1 = XLSX.utils.json_to_sheet(rows);
@@ -103,9 +103,9 @@ export default function SOListPage() {
         const pallets = palletsPerSO[idx];
         let totalW = 0, totalQ = 0;
         pallets.forEach(p => {
-          totalW += parseFloat(p.weight);
+          totalW += parseFloat(p.in_weight_gross);
           totalQ += p.qty;
-          aoaData.push([s.so_number, s.vendor_name, s.date, p.pallet_seq, p.licence_number || '', p.gateload_number || '', parseFloat(p.weight), p.qty, p.board_qty ?? '', s.total_board_count]);
+          aoaData.push([s.so_number, s.vendor_name, s.date, p.pallet_seq, p.licence_number || '', p.gateload_number || '', parseFloat(p.in_weight_gross), p.qty, p.board_qty ?? '', s.total_board_count]);
           rowPtr++;
         });
         // Subtotal row for this SO — includes Boards(REAL) and Boards(Scan) totals
