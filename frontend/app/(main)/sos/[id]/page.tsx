@@ -1086,7 +1086,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
 }
 
 // ─── Boards Tab ───────────────────────────────────────────────────
-function BoardsTab({ boards, pallets, soNumber, total, dateFrom, dateTo, palletFilter,
+function BoardsTab({ boards, pallets, soNumber, dateFrom, dateTo, palletFilter,
   barcodeSearch,
   onDateFromChange, onDateToChange, onPalletFilterChange, onBarcodeSearchChange,
   onAddBoard, onDeleteBoard }: {
