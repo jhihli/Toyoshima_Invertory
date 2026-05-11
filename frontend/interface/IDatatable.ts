@@ -42,11 +42,27 @@ export interface Pallet {
   so: number;
   pallet_seq: number;
   licence_number: string;
-  payload_number: string;
-  weight: string;
+  gateload_number: string;
+  in_weight_gross: string;
+  actual_weight: string | null;
+  material_type: string;
   qty: number;
   board_qty: number | null;
   created_at: string;
+}
+
+export interface MPN {
+  id: number;
+  name: string;
+  part_type: string;
+  beforecut_weight: number | null;
+  aftercut_weight: number | null;
+  chip_qty: number | null;
+  beforecut_photo_url?: string | null;
+  aftercut_photo_url?: string | null;
+  board_count?: number;
+  created_at: string;
+  chips?: Chip[];
 }
 
 export interface Board {
@@ -55,13 +71,10 @@ export interface Board {
   pallet: number | null;
   pallet_label: string | null;
   barcode: string;
-  catalog: string;
-  weight: string | null;
   qty: number;
-  mpn: string;
+  mpn: MPN | null;
   photo: string | null;
   photo_url: string | null;
-  note: string;
   scanned_at: string;
   chips: Chip[];
   chip_count: number;
@@ -77,8 +90,12 @@ export interface Chip {
   mpn: number | null;
   brand: number | null;
   brand_name: string | null;
+  chip_mpn: string;
+  chip_type: string;
+  chip_photo: string | null;
+  chip_photo_url: string | null;
   qty: number;
-  note: string;
+  description: string;
 }
 
 export interface PaginatedResult<T> {

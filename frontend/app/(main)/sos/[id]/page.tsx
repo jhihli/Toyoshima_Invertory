@@ -1,19 +1,18 @@
 'use client';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter, useParams } from 'next/navigation';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import {
-  Button, Input, Select, Modal, Pagination, Breadcrumbs, Tabs,
+  Button, Input, Select, Modal, Breadcrumbs, Tabs,
   Card, SectionHeader, EditableCell, Field, Empty, Badge, useToast,
   thS, tdS, ghostBtn,
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
 import { WeightRuleField } from '../WeightRuleField';
-import type { SODetail, Pallet, Board, Chip, ChipBrand, Vendor } from '@/interface/IDatatable';
+import type { SODetail, Pallet, Board, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
-
-const BOARDS_PAGE_SIZE = 20;
 
 export default function SODetailPage() {
   const router = useRouter();
@@ -23,7 +22,6 @@ export default function SODetailPage() {
 
   const [so, setSo] = useState<SODetail | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
-  const [chipBrands, setChipBrands] = useState<ChipBrand[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'pallets' | 'boards'>('pallets');
   const [editMeta, setEditMeta] = useState(false);
@@ -31,9 +29,9 @@ export default function SODetailPage() {
   const [addBoardOpen, setAddBoardOpen] = useState(false);
   const [boardMpns, setBoardMpns] = useState<string[]>([]);
   const [lightbox, setLightbox] = useState<SODetail['photos'][0] | null>(null);
-  const [expandedBoard, setExpandedBoard] = useState<number | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteBoardId, setDeleteBoardId] = useState<number | null>(null);
+  const [deletePalletId, setDeletePalletId] = useState<number | null>(null);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
   const [photosMenuOpen, setPhotosMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,11 +41,10 @@ export default function SODetailPage() {
 
   // Board pagination + filter state
   const [boards, setBoards] = useState<Board[]>([]);
-  const [boardTotal, setBoardTotal] = useState(0);
-  const [boardPage, setBoardPage] = useState(1);
   const [boardDateFrom, setBoardDateFrom] = useState('');
   const [boardDateTo, setBoardDateTo] = useState('');
   const [boardPalletFilter, setBoardPalletFilter] = useState('');
+  const [boardBarcodeSearch, setBoardBarcodeSearch] = useState('');
 
   const loadSO = useCallback(async () => {
     try {
@@ -62,19 +59,17 @@ export default function SODetailPage() {
     try {
       const params: Record<string, string | number> = {
         date_from: boardDateFrom, date_to: boardDateTo,
-        page: boardPage, page_size: BOARDS_PAGE_SIZE,
+        page: 1, page_size: 9999,
       };
       if (boardPalletFilter) params.pallet = boardPalletFilter;
       const res = await api.boards.listBySO(soId, params);
       setBoards(res.results);
-      setBoardTotal(res.total);
     } catch {}
-  }, [soId, boardDateFrom, boardDateTo, boardPage, boardPalletFilter]);
+  }, [soId, boardDateFrom, boardDateTo, boardPalletFilter]);
 
   useEffect(() => { loadSO(); }, [loadSO]);
   useEffect(() => { if (tab === 'boards') loadBoards(); }, [tab, loadBoards]);
   useEffect(() => { api.vendors.list().then(setVendors).catch(() => {}); }, []);
-  useEffect(() => { api.chipBrands.list().then(setChipBrands).catch(() => {}); }, []);
   useEffect(() => {
     if (!actionMenuOpen) return;
     const handler = (e: MouseEvent) => {
@@ -97,6 +92,17 @@ export default function SODetailPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, [photosMenuOpen]);
 
+  useEffect(() => {
+    if (!lightbox) return;
+    document.body.style.overflow = 'hidden';
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null); };
+    window.addEventListener('keydown', h);
+    return () => {
+      document.body.style.overflow = '';
+      window.removeEventListener('keydown', h);
+    };
+  }, [lightbox]);
+
   if (loading || !so) {
     return <div className="page-pad" style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>;
   }
@@ -106,7 +112,7 @@ export default function SODetailPage() {
   const ruleIsOverride = so.weight_rule && so.weight_rule !== so.vendor_weight_rule;
 
   const palletTotal = so.pallets.reduce((acc, p) => ({
-    weight: acc.weight + parseFloat(p.weight),
+    weight: acc.weight + parseFloat(p.in_weight_gross),
     qty: acc.qty + p.qty,
     boardQty: acc.boardQty + (p.board_qty ?? 0),
   }), { weight: 0, qty: 0, boardQty: 0 });
@@ -114,7 +120,7 @@ export default function SODetailPage() {
   const palletOptions = [
     { value: '', label: 'All pallets' },
     ...so.pallets.map(p => {
-      const parts = [p.licence_number, p.payload_number].filter(Boolean);
+      const parts = [p.licence_number, p.gateload_number].filter(Boolean);
       const label = parts.length ? parts.join('-') : `#${String(p.pallet_seq).padStart(2, '0')}`;
       return { value: String(p.id), label: `#${String(p.pallet_seq).padStart(2, '0')} · ${label}` };
     }),
@@ -133,17 +139,20 @@ export default function SODetailPage() {
     try {
       await api.pallets.delete(soId, pId);
       setSo(s => s ? { ...s, pallets: s.pallets.filter(p => p.id !== pId) } : s);
+      setBoards(bs => bs.filter(b => b.pallet !== pId));
       toast('Pallet removed');
     } catch { toast('Failed to delete pallet'); }
   };
 
-  const handleAddPallet = async (data: { weight: string; qty: string; licence_number: string; payload_number: string; board_qty: string }) => {
+  const handleAddPallet = async (data: { in_weight_gross: string; actual_weight: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string }) => {
     try {
       const created = await api.pallets.create(soId, {
-        weight: data.weight as any,
+        in_weight_gross: data.in_weight_gross as any,
+        actual_weight: data.actual_weight ? (data.actual_weight as any) : null,
+        material_type: data.material_type,
         qty: +data.qty,
         licence_number: data.licence_number,
-        payload_number: data.payload_number,
+        gateload_number: data.gateload_number,
         board_qty: data.board_qty ? +data.board_qty : null,
       });
       setSo(s => s ? { ...s, pallets: [...s.pallets, created] } : s);
@@ -151,15 +160,17 @@ export default function SODetailPage() {
     } catch { toast('Failed to add pallet'); }
   };
 
-  const handleAddPalletsBulk = async (rows: { weight: string; qty: string; licence_number: string; payload_number: string; board_qty: string }[]) => {
+  const handleAddPalletsBulk = async (rows: { in_weight_gross: string; actual_weight: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string }[]) => {
     let added = 0;
     for (const data of rows) {
       try {
         const created = await api.pallets.create(soId, {
-          weight: data.weight as any,
+          in_weight_gross: data.in_weight_gross as any,
+          actual_weight: data.actual_weight ? (data.actual_weight as any) : null,
+          material_type: data.material_type,
           qty: +data.qty,
           licence_number: data.licence_number,
-          payload_number: data.payload_number,
+          gateload_number: data.gateload_number,
           board_qty: data.board_qty ? +data.board_qty : null,
         });
         setSo(s => s ? { ...s, pallets: [...s.pallets, created] } : s);
@@ -214,7 +225,6 @@ export default function SODetailPage() {
     try {
       await api.boards.delete(boardId);
       setBoards(bs => bs.filter(b => b.id !== boardId));
-      setBoardTotal(t => t - 1);
       setSo(s => s ? { ...s, total_board_count: s.total_board_count - 1 } : s);
       toast('Board deleted');
     } catch { toast('Failed to delete board'); }
@@ -224,17 +234,16 @@ export default function SODetailPage() {
   const handleOpenAddBoard = async () => {
     setAddBoardOpen(true);
     try {
-      const res = await api.boards.listBySO(soId, { page: 1, page_size: 9999 });
-      const unique = [...new Set(res.results.map(b => b.mpn).filter(Boolean))] as string[];
-      setBoardMpns(unique);
+      const allMpns = await api.mpns.list();
+      setBoardMpns(allMpns.map(m => m.name));
     } catch {}
   };
 
-  const handleAddBoard = async (data: { barcode: string; catalog: string; mpn: string; weight: string; qty: string; note: string; pallet: string }) => {
+  const handleAddBoard = async (data: { barcode: string; mpn: string; qty: string; pallet: string }) => {
     try {
       await api.boards.create(soId, {
-        so: soId, barcode: data.barcode, catalog: data.catalog,
-        mpn: data.mpn, weight: data.weight as any, qty: +data.qty, note: data.note,
+        so: soId, barcode: data.barcode,
+        mpn: data.mpn, qty: +data.qty,
         pallet: data.pallet ? +data.pallet : null,
       } as any);
       toast('Board added');
@@ -245,12 +254,12 @@ export default function SODetailPage() {
 
   const handleAddBoardBulk = async (
     barcodes: { barcode: string }[],
-    shared: { catalog: string; mpn: string; pallet: string }
+    shared: { mpn: string; pallet: string }
   ) => {
     try {
       const boards = barcodes.map(r => ({
         so: soId, barcode: r.barcode,
-        catalog: shared.catalog, mpn: shared.mpn,
+        mpn: shared.mpn,
         qty: 1,
         pallet: shared.pallet ? +shared.pallet : null,
       }));
@@ -261,84 +270,84 @@ export default function SODetailPage() {
     } catch { toast('Failed to add boards'); }
   };
 
-  const boardPageCount = Math.max(1, Math.ceil(boardTotal / BOARDS_PAGE_SIZE));
 
   const handleExport = async () => {
     toast('Preparing export…');
     try {
-      // Fetch all boards (with chips inline)
       const allBoards = await api.boards.listBySO(soId, { page: 1, page_size: 9999 });
       const allBoardData = allBoards.results;
-
       const wb = XLSX.utils.book_new();
 
-      // Sheet 1: Summary
-      const summaryRows = [
-        { Field: 'SO Number', Value: so.so_number },
-        { Field: 'Vendor', Value: so.vendor_name },
-        { Field: 'Date', Value: so.date },
-        { Field: 'Weight Rule', Value: so.effective_weight_rule === 'per_pallet' ? 'Per Pallet' : 'Aggregated' },
-        { Field: 'Note', Value: so.note || '' },
-        { Field: 'Total Pallets', Value: so.total_pallet_count },
-        { Field: 'Total Weight (lb)', Value: parseFloat(so.total_pallet_weight) },
-        { Field: 'Total Boards', Value: so.total_board_count },
-        { Field: 'Exported At', Value: new Date().toISOString().slice(0, 16).replace('T', ' ') },
+      // ── Sheet 1: SO Detail ────────────────────────────────────────
+      const soRows = [
+        ['SO Number',           so.so_number],
+        ['Vendor',              so.vendor_name],
+        ['Date Received',       so.date],
+        ['Weight Rule',         so.effective_weight_rule === 'per_pallet' ? 'Per Pallet' : 'Aggregated'],
+        ['Note',                so.note || ''],
+        ['Total Pallets',       so.total_pallet_count],
+        ['Total Wt Gross (lb)', parseFloat(so.total_pallet_weight)],
+        ['Total Boards',        so.total_board_count],
+        ['Exported At',         new Date().toISOString().slice(0, 16).replace('T', ' ')],
       ];
-      const wsSummary = XLSX.utils.json_to_sheet(summaryRows);
-      wsSummary['!cols'] = [{ wch: 18 }, { wch: 40 }];
-      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+      const wsSO = XLSX.utils.aoa_to_sheet(soRows);
+      wsSO['!cols'] = [{ wch: 22 }, { wch: 40 }];
+      XLSX.utils.book_append_sheet(wb, wsSO, 'SO Detail');
 
-      // Sheet 2: Pallets
+      // ── Sheet 2: Pallets ──────────────────────────────────────────
       const palletRows = so.pallets.map(p => ({
-        'Seq': p.pallet_seq,
-        'Licence No': p.licence_number || '',
-        'Payload No': p.payload_number || '',
-        'Weight (lb)': parseFloat(p.weight),
-        'Pallet Qty': p.qty,
-        'Board Qty': p.board_qty ?? '',
+        'Licence No':           p.licence_number || '',
+        'Gateload No':           p.gateload_number || '',
+        'In Wt Gross (lb)':     parseFloat(p.in_weight_gross),
+        'Actual Wt (lb)':       p.actual_weight ? parseFloat(p.actual_weight) : '',
+        'Material Type':        p.material_type || '',
+        'Pallet Qty':           p.qty,
+        'Board Qty':            p.board_qty ?? '',
       }));
-      if (palletRows.length > 0) {
-        const wsPallets = XLSX.utils.json_to_sheet(palletRows);
-        wsPallets['!cols'] = [{ wch: 8 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 8 }, { wch: 10 }];
-        XLSX.utils.book_append_sheet(wb, wsPallets, 'Pallets');
-      }
+      const wsPallets = XLSX.utils.json_to_sheet(palletRows.length ? palletRows : [{}]);
+      wsPallets['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 }];
+      XLSX.utils.book_append_sheet(wb, wsPallets, 'Pallets');
 
-      // Sheet 3: Boards
-      const boardRows = allBoardData.map(b => ({
-        'MPN': b.mpn || '',
-        'Pallet': b.pallet_label || '',
-        'Barcode': b.barcode || '',
-        'Catalog': b.catalog || '',
-        'Weight (lb)': b.weight ? parseFloat(b.weight) : '',
-        'Qty': b.qty,
-        'Chip Brands': b.chips.map(c => c.brand_name || 'Unknown').join(', '),
-        'Total Chips': b.chips.reduce((sum, c) => sum + c.qty, 0),
-        'Note': b.note || '',
+      // ── Sheet 3: Boards ───────────────────────────────────────────
+      const boardRows = [...allBoardData].sort((a, b) => (a.pallet_label ?? '').localeCompare(b.pallet_label ?? '')).map(b => ({
+        'MPN':        b.mpn?.name || '',
+        'Pallet':     b.pallet_label || '',
+        'Barcode':    b.barcode || '',
+        'Qty':        b.qty,
         'Scanned At': b.scanned_at?.slice(0, 16).replace('T', ' ') || '',
       }));
-      if (boardRows.length > 0) {
-        const wsBoards = XLSX.utils.json_to_sheet(boardRows);
-        wsBoards['!cols'] = [{ wch: 16 }, { wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 6 }, { wch: 24 }, { wch: 12 }, { wch: 30 }, { wch: 18 }];
-        XLSX.utils.book_append_sheet(wb, wsBoards, 'Boards');
-      }
+      const wsBoards = XLSX.utils.json_to_sheet(boardRows.length ? boardRows : [{}]);
+      wsBoards['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 6 }, { wch: 18 }];
+      XLSX.utils.book_append_sheet(wb, wsBoards, 'Boards');
 
-      // Sheet 4: Chips — deduplicated per MPN (chips are shared across boards with the same MPN)
-      const seenMpns = new Set<string>();
-      const chipRows = allBoardData.flatMap(b => {
-        if (!b.mpn || b.chips.length === 0 || seenMpns.has(b.mpn)) return [];
-        seenMpns.add(b.mpn);
+      // ── Sheet 4: MPN & Chips ──────────────────────────────────────
+      const seenMpnIds = new Set<number>();
+      const mpnChipRows = allBoardData.flatMap(b => {
+        if (!b.mpn || seenMpnIds.has(b.mpn.id)) return [];
+        seenMpnIds.add(b.mpn.id);
+        const mpnBase = {
+          'MPN Name':          b.mpn.name,
+          'Part Type':         b.mpn.part_type || '',
+          'Before Cut Wt':     b.mpn.beforecut_weight ?? '',
+          'After Cut Wt':      b.mpn.aftercut_weight ?? '',
+          "Chip's Qty":        b.mpn.chip_qty ?? '',
+          'Created At':        b.mpn.created_at?.slice(0, 10) || '',
+        };
+        if (b.chips.length === 0) {
+          return [{ ...mpnBase, 'Brand': '', 'Chip MPN': '', 'Type': '', 'Chip Qty': '', 'Description': '' }];
+        }
         return b.chips.map(c => ({
-          'MPN': b.mpn,
-          'Brand': c.brand_name || '',
-          'Qty': c.qty,
-          'Note': c.note || '',
+          ...mpnBase,
+          'Brand':       c.brand_name || '',
+          'Chip MPN':    c.chip_mpn || '',
+          'Type':        c.chip_type || '',
+          'Chip Qty':    c.qty,
+          'Description': c.description || '',
         }));
       });
-      if (chipRows.length > 0) {
-        const wsChips = XLSX.utils.json_to_sheet(chipRows);
-        wsChips['!cols'] = [{ wch: 16 }, { wch: 14 }, { wch: 8 }, { wch: 30 }];
-        XLSX.utils.book_append_sheet(wb, wsChips, 'Chips');
-      }
+      const wsMpnChips = XLSX.utils.json_to_sheet(mpnChipRows.length ? mpnChipRows : [{}]);
+      wsMpnChips['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 8 }, { wch: 30 }];
+      XLSX.utils.book_append_sheet(wb, wsMpnChips, 'MPN&Chips');
 
       const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
       saveAs(new Blob([buf], { type: 'application/octet-stream' }), `${so.so_number}-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -511,20 +520,15 @@ export default function SODetailPage() {
               <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Boards</div>
               <div className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>{so.total_board_count}</div>
             </div>
-            {/* Note */}
-            <div style={{ flex: 1, padding: '6px 12px', minWidth: 0, borderRight: '1px solid var(--hair)' }}>
-              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
-              <EditableCell value={so.note} onSave={v => handleSaveMeta({ note: v })} />
-            </div>
             {/* Photos dropdown */}
-            <div ref={photosMenuRef} style={{ flex: '0 0 auto', padding: '6px 12px', position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <div ref={photosMenuRef} style={{ flex: '0 0 auto', padding: '6px 12px', position: 'relative', display: 'flex', alignItems: 'center', borderRight: '1px solid var(--hair)' }}>
               <button
                 onClick={() => setPhotosMenuOpen(o => !o)}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 5,
-                  padding: '4px 10px', borderRadius: 4, border: '1px solid var(--hair-strong)',
-                  background: photosMenuOpen ? 'var(--surface-2)' : 'var(--surface)',
-                  color: 'var(--ink)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+                  padding: '4px 10px', borderRadius: 4, border: `1px solid ${photosMenuOpen ? 'var(--accent-2)' : 'var(--accent-border)'}`,
+                  background: photosMenuOpen ? 'var(--accent-2)' : 'var(--accent-light)',
+                  color: photosMenuOpen ? '#fcfbf8' : 'var(--accent-2)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
                   whiteSpace: 'nowrap',
                 }}
               >
@@ -559,6 +563,11 @@ export default function SODetailPage() {
                 </div>
               )}
             </div>
+            {/* Note */}
+            <div style={{ flex: 1, padding: '6px 12px', minWidth: 0 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
+              <EditableCell value={so.note} onSave={v => handleSaveMeta({ note: v })} />
+            </div>
           </div>
         </Card>
       )}
@@ -568,15 +577,15 @@ export default function SODetailPage() {
       {/* Combined tab + action row */}
       {isMobile ? (
         <Tabs value={tab} onChange={v => setTab(v as any)} tabs={[
-          { value: 'pallets', label: 'Pallets', count: so.pallets.length },
-          { value: 'boards', label: 'Boards', count: so.total_board_count },
+          { value: 'pallets', label: 'Pallets' },
+          { value: 'boards', label: 'Boards' },
         ]} />
       ) : (
         <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--hair)' }}>
           {/* Tab buttons */}
           {[
-            { value: 'pallets', label: 'Pallets', count: so.pallets.length },
-            { value: 'boards', label: 'Boards', count: so.total_board_count },
+            { value: 'pallets', label: 'Pallets' },
+            { value: 'boards', label: 'Boards' },
           ].map(t => {
             const active = tab === t.value;
             return (
@@ -593,11 +602,6 @@ export default function SODetailPage() {
               onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
               onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'none'; }}>
                 {t.label}
-                <span className="num" style={{
-                  fontSize: 11, padding: '1px 7px', borderRadius: 10, lineHeight: 1.6,
-                  color: active ? 'var(--accent-2)' : 'var(--ink-4)',
-                  background: active ? 'rgba(45,106,79,0.15)' : 'var(--surface-2)',
-                }}>{t.count}</span>
               </button>
             );
           })}
@@ -618,20 +622,25 @@ export default function SODetailPage() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 4px 0 12px' }}>
               <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Pallet</span>
               <div style={{ minWidth: 160 }}>
-                <Select value={boardPalletFilter} onChange={v => { setBoardPalletFilter(v); setBoardPage(1); }} options={palletOptions} />
+                <Select value={boardPalletFilter} onChange={v => { setBoardPalletFilter(v); }} options={palletOptions} />
               </div>
               <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Scanned</span>
-              <input type="date" value={boardDateFrom} onChange={e => { setBoardDateFrom(e.target.value); setBoardPage(1); }}
+              <input type="date" value={boardDateFrom} onChange={e => { setBoardDateFrom(e.target.value); }}
                 style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
               <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>→</span>
-              <input type="date" value={boardDateTo} onChange={e => { setBoardDateTo(e.target.value); setBoardPage(1); }}
+              <input type="date" value={boardDateTo} onChange={e => { setBoardDateTo(e.target.value); }}
                 style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
               {(boardDateFrom || boardDateTo || boardPalletFilter) && (
-                <Button size="sm" variant="ghost" onClick={() => { setBoardDateFrom(''); setBoardDateTo(''); setBoardPalletFilter(''); setBoardPage(1); }}>Clear</Button>
+                <Button size="sm" variant="ghost" onClick={() => { setBoardDateFrom(''); setBoardDateTo(''); setBoardPalletFilter(''); }}>Clear</Button>
               )}
-              <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-                <span className="num">{boardTotal}</span> boards
-              </span>
+              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Barcode</span>
+              <input
+                type="text"
+                value={boardBarcodeSearch}
+                onChange={e => setBoardBarcodeSearch(e.target.value)}
+                placeholder="Scan or search…"
+                style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)', width: 150 }}
+              />
               <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={handleOpenAddBoard} disabled={so.pallets.length === 0}>
                 Add board
               </Button>
@@ -651,28 +660,23 @@ export default function SODetailPage() {
             addDisabled={false}
             onAdd={() => setAddPalletOpen(true)}
             onUpdate={handleUpdatePallet}
-            onDelete={handleDeletePallet}
+            onDelete={setDeletePalletId}
+            onGoToBoards={palletId => { setBoardPalletFilter(String(palletId)); setTab('boards'); }}
           />
         )}
         {tab === 'boards' && (
           <BoardsTab
             boards={boards}
             pallets={so.pallets}
-            total={boardTotal}
-            page={boardPage}
-            pageCount={boardPageCount}
+            soNumber={so.so_number}
             dateFrom={boardDateFrom}
             dateTo={boardDateTo}
             palletFilter={boardPalletFilter}
-            expandedBoard={expandedBoard}
-            chipBrands={chipBrands}
-            onPageChange={setBoardPage}
+            barcodeSearch={boardBarcodeSearch}
             onDateFromChange={setBoardDateFrom}
             onDateToChange={setBoardDateTo}
-            onPalletFilterChange={v => { setBoardPalletFilter(v); setBoardPage(1); }}
-            onExpand={id => setExpandedBoard(expandedBoard === id ? null : id)}
-            onOpenBoard={boardId => router.push(`/sos/${soId}/boards/${boardId}`)}
-            onChipAdded={loadBoards}
+            onPalletFilterChange={setBoardPalletFilter}
+            onBarcodeSearchChange={setBoardBarcodeSearch}
             onAddBoard={handleOpenAddBoard}
             onDeleteBoard={setDeleteBoardId}
           />
@@ -680,12 +684,53 @@ export default function SODetailPage() {
       </div>
 
       {/* Lightbox */}
-      <Modal open={!!lightbox} onClose={() => setLightbox(null)} title={lightbox?.caption || 'Photo'} width={720}>
-        {lightbox?.image_url && (
-          <img src={lightbox.image_url} alt={lightbox.caption || 'Photo'}
-            style={{ width: '100%', maxHeight: '80vh', objectFit: 'contain', borderRadius: 3, display: 'block' }} />
-        )}
-      </Modal>
+      {lightbox?.image_url && createPortal(
+        <div
+          onClick={() => setLightbox(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(20,18,14,0.78)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 40,
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: '#000', borderRadius: 6, overflow: 'hidden',
+              maxWidth: '90%', maxHeight: '90%',
+              boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+            }}
+          >
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 14px',
+              background: 'rgba(255,255,255,0.04)',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+            }}>
+              <span className="mono" style={{ fontSize: 12, color: '#fff' }}>
+                {so?.so_number}{lightbox.caption ? ` · ${lightbox.caption}` : ''}
+              </span>
+              <span style={{ flex: 1 }} />
+              <button
+                onClick={() => setLightbox(null)}
+                style={{
+                  width: 24, height: 24, border: 0, borderRadius: 3,
+                  background: 'rgba(255,255,255,0.12)', color: '#fff', cursor: 'pointer',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'inherit',
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                  <path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                </svg>
+              </button>
+            </div>
+            <img src={lightbox.image_url} alt="photo" style={{ display: 'block', maxWidth: '80vw', maxHeight: '70vh', objectFit: 'contain' }} />
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Edit meta modal */}
       <EditSOModal open={editMeta} so={so} vendors={vendors} onClose={() => setEditMeta(false)} onSave={handleSaveMeta} />
@@ -694,7 +739,48 @@ export default function SODetailPage() {
       <AddPalletModal open={addPalletOpen} rule={effectiveRule} onClose={() => setAddPalletOpen(false)} onAdd={handleAddPallet} onAddBulk={handleAddPalletsBulk} />
 
       {/* Add board modal */}
-      <AddBoardModal open={addBoardOpen} pallets={so.pallets} mpns={boardMpns} onClose={() => setAddBoardOpen(false)} onAdd={handleAddBoard} onAddBulk={handleAddBoardBulk} />
+      <AddBoardModal open={addBoardOpen} pallets={so.pallets} mpns={boardMpns} existingBoards={boards} onClose={() => setAddBoardOpen(false)} onAdd={handleAddBoard} onAddBulk={handleAddBoardBulk} />
+
+      {/* Delete pallet confirmation modal */}
+      {deletePalletId !== null && (() => {
+        const pallet = so.pallets.find(p => p.id === deletePalletId);
+        return (
+          <Modal
+            open={deletePalletId !== null}
+            onClose={() => setDeletePalletId(null)}
+            title="Delete Pallet"
+            width={460}
+            footer={<>
+              <Button variant="ghost" onClick={() => setDeletePalletId(null)}>Cancel</Button>
+              <Button variant="primary"
+                style={{ background: '#c0392b', borderColor: '#c0392b' }}
+                onClick={() => { handleDeletePallet(deletePalletId); setDeletePalletId(null); }}>
+                Delete
+              </Button>
+            </>}>
+            <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>
+              <p style={{ margin: '0 0 12px' }}>
+                Are you sure you want to delete pallet{pallet ? <> <strong className="mono">#{String(pallet.pallet_seq).padStart(2, '0')}</strong></> : ''}?
+              </p>
+              {pallet && (
+                <div style={{
+                  background: 'var(--surface-2)', border: '1px solid var(--hair)',
+                  borderRadius: 3, padding: '10px 14px', fontSize: 12.5, color: 'var(--ink-3)',
+                }}>
+                  {[pallet.licence_number, pallet.gateload_number].filter(Boolean).join(' · ') || '—'}
+                  {pallet.board_qty != null && <span style={{ marginLeft: 8 }}>· {pallet.board_qty} boards</span>}
+                  <div style={{ marginTop: 8, fontSize: 12 }}>
+                    All barcodes linked to this pallet will be permanently deleted. MPN records will be kept.
+                  </div>
+                </div>
+              )}
+              <p style={{ margin: '12px 0 0', fontSize: 12, color: 'var(--ink-4)' }}>
+                This action cannot be undone.
+              </p>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {/* Delete board confirmation modal */}
       {deleteBoardId !== null && (() => {
@@ -715,7 +801,7 @@ export default function SODetailPage() {
             </>}>
             <div style={{ fontSize: 13.5, color: 'var(--ink-2)', lineHeight: 1.6 }}>
               <p style={{ margin: '0 0 12px' }}>
-                Are you sure you want to delete board{board?.mpn ? <> <strong className="mono">{board.mpn}</strong></> : ''}?
+                Are you sure you want to delete board{board?.mpn?.name ? <> <strong className="mono">{board.mpn!.name}</strong></> : ''}?
               </p>
               <div style={{
                 background: 'var(--surface-2)', border: '1px solid var(--hair)',
@@ -775,10 +861,11 @@ export default function SODetailPage() {
 }
 
 // ─── Pallets Tab ──────────────────────────────────────────────────
-function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete }: {
+function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards }: {
   pallets: Pallet[]; effectiveRule: string; ruleIsOverride: boolean; vendorName: string;
   palletTotal: { weight: number; qty: number; boardQty: number }; addDisabled: boolean;
   onAdd: () => void; onUpdate: (id: number, p: Partial<Pallet>) => void; onDelete: (id: number) => void;
+  onGoToBoards: (palletId: number) => void;
 }) {
   const [editingPallet, setEditingPallet] = useState<Pallet | null>(null);
   const isMobile = useIsMobile();
@@ -801,26 +888,24 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {pallets.length === 0 && <Empty label="No pallets yet" sub="Click 'Add pallet' to start." />}
           {pallets.map(p => (
-            <div key={p.id} style={{ background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 4, padding: 14 }}>
+            <div key={p.id} onClick={() => onGoToBoards(p.id)}
+              style={{ background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 4, padding: 14, cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span className="mono" style={{ fontSize: 13, color: 'var(--ink-3)' }}>
-                  #{String(p.pallet_seq).padStart(2, '0')}
-                </span>
+                <Badge tone="warn" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                  {parseFloat(p.in_weight_gross).toFixed(2)} lb
+                </Badge>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Badge tone="warn" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
-                    {parseFloat(p.weight).toFixed(2)} lb
-                  </Badge>
-                  <button onClick={() => setEditingPallet(p)} style={ghostBtn} title="Edit"><EditIcon /></button>
-                  <button onClick={() => onDelete(p.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                  <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={ghostBtn} title="Edit"><EditIcon /></button>
+                  <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={ghostBtn} title="Delete"><TrashIcon /></button>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: 11.5, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
-                {(p.licence_number || p.payload_number) && (
+                {(p.licence_number || p.gateload_number) && (
                   <Badge tone="blue" style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
-                    {[p.licence_number, p.payload_number].filter(Boolean).join(' · ')}
+                    {[p.licence_number, p.gateload_number].filter(Boolean).join(' · ')}
                   </Badge>
                 )}
-                {(p.licence_number || p.payload_number) && <span style={{ color: 'var(--hair-strong)' }}>·</span>}
+                {(p.licence_number || p.gateload_number) && <span style={{ color: 'var(--hair-strong)' }}>·</span>}
                 <span>Pallet qty <span className="num" style={{ color: 'var(--ink-2)' }}>{p.qty}</span></span>
                 {p.board_qty != null && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span>Boards <span className="num" style={{ color: 'var(--ink-2)' }}>{p.board_qty}</span></span></>}
               </div>
@@ -839,20 +924,22 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
           <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '21%' }} />
-              <col style={{ width: '21%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '13%' }} />
               <col style={{ width: '16%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '15%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '6%' }} />
             </colgroup>
             <thead>
               <tr>
-                <th style={thS}>Seq</th>
                 <th style={thS}>Licence No</th>
-                <th style={thS}>Payload No</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Weight (lb)</th>
+                <th style={thS}>Gateload No</th>
+                <th style={{ ...thS, textAlign: 'right' }}>In Wt Gross (lb)</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Actual Wt (lb)</th>
+                <th style={thS}>Material Type</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Pallet Qty</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
                 <th style={{ ...thS, textAlign: 'right' }}></th>
@@ -860,39 +947,43 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
             </thead>
             <tbody>
               {pallets.map(p => (
-                <tr key={p.id} style={{ borderBottom: '1px solid var(--hair)' }}>
-                  <td style={tdS}>
-                    <span className="mono" style={{ color: 'var(--ink-3)' }}>#{String(p.pallet_seq).padStart(2, '0')}</span>
-                  </td>
+                <tr key={p.id} onClick={() => onGoToBoards(p.id)}
+                  style={{ borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
                   <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.licence_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
-                  <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.payload_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
-                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(p.weight).toFixed(2)}</td>
+                  <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.gateload_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(p.in_weight_gross).toFixed(2)}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                    {p.actual_weight ? parseFloat(p.actual_weight).toFixed(2) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                  </td>
+                  <td style={{ ...tdS }}>{p.material_type || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{p.qty}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">
                     {p.board_qty != null ? p.board_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                   </td>
                   <td style={{ ...tdS, textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
-                      <button onClick={() => setEditingPallet(p)} style={ghostBtn} title="Edit"><EditIcon /></button>
-                      <button onClick={() => onDelete(p.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                      <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={ghostBtn} title="Edit"><EditIcon /></button>
+                      <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={ghostBtn} title="Delete"><TrashIcon /></button>
                     </div>
                   </td>
                 </tr>
               ))}
               {pallets.length > 0 && (
                 <tr style={{ background: 'var(--surface-2)' }}>
-                  <td style={{ ...tdS, fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                  <td style={{ ...tdS, fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em', textTransform: 'uppercase' }} colSpan={2}>
                     Total
                   </td>
-                  <td /><td />
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.weight.toFixed(2)}</td>
+                  <td colSpan={2} />
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.qty}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.boardQty || '—'}</td>
                   <td />
                 </tr>
               )}
               {pallets.length === 0 && (
-                <tr><td colSpan={7}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
+                <tr><td colSpan={8}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
               )}
             </tbody>
           </table>
@@ -923,8 +1014,10 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
 }) {
   const aggregated = effectiveRule === 'aggregated';
   const [licence, setLicence] = useState(pallet.licence_number);
-  const [payload, setPayload] = useState(pallet.payload_number);
-  const [weight, setWeight] = useState(parseFloat(pallet.weight).toFixed(2));
+  const [payload, setPayload] = useState(pallet.gateload_number);
+  const [inWeightGross, setInWeightGross] = useState(parseFloat(pallet.in_weight_gross).toFixed(2));
+  const [actualWeight, setActualWeight] = useState(pallet.actual_weight ? parseFloat(pallet.actual_weight).toFixed(2) : '');
+  const [matType, setMatType] = useState(pallet.material_type);
   const [qty, setQty] = useState(String(pallet.qty));
   const [boardQty, setBoardQty] = useState(pallet.board_qty != null ? String(pallet.board_qty) : '');
   const [saving, setSaving] = useState(false);
@@ -932,8 +1025,10 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   useEffect(() => {
     if (open) {
       setLicence(pallet.licence_number);
-      setPayload(pallet.payload_number);
-      setWeight(parseFloat(pallet.weight).toFixed(2));
+      setPayload(pallet.gateload_number);
+      setInWeightGross(parseFloat(pallet.in_weight_gross).toFixed(2));
+      setActualWeight(pallet.actual_weight ? parseFloat(pallet.actual_weight).toFixed(2) : '');
+      setMatType(pallet.material_type);
       setQty(String(pallet.qty));
       setBoardQty(pallet.board_qty != null ? String(pallet.board_qty) : '');
       setSaving(false);
@@ -944,8 +1039,10 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
     setSaving(true);
     await onSave({
       licence_number: licence,
-      payload_number: payload,
-      weight: weight as any,
+      gateload_number: payload,
+      in_weight_gross: inWeightGross as any,
+      actual_weight: actualWeight ? (actualWeight as any) : null,
+      material_type: matType,
       qty: +qty,
       board_qty: boardQty !== '' ? +boardQty : null,
     });
@@ -955,7 +1052,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
     <Modal open={open} onClose={onClose} title={`Edit Pallet #${String(pallet.pallet_seq).padStart(2, '0')}`} width={480}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!weight || !qty || saving} onClick={handleSave}>
+        <Button variant="primary" disabled={!inWeightGross || !qty || saving} onClick={handleSave}>
           {saving ? 'Saving…' : 'Save'}
         </Button>
       </>}>
@@ -963,11 +1060,17 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
         <Field label="Licence No">
           <Input value={licence} onChange={setLicence} placeholder="TRK-00123" autoFocus />
         </Field>
-        <Field label="Payload No">
+        <Field label="Gateload No">
           <Input value={payload} onChange={setPayload} placeholder="PLD-0200" />
         </Field>
-        <Field label="Weight (lb)">
-          <Input value={weight} onChange={setWeight} type="number" placeholder="0.00" />
+        <Field label="In Weight Gross (lb)">
+          <Input value={inWeightGross} onChange={setInWeightGross} type="number" placeholder="0.00" />
+        </Field>
+        <Field label="Actual Weight (lb)">
+          <Input value={actualWeight} onChange={setActualWeight} type="number" placeholder="Optional" />
+        </Field>
+        <Field label="Material Type">
+          <Input value={matType} onChange={setMatType} placeholder="Optional" />
         </Field>
         <Field label={aggregated ? 'Qty (physical pallets)' : 'Qty'}>
           {aggregated
@@ -983,191 +1086,263 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
 }
 
 // ─── Boards Tab ───────────────────────────────────────────────────
-function BoardsTab({ boards, pallets, total, page, pageCount, dateFrom, dateTo, palletFilter, expandedBoard, chipBrands,
-  onPageChange, onDateFromChange, onDateToChange, onPalletFilterChange, onExpand, onOpenBoard, onChipAdded, onAddBoard, onDeleteBoard }: {
-  boards: Board[]; pallets: Pallet[]; total: number; page: number; pageCount: number;
-  dateFrom: string; dateTo: string; palletFilter: string; expandedBoard: number | null; chipBrands: ChipBrand[];
-  onPageChange: (p: number) => void; onDateFromChange: (v: string) => void;
-  onDateToChange: (v: string) => void; onPalletFilterChange: (v: string) => void; onExpand: (id: number) => void;
-  onOpenBoard: (id: number) => void; onChipAdded: () => void; onAddBoard: () => void; onDeleteBoard: (id: number) => void;
+function BoardsTab({ boards, pallets, soNumber, total, dateFrom, dateTo, palletFilter,
+  barcodeSearch,
+  onDateFromChange, onDateToChange, onPalletFilterChange, onBarcodeSearchChange,
+  onAddBoard, onDeleteBoard }: {
+  boards: Board[]; pallets: Pallet[]; soNumber: string;
+  dateFrom: string; dateTo: string; palletFilter: string; barcodeSearch: string;
+  onDateFromChange: (v: string) => void; onDateToChange: (v: string) => void;
+  onPalletFilterChange: (v: string) => void; onBarcodeSearchChange: (v: string) => void;
+  onAddBoard: () => void; onDeleteBoard: (id: number) => void;
 }) {
-  const from = (page - 1) * BOARDS_PAGE_SIZE + 1;
-  const to = Math.min(page * BOARDS_PAGE_SIZE, total);
+  const router = useRouter();
+  const { id: soId } = useParams<{ id: string }>();
+  const [expandedMpns, setExpandedMpns] = useState<Set<string>>(new Set());
+  const [highlightBarcodeId, setHighlightBarcodeId] = useState<number | null>(null);
   const hasFilter = dateFrom || dateTo || palletFilter;
   const isMobile = useIsMobile();
+
+  useEffect(() => {
+    const q = barcodeSearch.trim();
+    if (!q) { setHighlightBarcodeId(null); return; }
+    const found = boards.find(b => b.barcode.toLowerCase() === q.toLowerCase());
+    if (found) {
+      const mpnKey = found.mpn ? String(found.mpn.id) : '__no_mpn__';
+      const palletKey = found.pallet != null ? String(found.pallet) : '__no_pallet__';
+      const key = `${mpnKey}__${palletKey}`;
+      setExpandedMpns(prev => new Set([...prev, key]));
+      setHighlightBarcodeId(found.id);
+    } else {
+      setHighlightBarcodeId(null);
+    }
+  }, [barcodeSearch, boards]);
 
   const palletOptions = [
     { value: '', label: 'All pallets' },
     ...pallets.map(p => {
-      const parts = [p.licence_number, p.payload_number].filter(Boolean);
+      const parts = [p.licence_number, p.gateload_number].filter(Boolean);
       const label = parts.length ? parts.join('-') : `#${String(p.pallet_seq).padStart(2, '0')}`;
       return { value: String(p.id), label: `#${String(p.pallet_seq).padStart(2, '0')} · ${label}` };
     }),
   ];
 
-  const filterBar = isMobile ? (
-    /* Mobile filter: stacked rows */
+  const mpnGroups = React.useMemo(() => {
+    const map = new Map<string, { key: string; mpn: Board['mpn']; pallet_label: string | null; boards: Board[] }>();
+    for (const b of boards) {
+      const mpnKey = b.mpn ? String(b.mpn.id) : '__no_mpn__';
+      const palletKey = b.pallet != null ? String(b.pallet) : '__no_pallet__';
+      const key = `${mpnKey}__${palletKey}`;
+      if (!map.has(key)) map.set(key, { key, mpn: b.mpn, pallet_label: b.pallet_label, boards: [] });
+      map.get(key)!.boards.push(b);
+    }
+    return [...map.values()].sort((a, b) => {
+      const pa = a.pallet_label ?? '';
+      const pb = b.pallet_label ?? '';
+      return pa.localeCompare(pb);
+    });
+  }, [boards]);
+
+  const toggleMpn = (key: string) => setExpandedMpns(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+
+  const mobileFilterBar = (
     <div style={{ marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Select value={palletFilter} onChange={v => { onPalletFilterChange(v); onPageChange(1); }}
-          options={palletOptions} style={{ flex: 1 }} />
-        <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={onAddBoard} disabled={pallets.length === 0}>
-          Add
-        </Button>
+        <Select value={palletFilter} onChange={onPalletFilterChange} options={palletOptions} style={{ flex: 1 }} />
+        <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={onAddBoard} disabled={pallets.length === 0}>Add</Button>
       </div>
+      <input
+        type="text"
+        value={barcodeSearch}
+        onChange={e => onBarcodeSearchChange(e.target.value)}
+        placeholder="Scan or search barcode…"
+        style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '6px 10px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)', width: '100%' }}
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <input type="date" value={dateFrom} onChange={e => { onDateFromChange(e.target.value); onPageChange(1); }}
+        <input type="date" value={dateFrom} onChange={e => onDateFromChange(e.target.value)}
           style={{ flex: 1, border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '6px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
         <span style={{ color: 'var(--ink-4)', fontSize: 12, flexShrink: 0 }}>→</span>
-        <input type="date" value={dateTo} onChange={e => { onDateToChange(e.target.value); onPageChange(1); }}
+        <input type="date" value={dateTo} onChange={e => onDateToChange(e.target.value)}
           style={{ flex: 1, border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '6px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
-        {hasFilter && <Button size="sm" variant="ghost" onClick={() => { onDateFromChange(''); onDateToChange(''); onPalletFilterChange(''); onPageChange(1); }}>Clear</Button>}
+        {hasFilter && <Button size="sm" variant="ghost" onClick={() => { onDateFromChange(''); onDateToChange(''); onPalletFilterChange(''); }}>Clear</Button>}
       </div>
-    </div>
-  ) : (
-    /* Desktop filter: single row */
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 14, marginBottom: 10,
-      padding: '10px 12px', border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)',
-    }}>
-      <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Pallet</span>
-      <div style={{ minWidth: 180 }}>
-        <Select value={palletFilter} onChange={v => { onPalletFilterChange(v); onPageChange(1); }} options={palletOptions} />
-      </div>
-      <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Scanned</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <input type="date" value={dateFrom} onChange={e => { onDateFromChange(e.target.value); onPageChange(1); }}
-          style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
-        <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>→</span>
-        <input type="date" value={dateTo} onChange={e => { onDateToChange(e.target.value); onPageChange(1); }}
-          style={{ border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '4px 8px', fontSize: 12, outline: 'none', background: 'var(--surface)', color: 'var(--ink)' }} />
-      </div>
-      {hasFilter && <Button size="sm" variant="ghost" onClick={() => { onDateFromChange(''); onDateToChange(''); onPalletFilterChange(''); onPageChange(1); }}>Clear</Button>}
-      <div style={{ flex: 1 }} />
-      <span style={{ fontSize: 11.5, color: 'var(--ink-3)' }}>
-        <span className="num">{total}</span> boards
-      </span>
-      <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={onAddBoard} disabled={pallets.length === 0}>
-        Add board
-      </Button>
     </div>
   );
 
   return (
     <div>
-      {isMobile && filterBar}
+      {isMobile && mobileFilterBar}
 
       {isMobile ? (
-        /* Mobile: board cards */
-        <div>
-          {boards.length === 0 && (
-            <div style={{ padding: '28px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>No boards found.</div>
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {boards.map(b => (
-              <div key={b.id} style={{
-                background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 4,
-                padding: '9px 12px', display: 'flex', alignItems: 'center', gap: 6,
-              }}>
-                <button onClick={() => onOpenBoard(b.id)} className="mono" style={{
-                  background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 12.5,
-                  color: 'var(--ink)', textDecoration: 'underline', textDecorationColor: 'var(--ink-5)',
-                  textUnderlineOffset: 3, fontFamily: 'inherit', flexShrink: 0,
-                }}>
-                  {b.barcode || '—'}
-                </button>
-                {b.mpn && <><span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span><span className="mono" style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>{b.mpn}</span></>}
-                <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
-                <span style={{ fontSize: 11.5, color: 'var(--ink-3)', flexShrink: 0 }}>
-                  Qty <span className="num" style={{ color: 'var(--ink-2)' }}>{b.qty}</span>
-                </span>
-                <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
-                <span style={{ fontSize: 11.5, color: 'var(--ink-3)', flexShrink: 0 }}>
-                  Chips <span className="num" style={{ color: 'var(--ink-2)' }}>{b.chip_count}</span>
-                </span>
-                <div style={{ flex: 1 }} />
-                <span className="num mono" style={{ fontSize: 11, color: 'var(--ink-4)', flexShrink: 0 }}>
-                  {b.scanned_at?.slice(11, 16)}
-                </span>
-                <button onClick={() => onDeleteBoard(b.id)} style={{ ...ghostBtn, flexShrink: 0 }} title="Delete"><TrashIcon /></button>
+        /* Mobile: MPN cards with expandable barcode grid */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {mpnGroups.length === 0 && <div style={{ padding: '28px 0', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>No boards found.</div>}
+          {mpnGroups.map(({ key, mpn, pallet_label, boards: gBoards }) => {
+            const open = expandedMpns.has(key);
+            return (
+              <div key={key} style={{ border: '1px solid var(--hair)', borderRadius: 4, background: 'var(--surface)', overflow: 'hidden' }}>
+                <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button
+                    onClick={() => mpn && router.push(`/sos/${soId}/mpns/${mpn.id}?so=${encodeURIComponent(soNumber)}`)}
+                    className="mono"
+                    style={{ background: 'none', border: 0, padding: 0, cursor: mpn ? 'pointer' : 'default', fontSize: 13, fontWeight: 500, color: mpn ? 'var(--accent-2)' : 'var(--ink)', textDecoration: mpn ? 'underline' : 'none', textDecorationColor: 'var(--accent)', textUnderlineOffset: 3, fontFamily: 'inherit', flex: 1, textAlign: 'left', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                  >
+                    {mpn?.name || <span style={{ color: 'var(--ink-5)' }}>No MPN</span>}
+                  </button>
+                  <button onClick={() => toggleMpn(key)} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px',
+                    borderRadius: 3, border: `1px solid ${open ? 'var(--accent)' : 'var(--hair-strong)'}`,
+                    background: open ? 'var(--accent-light)' : 'var(--surface-2)',
+                    color: open ? 'var(--accent-2)' : 'var(--ink-3)', fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0,
+                  }}>
+                    <span className="num">{gBoards.length}</span>
+                    <span>{open ? 'close' : 'open'}</span>
+                    <span style={{ display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}><ChevronIcon /></span>
+                  </button>
+                </div>
+                <div style={{ padding: '6px 12px 8px', borderTop: '1px solid var(--hair)', display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11.5, color: 'var(--ink-3)' }}>
+                  {pallet_label && <span>Pallet <span className="mono" style={{ color: 'var(--ink-2)' }}>{pallet_label}</span></span>}
+                  {mpn?.chip_qty != null && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span>Chips <span className="num" style={{ color: 'var(--ink-2)' }}>{mpn.chip_qty}</span></span></>}
+                  {mpn?.part_type && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span className="mono" style={{ color: 'var(--ink-2)' }}>{mpn.part_type}</span></>}
+                </div>
+                {open && (
+                  <div style={{ borderTop: '1px solid var(--hair)', background: 'var(--surface-2)', padding: '8px 10px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 4 }}>
+                      {gBoards.map((b, idx) => (
+                        <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 8px', background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 3 }}>
+                          <span className="num" style={{ fontSize: 10.5, color: 'var(--ink-4)', flexShrink: 0, minWidth: 22 }}>{String(idx + 1).padStart(3, '0')}</span>
+                          <span className="mono" style={{ fontSize: 11.5, color: 'var(--ink)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.barcode || '—'}</span>
+                          <button onClick={() => router.push(`/sos/${soId}/boards/${b.id}`)} style={ghostBtn} title="Edit"><EditIcon /></button>
+                          <button onClick={() => onDeleteBoard(b.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <Pagination page={page} pageCount={pageCount} onChange={onPageChange} total={total} pageSize={BOARDS_PAGE_SIZE} />
-          </div>
+            );
+          })}
         </div>
       ) : (
-        /* Desktop: boards table */
+        /* Desktop: MPN-grouped table with expandable barcode grid */
         <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
           <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: 28 }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} />
-              <col style={{ width: '10%' }} /><col style={{ width: '14%' }} /><col style={{ width: '9%' }} />
-              <col style={{ width: '7%' }} /><col style={{ width: '8%' }} /><col /><col style={{ width: 42 }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '15%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '11%' }} />
             </colgroup>
             <thead>
               <tr>
-                <th style={thS}></th>
                 <th style={thS}>MPN</th>
                 <th style={thS}>Pallet</th>
-                <th style={thS}>Catalog</th>
-                <th style={thS}>Barcode</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Weight</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
+                <th style={thS}>Barcodes</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
-                <th style={thS}>Scanned</th>
-                <th style={thS}></th>
+                <th style={{ ...thS, textAlign: 'right' }}>Total Chips</th>
+                <th style={thS}>Part Type</th>
+                <th style={thS}>Created</th>
               </tr>
             </thead>
             <tbody>
-              {boards.map(b => {
-                const open = expandedBoard === b.id;
+              {mpnGroups.length === 0 && (
+                <tr><td colSpan={7} style={{ padding: '28px 14px', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>No boards found.</td></tr>
+              )}
+              {mpnGroups.map(({ key, mpn, pallet_label, boards: gBoards }) => {
+                const open = expandedMpns.has(key);
                 return (
-                  <React.Fragment key={b.id}>
-                    <tr style={{ borderBottom: '1px solid var(--hair)', background: open ? 'var(--surface-2)' : 'transparent' }}>
-                      <td style={{ ...tdS, padding: '8px 4px 8px 14px' }}>
-                        <button onClick={() => onExpand(b.id)} style={{ ...ghostBtn, padding: 3 }}>
-                          <span style={{ display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}>
-                            <ChevronIcon />
-                          </span>
-                        </button>
-                      </td>
-                      <td style={tdS}>
-                        <button onClick={() => onOpenBoard(b.id)}
-                          className="mono" style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--ink)', fontSize: 12.5, textDecoration: 'underline', textDecorationColor: 'var(--ink-5)', textUnderlineOffset: 3, fontFamily: 'inherit' }}>
-                          {b.mpn || '—'}
-                        </button>
+                  <React.Fragment key={key}>
+                    {/* MPN summary row */}
+                    <tr
+                      style={{ borderBottom: open ? 'none' : '1px solid var(--hair)', cursor: 'pointer', background: open ? 'var(--accent-light)' : 'transparent' }}
+                      onClick={() => toggleMpn(key)}
+                      onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'; }}
+                      onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+                    >
+                      {/* MPN name — chevron inline + clickable link, stops row toggle */}
+                      <td style={{ ...tdS, padding: '9px 6px 9px 12px' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s', color: 'var(--ink-3)', flexShrink: 0, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); toggleMpn(key); }}><ChevronIcon /></span>
+                          {mpn ? (
+                            <button onClick={() => router.push(`/sos/${soId}/mpns/${mpn.id}?so=${encodeURIComponent(soNumber)}`)}
+                              className="mono"
+                              style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--accent-2)', textDecoration: 'underline', textDecorationColor: 'var(--accent)', textUnderlineOffset: 3, fontFamily: 'ui-monospace, monospace' }}>
+                              {mpn.name}
+                            </button>
+                          ) : (
+                            <span style={{ color: 'var(--ink-5)', fontSize: 13 }}>No MPN</span>
+                          )}
+                        </div>
                       </td>
                       <td style={{ ...tdS, fontSize: 12 }} className="mono">
-                        {b.pallet_label ? <span style={{ color: 'var(--ink-2)' }}>{b.pallet_label}</span> : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                        {pallet_label ? <span style={{ color: 'var(--ink-2)' }}>{pallet_label}</span> : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                       </td>
-                      <td style={{ ...tdS, fontSize: 12 }} className="mono">{b.catalog || '—'}</td>
-                      <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }} className="mono">{b.barcode || '—'}</td>
-                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.weight ? parseFloat(b.weight).toFixed(2) : '—'}</td>
-                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.qty}</td>
-                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{b.chip_count}</td>
-                      <td style={{ ...tdS, fontSize: 11.5, color: 'var(--ink-3)' }} className="num">{b.scanned_at?.slice(0, 10)}</td>
-                      <td style={{ ...tdS, textAlign: 'right' }}>
-                        <button onClick={() => onDeleteBoard(b.id)} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                      {/* Barcodes expand button */}
+                      <td style={tdS} onClick={e => e.stopPropagation()}>
+                        <button onClick={() => toggleMpn(key)} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '3px 8px', borderRadius: 3, cursor: 'pointer', fontFamily: 'inherit',
+                          background: open ? 'var(--accent-light)' : 'var(--surface-2)',
+                          border: `1px solid ${open ? 'var(--accent)' : 'var(--hair-strong)'}`,
+                          color: open ? 'var(--accent-2)' : 'var(--ink-3)', fontSize: 11.5,
+                        }}>
+                          <span className="num">{gBoards.length}</span>
+                          <span>{open ? 'close' : 'open'}</span>
+                          <span style={{ display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}><ChevronIcon /></span>
+                        </button>
+                      </td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                        {mpn?.chip_qty != null ? mpn.chip_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                      </td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                        {mpn?.chip_qty != null ? mpn.chip_qty * gBoards.length : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                      </td>
+                      <td style={{ ...tdS, fontSize: 12 }} className="mono">
+                        {mpn?.part_type || <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                      </td>
+                      <td style={{ ...tdS, fontSize: 11.5, color: 'var(--ink-3)' }} className="num">
+                        {mpn?.created_at ? mpn.created_at.slice(0, 10) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                       </td>
                     </tr>
+                    {/* Barcode grid — 5 columns */}
                     {open && (
                       <tr style={{ borderBottom: '1px solid var(--hair)' }}>
-                        <td />
-                        <td colSpan={9} style={{ padding: '8px 14px 16px' }}>
-                          <div style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 8 }}>Chips on board</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {b.chips.map(c => {
-                              const brand = chipBrands.find(cb => cb.id === c.brand);
+                        <td colSpan={7} style={{ padding: '10px 14px 14px', background: 'var(--surface-2)' }}>
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(5, 1fr)',
+                            borderTop: '1px solid var(--hair)',
+                            borderLeft: '1px solid var(--hair)',
+                          }}>
+                            {gBoards.map((b, idx) => {
+                              const isHit = b.id === highlightBarcodeId;
                               return (
-                                <span key={c.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', border: '1px solid var(--hair-strong)', borderRadius: 3, background: 'var(--surface)', fontSize: 12 }}>
-                                  {brand?.name ?? '—'} <span className="num" style={{ color: 'var(--ink-3)' }}>×{c.qty}</span>
-                                </span>
+                                <div key={b.id} style={{
+                                  display: 'flex', alignItems: 'center', gap: 5,
+                                  padding: '5px 8px',
+                                  background: isHit ? '#fffde7' : 'var(--surface)',
+                                  borderRight: `1px solid ${isHit ? '#f9a825' : 'var(--hair)'}`,
+                                  borderBottom: `1px solid ${isHit ? '#f9a825' : 'var(--hair)'}`,
+                                  minWidth: 0,
+                                }}>
+                                  <span className="num" style={{ fontSize: 10.5, color: 'var(--ink-4)', flexShrink: 0, minWidth: 26 }}>
+                                    {String(idx + 1).padStart(3, '0')}
+                                  </span>
+                                  <span className="mono" style={{ fontSize: 12, color: isHit ? '#b45309' : 'var(--ink)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isHit ? 600 : 400 }}>
+                                    {b.barcode || '—'}
+                                  </span>
+                                  <button onClick={() => onDeleteBoard(b.id)} style={{ ...ghostBtn, flexShrink: 0 }} title="Delete"><TrashIcon /></button>
+                                </div>
                               );
                             })}
-                            {b.chips.length === 0 && <span style={{ fontSize: 11.5, color: 'var(--ink-4)' }}>No chips recorded.</span>}
                           </div>
                         </td>
                       </tr>
@@ -1175,33 +1350,8 @@ function BoardsTab({ boards, pallets, total, page, pageCount, dateFrom, dateTo, 
                   </React.Fragment>
                 );
               })}
-              {boards.length === 0 && (
-                <tr><td colSpan={10} style={{ padding: '28px 14px', textAlign: 'center', fontSize: 12, color: 'var(--ink-3)' }}>
-                  No boards found.
-                </td></tr>
-              )}
             </tbody>
           </table>
-          </div>
-
-          {/* Pagination footer */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderTop: '1px solid var(--hair)', fontSize: 11.5, color: 'var(--ink-3)' }}>
-            <span>
-              {total > 0 ? <>Showing <span className="num">{from}</span>–<span className="num">{to}</span> of <span className="num">{total}</span></> : '0 boards'}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <button onClick={() => onPageChange(Math.max(1, page - 1))} disabled={page <= 1}
-                style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 3, color: page <= 1 ? 'var(--ink-5)' : 'var(--ink-2)', cursor: page <= 1 ? 'default' : 'pointer', opacity: page <= 1 ? 0.5 : 1 }}>
-                <span style={{ transform: 'rotate(180deg)', display: 'inline-flex' }}><ChevronIcon /></span>
-              </button>
-              <span style={{ padding: '0 10px', fontSize: 12 }}>
-                <span className="num">{page}</span><span style={{ color: 'var(--ink-4)' }}> / </span><span className="num">{pageCount}</span>
-              </span>
-              <button onClick={() => onPageChange(Math.min(pageCount, page + 1))} disabled={page >= pageCount}
-                style={{ width: 26, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 3, color: page >= pageCount ? 'var(--ink-5)' : 'var(--ink-2)', cursor: page >= pageCount ? 'default' : 'pointer', opacity: page >= pageCount ? 0.5 : 1 }}>
-                <ChevronIcon />
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1247,7 +1397,7 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
 }
 
 // ─── Add Pallet Modal ─────────────────────────────────────────────
-type PalletRowData = { weight: string; qty: string; licence_number: string; payload_number: string; board_qty: string };
+type PalletRowData = { in_weight_gross: string; actual_weight: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string };
 
 function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   open: boolean; rule: string; onClose: () => void;
@@ -1259,19 +1409,21 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
 
   // single
   const [w, setW] = useState('');
+  const [actualW, setActualW] = useState('');
+  const [materialType, setMaterialType] = useState('');
   const [q, setQ] = useState('');
   const [licence, setLicence] = useState('');
   const [payload, setPayload] = useState('');
   const [boardQty, setBoardQty] = useState('');
 
   // bulk
-  const blankRow = (): PalletRowData => ({ licence_number: '', payload_number: '', weight: '', qty: aggregated ? '' : '1', board_qty: '' });
+  const blankRow = (): PalletRowData => ({ licence_number: '', gateload_number: '', in_weight_gross: '', actual_weight: '', material_type: '', qty: aggregated ? '' : '1', board_qty: '' });
   const [rows, setRows] = useState<PalletRowData[]>(Array.from({ length: 10 }, blankRow));
 
   useEffect(() => {
     if (open) {
       setMode('single');
-      setW(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload(''); setBoardQty('');
+      setW(''); setActualW(''); setMaterialType(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload(''); setBoardQty('');
       setRows(Array.from({ length: 10 }, blankRow));
     }
   }, [open, aggregated]);
@@ -1281,7 +1433,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   const addRow = () => setRows(rs => [...rs, blankRow()]);
   const removeRow = (i: number) => setRows(rs => rs.length === 1 ? [blankRow()] : rs.filter((_, idx) => idx !== i));
 
-  const filledRows = rows.filter(r => String(r.weight).trim() !== '' && (!aggregated || String(r.qty).trim() !== ''));
+  const filledRows = rows.filter(r => String(r.in_weight_gross).trim() !== '' && (!aggregated || String(r.qty).trim() !== ''));
   const canSaveSingle = w !== '' && q !== '';
   const canSaveBulk = filledRows.length > 0;
 
@@ -1289,14 +1441,16 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   const dupLicences = new Set(licList.filter((l, i) => licList.indexOf(l) !== i));
 
   const submitSingle = () => {
-    onAdd({ weight: w, qty: q, licence_number: licence, payload_number: payload, board_qty: boardQty });
+    onAdd({ in_weight_gross: w, actual_weight: actualW, material_type: materialType, qty: q, licence_number: licence, gateload_number: payload, board_qty: boardQty });
     onClose();
   };
   const submitBulk = () => {
     onAddBulk(filledRows.map(r => ({
       licence_number: r.licence_number,
-      payload_number: r.payload_number,
-      weight: r.weight,
+      gateload_number: r.gateload_number,
+      in_weight_gross: r.in_weight_gross,
+      actual_weight: r.actual_weight,
+      material_type: r.material_type,
       qty: aggregated ? r.qty : '1',
       board_qty: r.board_qty,
     })));
@@ -1334,11 +1488,17 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
             <Field label="Licence No">
               <Input value={licence} onChange={setLicence} placeholder="TRK-00123" autoFocus />
             </Field>
-            <Field label="Payload No">
+            <Field label="Gateload No">
               <Input value={payload} onChange={setPayload} placeholder="PLD-0200" />
             </Field>
-            <Field label={aggregated ? 'Total Weight (lb)' : 'Weight (lb)'}>
-              <Input value={w} onChange={setW} type="number" placeholder="0.00" />
+            <Field label="In Weight Gross (lb)">
+              <Input value={w} onChange={v => { setW(v); setActualW(v); }} type="number" placeholder="0.00" />
+            </Field>
+            <Field label="Actual Weight (lb)">
+              <Input value={actualW} onChange={setActualW} type="number" placeholder="0.00" />
+            </Field>
+            <Field label="Material Type">
+              <Input value={materialType} onChange={setMaterialType} placeholder="Optional" />
             </Field>
             <Field label={aggregated ? 'Pallet Qty (physical pallets)' : 'Pallet Qty'}>
               {aggregated
@@ -1355,11 +1515,13 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
       {mode === 'bulk' && (
         <>
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)', overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '36px 1.4fr 1.4fr 1fr 1fr 1fr 28px', gap: 0, padding: '8px 10px', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: 'var(--ink-4)', background: 'var(--surface-2)', borderBottom: '1px solid var(--hair)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '36px 1.4fr 1.4fr 1fr 1fr 1fr 1fr 1fr 28px', gap: 0, padding: '8px 10px', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: 'var(--ink-4)', background: 'var(--surface-2)', borderBottom: '1px solid var(--hair)' }}>
               <div>#</div>
               <div style={{ paddingLeft: 6 }}>Licence No</div>
-              <div style={{ paddingLeft: 6 }}>Payload No</div>
-              <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Weight (lb)</div>
+              <div style={{ paddingLeft: 6 }}>Gateload No</div>
+              <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>In Wt Gross (lb)</div>
+              <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Actual Wt (lb)</div>
+              <div style={{ paddingLeft: 6 }}>Material Type</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Pallet Qty</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Board Qty</div>
               <div />
@@ -1368,15 +1530,18 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
               {rows.map((r, i) => {
                 const isDup = !!r.licence_number && dupLicences.has(r.licence_number.trim());
                 return (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '36px 1.4fr 1.4fr 1fr 1fr 1fr 28px', gap: 0, padding: '6px 10px', alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '36px 1.4fr 1.4fr 1fr 1fr 1fr 1fr 1fr 28px', gap: 0, padding: '6px 10px', alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
                     <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
                       {String(i + 1).padStart(2, '0')}
                     </span>
                     <BulkCellP value={r.licence_number} onChange={v => updateRow(i, { licence_number: v })}
                       warn={isDup} title={isDup ? 'Duplicate licence in this batch' : undefined} />
-                    <BulkCellP value={r.payload_number} onChange={v => updateRow(i, { payload_number: v })} />
-                    <BulkCellP value={r.weight} onChange={v => updateRow(i, { weight: v })}
+                    <BulkCellP value={r.gateload_number} onChange={v => updateRow(i, { gateload_number: v })} />
+                    <BulkCellP value={r.in_weight_gross} onChange={v => updateRow(i, { in_weight_gross: v, actual_weight: v })}
                       type="number" placeholder="0.00" align="right" />
+                    <BulkCellP value={r.actual_weight} onChange={v => updateRow(i, { actual_weight: v })}
+                      type="number" placeholder="0.00" align="right" />
+                    <BulkCellP value={r.material_type} onChange={v => updateRow(i, { material_type: v })} />
                     {aggregated
                       ? <BulkCellP value={r.qty} onChange={v => updateRow(i, { qty: v })}
                           type="number" placeholder="0" align="right" />
@@ -1505,51 +1670,70 @@ function MpnComboInput({ value, onChange, mpns, autoFocus, placeholder }: {
   );
 }
 
-function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
-  open: boolean; pallets: Pallet[]; mpns: string[]; onClose: () => void;
-  onAdd: (d: { barcode: string; catalog: string; mpn: string; weight: string; qty: string; note: string; pallet: string }) => void;
-  onAddBulk: (rows: { barcode: string }[], shared: { catalog: string; mpn: string; pallet: string }) => void;
+function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, onAddBulk }: {
+  open: boolean; pallets: Pallet[]; mpns: string[]; existingBoards: Board[]; onClose: () => void;
+  onAdd: (d: { barcode: string; mpn: string; qty: string; pallet: string }) => void;
+  onAddBulk: (rows: { barcode: string }[], shared: { mpn: string; pallet: string }) => void;
 }) {
   const [mode, setMode] = useState<'single' | 'bulk'>('single');
   // single
   const [barcode, setBarcode] = useState('');
-  const [catalog, setCatalog] = useState('');
   const [mpn, setMpn] = useState('');
-  const [weight, setWeight] = useState('');
-  const [qty, setQty] = useState('0');
-  const [note, setNote] = useState('');
+  const [qty, setQty] = useState('1');
   const [pallet, setPallet] = useState('');
   // bulk
   const [bulkBarcode, setBulkBarcode] = useState('');
   const [bulkRows, setBulkRows] = useState<{ barcode: string }[]>([]);
-  const [bCatalog, setBCatalog] = useState('');
   const [bMpn, setBMpn] = useState('');
   const [bPallet, setBPallet] = useState('');
   const [selectedBulkIdx, setSelectedBulkIdx] = useState<number | null>(null);
   const [bulkBarcodeFocused, setBulkBarcodeFocused] = useState(false);
   const [bulkPage, setBulkPage] = useState(1);
   const BULK_PAGE_SIZE = 108;
+  const [dbDupBarcodes, setDbDupBarcodes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (open) {
       setMode('single');
-      setBarcode(''); setCatalog(''); setMpn(''); setWeight(''); setQty('0'); setNote(''); setPallet('');
-      setBulkBarcode(''); setBulkRows([]); setBCatalog(''); setBMpn(''); setBPallet(''); setSelectedBulkIdx(null); setBulkPage(1);
+      setBarcode(''); setMpn(''); setQty('1'); setPallet('');
+      setBulkBarcode(''); setBulkRows([]); setBMpn(''); setBPallet(''); setSelectedBulkIdx(null); setBulkPage(1);
+      setDbDupBarcodes(new Set());
     }
   }, [open]);
+
+  useEffect(() => { setDbDupBarcodes(new Set()); }, [bMpn, bPallet]);
 
   const palletOptions = [
     { value: '', label: '— No pallet —' },
     ...pallets.map(p => {
-      const parts = [p.licence_number, p.payload_number].filter(Boolean);
+      const parts = [p.licence_number, p.gateload_number].filter(Boolean);
       const label = parts.length ? parts.join('-') : `#${String(p.pallet_seq).padStart(2, '0')}`;
       return { value: String(p.id), label: `#${String(p.pallet_seq).padStart(2, '0')} · ${label}` };
     }),
   ];
 
-  const canSaveSingle = mpn.trim() !== '' && pallet !== '' && qty.trim() !== '' && +qty > 0;
-  const canSaveBulk = bulkRows.length > 0 && bMpn.trim() !== '' && bPallet !== '';
+  const canSaveSingle = mpn.trim() !== '' && pallet !== '' && barcode.trim() !== '' && qty.trim() !== '' && +qty > 0;
   const dupCount = bulkRows.length - new Set(bulkRows.map(r => r.barcode)).size;
+  const nonDupCount = dbDupBarcodes.size > 0 ? bulkRows.filter(r => !dbDupBarcodes.has(r.barcode)).length : bulkRows.length;
+  const canSaveBulk = bulkRows.length > 0 && bMpn.trim() !== '' && bPallet !== '' && (dbDupBarcodes.size === 0 || nonDupCount > 0);
+
+  const handleBulkSubmit = () => {
+    if (dbDupBarcodes.size > 0) {
+      const rowsToAdd = bulkRows.filter(r => !dbDupBarcodes.has(r.barcode));
+      if (rowsToAdd.length > 0) onAddBulk(rowsToAdd, { mpn: bMpn, pallet: bPallet });
+      onClose();
+      return;
+    }
+    const existingBarcodeSet = new Set(
+      existingBoards
+        .filter(b => b.mpn?.name === bMpn && String(b.pallet ?? '') === bPallet)
+        .map(b => b.barcode)
+    );
+    const dupes = new Set(bulkRows.map(r => r.barcode).filter(bc => existingBarcodeSet.has(bc)));
+    if (dupes.size > 0) { setDbDupBarcodes(dupes); return; }
+    onAddBulk(bulkRows, { mpn: bMpn, pallet: bPallet });
+    onClose();
+  };
   const bulkTotalPages = Math.max(1, Math.ceil(bulkRows.length / BULK_PAGE_SIZE));
   const bulkSafePage = Math.min(bulkPage, bulkTotalPages);
 
@@ -1592,11 +1776,6 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
                 <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Pallet <span style={{ color: 'red' }}>*</span></div>
                 <Select value={bPallet} onChange={setBPallet} options={palletOptions} size="lg" style={{ width: '100%' }} />
               </div>
-              {/* Catalog */}
-              <div style={{ flex: '0 0 110px', minWidth: 90 }}>
-                <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>Catalog</div>
-                <Input value={bCatalog} onChange={setBCatalog} placeholder="SSD-C3" style={{ width: '100%' }} />
-              </div>
               {/* Divider */}
               <div style={{ width: 1, background: 'var(--hair-strong)', alignSelf: 'stretch', margin: '0 8px', flexShrink: 0 }} />
               {/* Barcode scan field */}
@@ -1633,12 +1812,13 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
         ? <>
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
             <Button variant="primary" disabled={!canSaveSingle}
-              onClick={() => { onAdd({ barcode, catalog, mpn, weight, qty, note, pallet }); onClose(); }}>Add</Button>
+              onClick={() => { onAdd({ barcode, mpn, qty, pallet }); onClose(); }}>Add</Button>
           </>
         : <>
             <span style={{ fontSize: 22, color: 'var(--ink-3)', fontWeight: 500, flexShrink: 0 }}>
               <span className="num" style={{ color: 'var(--ink)', fontWeight: 700 }}>{bulkRows.length}</span> scanned
               {dupCount > 0 && <span style={{ marginLeft: 12, color: '#b8782a' }}>· {dupCount} duplicate{dupCount > 1 ? 's' : ''}</span>}
+              {dbDupBarcodes.size > 0 && <span style={{ marginLeft: 12, color: '#c2410c', fontSize: 14 }}>· {dbDupBarcodes.size} barcode duplicate</span>}
             </span>
             {bulkTotalPages > 1 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, justifyContent: 'center' }}>
@@ -1658,9 +1838,10 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
             )}
             {bulkTotalPages <= 1 && <span style={{ flex: 1 }} />}
             <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={!canSaveBulk}
-              onClick={() => { onAddBulk(bulkRows, { catalog: bCatalog, mpn: bMpn, pallet: bPallet }); onClose(); }}>
-              Add {bulkRows.length || ''} board{bulkRows.length === 1 ? '' : 's'}
+            <Button variant="primary" disabled={!canSaveBulk} onClick={handleBulkSubmit}>
+              {dbDupBarcodes.size > 0
+                ? `Add ${nonDupCount} new board${nonDupCount === 1 ? '' : 's'} (skip ${dbDupBarcodes.size})`
+                : `Add ${bulkRows.length || ''} board${bulkRows.length === 1 ? '' : 's'}`}
             </Button>
           </>}>
 
@@ -1669,27 +1850,15 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
           <Field label={<>MPN <span style={{ color: 'red' }}>*</span></>}>
             <MpnComboInput value={mpn} onChange={setMpn} mpns={mpns} autoFocus />
           </Field>
-          <Field label="Catalog">
-            <Input value={catalog} onChange={setCatalog} placeholder="SSD-C3" />
-          </Field>
           <Field label={<>Pallet <span style={{ color: 'red' }}>*</span></>} span={2}>
             <Select value={pallet} onChange={setPallet} options={palletOptions} />
           </Field>
-          <Field label="Barcode" span={2}>
+          <Field label={<>Barcode <span style={{ color: 'red' }}>*</span></>} span={2}>
             <Input value={barcode} onChange={setBarcode} placeholder="BC-000-0000" autoFocus
               style={{ fontFamily: 'ui-monospace, monospace' }} />
           </Field>
-          <Field label="Weight (lb)">
-            <Input value={weight} onChange={setWeight} type="number" placeholder="0.00" />
-          </Field>
           <Field label={<>Qty <span style={{ color: 'red' }}>*</span></>}>
             <Input value={qty} onChange={v => setQty(v.replace(/^0+(\d)/, '$1'))} type="number" placeholder="1" />
-          </Field>
-          <Field label="Note" span={2}>
-            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Optional…" rows={2}
-              style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--hair-strong)',
-                background: 'var(--surface)', borderRadius: 3, resize: 'vertical',
-                fontSize: 13, color: 'var(--ink)', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
           </Field>
         </div>
       )}
@@ -1711,6 +1880,7 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
                   {pageRows.map((r, pi) => {
                     const i = (bulkSafePage - 1) * BULK_PAGE_SIZE + pi;
                     const dup = bulkRows.findIndex(x => x.barcode === r.barcode) !== i;
+                    const dbDup = !dup && dbDupBarcodes.has(r.barcode);
                     const selected = selectedBulkIdx === i;
                     const col = pi % 6;
                     return (
@@ -1722,7 +1892,9 @@ function AddBoardModal({ open, pallets, mpns, onClose, onAdd, onAddBulk }: {
                           borderBottom: '1px solid var(--hair)',
                           borderRight: col < 5 ? '1px solid var(--hair)' : 'none',
                           fontSize: 12, minWidth: 0,
-                          background: dup ? (selected ? '#f87171' : '#fca5a5') : selected ? 'var(--surface-2)' : 'transparent',
+                          background: dup ? (selected ? '#f87171' : '#fca5a5')
+                                    : dbDup ? (selected ? '#fb923c' : '#fed7aa')
+                                    : selected ? 'var(--surface-2)' : 'transparent',
                         }}>
                         <span style={{ flex: 1, minWidth: 0, fontFamily: 'ui-monospace, monospace',
                           color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden',
@@ -1782,6 +1954,7 @@ const TrashIcon = () => (
     <path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
   </svg>
 );
+
 const ChevronIcon = () => (
   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="9 18 15 12 9 6" />

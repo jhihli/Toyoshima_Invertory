@@ -79,7 +79,7 @@ export async function apiDelete(path: string): Promise<void> {
 
 // ─── Typed wrappers ───────────────────────────────────────────────
 import type {
-  Vendor, SO, SODetail, SOPhoto, Pallet, Board, ChipBrand, Chip,
+  Vendor, SO, SODetail, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN,
   PaginatedResult, DashboardStats,
 } from '@/interface/IDatatable';
 
@@ -155,6 +155,43 @@ export const api = {
     create: (d: Partial<ChipBrand>) => apiPost<ChipBrand>('/chipbrands/', d),
     update: (id: number, d: Partial<ChipBrand>) => apiPut<ChipBrand>(`/chipbrands/${id}/`, d),
     delete: (id: number) => apiDelete(`/chipbrands/${id}/`),
+  },
+
+  // MPNs
+  mpns: {
+    list: (params: Record<string, string> = {}) => {
+      const qs = new URLSearchParams(params);
+      return apiGet<MPN[]>(`/mpns/?${qs}`);
+    },
+    get: (id: number) => apiGet<MPN>(`/mpns/${id}/`),
+    create: (d: Partial<MPN>) => apiPost<MPN>('/mpns/', d),
+    update: (id: number, d: Partial<MPN>) => apiPut<MPN>(`/mpns/${id}/`, d),
+    delete: (id: number) => apiDelete(`/mpns/${id}/`),
+    chips: {
+      create: (mpnId: number, d: Partial<Chip>) => apiPost<Chip>(`/mpns/${mpnId}/chips/`, d),
+      update: (mpnId: number, id: number, d: Partial<Chip>) => apiPut<Chip>(`/mpns/${mpnId}/chips/${id}/`, d),
+      delete: (mpnId: number, id: number) => apiDelete(`/mpns/${mpnId}/chips/${id}/`),
+      uploadPhoto: (mpnId: number, chipId: number, file: File) => {
+        const form = new FormData();
+        form.append('photo', file);
+        return apiPostForm<Chip>(`/mpns/${mpnId}/chips/${chipId}/photo/`, form);
+      },
+      deletePhoto: (mpnId: number, chipId: number) => apiDelete(`/mpns/${mpnId}/chips/${chipId}/photo/`),
+    },
+    photos: {
+      uploadBeforecut: (id: number, file: File) => {
+        const form = new FormData();
+        form.append('photo', file);
+        return apiPostForm<MPN>(`/mpns/${id}/beforecut_photo/`, form);
+      },
+      deleteBeforecut: (id: number) => apiDelete(`/mpns/${id}/beforecut_photo/`),
+      uploadAftercut: (id: number, file: File) => {
+        const form = new FormData();
+        form.append('photo', file);
+        return apiPostForm<MPN>(`/mpns/${id}/aftercut_photo/`, form);
+      },
+      deleteAftercut: (id: number) => apiDelete(`/mpns/${id}/aftercut_photo/`),
+    },
   },
 
   // Dashboard

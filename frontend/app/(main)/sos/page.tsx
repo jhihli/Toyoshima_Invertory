@@ -79,16 +79,16 @@ export default function SOListPage() {
 
       const COL_WIDTHS = [{ wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
       const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-      const HEADER = ['SO Number', 'Vendor', 'Date', 'Pallet #', 'Licence No', 'Payload No', 'Weight (lb)', 'Pallet Qty', 'Boards(REAL)', 'Boards(Scan)'];
+      const HEADER = ['SO Number', 'Vendor', 'Date', 'Pallet #', 'Licence No', 'Gateload No', 'Weight (lb)', 'Pallet Qty', 'Boards(REAL)', 'Boards(Scan)'];
 
       // ── Sheet 1: Sales Orders (flat pallet rows, no styling needed) ──
       const rows: Record<string, string | number>[] = [];
       all.results.forEach((s, idx) => {
         const pallets = palletsPerSO[idx];
         if (pallets.length === 0) {
-          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': '', 'Licence No': '', 'Payload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards(REAL)': '', 'Boards(Scan)': s.total_board_count });
+          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': '', 'Licence No': '', 'Gateload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards(REAL)': '', 'Boards(Scan)': s.total_board_count });
         } else {
-          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Payload No': p.payload_number || '', 'Weight (lb)': parseFloat(p.weight), 'Pallet Qty': p.qty, 'Boards(REAL)': p.board_qty ?? '', 'Boards(Scan)': s.total_board_count }));
+          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Gateload No': p.gateload_number || '', 'Weight (lb)': parseFloat(p.weight), 'Pallet Qty': p.qty, 'Boards(REAL)': p.board_qty ?? '', 'Boards(Scan)': s.total_board_count }));
         }
       });
       const ws1 = XLSX.utils.json_to_sheet(rows);
@@ -105,7 +105,7 @@ export default function SOListPage() {
         pallets.forEach(p => {
           totalW += parseFloat(p.weight);
           totalQ += p.qty;
-          aoaData.push([s.so_number, s.vendor_name, s.date, p.pallet_seq, p.licence_number || '', p.payload_number || '', parseFloat(p.weight), p.qty, p.board_qty ?? '', s.total_board_count]);
+          aoaData.push([s.so_number, s.vendor_name, s.date, p.pallet_seq, p.licence_number || '', p.gateload_number || '', parseFloat(p.weight), p.qty, p.board_qty ?? '', s.total_board_count]);
           rowPtr++;
         });
         // Subtotal row for this SO — includes Boards(REAL) and Boards(Scan) totals
@@ -160,65 +160,62 @@ export default function SOListPage() {
     <div className="fade-in page-pad">
       <Breadcrumbs items={[{ label: 'Home', onClick: () => router.push('/dashboard') }, { label: 'Sales Orders' }]} />
 
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px' }}>
-        <h1 style={{ margin: 0, fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>Sales Orders</h1>
-        {!isMobile && (
-          <Button variant="primary" icon={<PlusIcon />} onClick={() => setNewOpen(true)}>New SO</Button>
-        )}
-      </div>
+      <div style={{ margin: '14px 0 16px' }}>
+        <h1 style={{ margin: '0 0 16px', fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>Sales Orders</h1>
 
-      {/* Filter bar */}
-      {isMobile ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* Filter bar */}
+        {isMobile ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <Input value={q} onChange={v => { setQ(v); setPage(1); }}
+                placeholder="Filter by SO number or licence…" icon={<SearchIcon />}
+                style={{ flex: 1, minWidth: 0 }} />
+              <Select value={vendorFilter} onChange={v => { setVendorFilter(v); setPage(1); }}
+                placeholder="All vendors"
+                options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 4, flex: 1,
+                border: '1px solid var(--hair-strong)', borderRadius: 3,
+                background: 'var(--surface)', padding: '0 8px', height: 30,
+              }}>
+                <CalendarIcon />
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                  style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', flex: 1, minWidth: 0 }} />
+                <span style={{ color: 'var(--ink-4)', flexShrink: 0, padding: '0 2px' }}>→</span>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                  style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', flex: 1, minWidth: 0 }} />
+              </div>
+              {hasFilter && <Button variant="ghost" onClick={clearFilters}>Clear</Button>}
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <Input value={q} onChange={v => { setQ(v); setPage(1); }}
               placeholder="Filter by SO number or licence…" icon={<SearchIcon />}
-              style={{ flex: 1, minWidth: 0 }} />
+              style={{ flex: 1, minWidth: 120, maxWidth: 300 }} />
             <Select value={vendorFilter} onChange={v => { setVendorFilter(v); setPage(1); }}
               placeholder="All vendors"
               options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
-          </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <div style={{
-              display: 'flex', alignItems: 'center', gap: 4, flex: 1,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
               border: '1px solid var(--hair-strong)', borderRadius: 3,
-              background: 'var(--surface)', padding: '0 8px', height: 30,
+              background: 'var(--surface)', padding: '0 10px', height: 30,
             }}>
               <CalendarIcon />
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', flex: 1, minWidth: 0 }} />
-              <span style={{ color: 'var(--ink-4)', flexShrink: 0, padding: '0 2px' }}>→</span>
+                style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', width: 110 }} />
+              <span style={{ color: 'var(--ink-4)' }}>→</span>
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', flex: 1, minWidth: 0 }} />
+                style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', width: 110 }} />
             </div>
             {hasFilter && <Button variant="ghost" onClick={clearFilters}>Clear</Button>}
+            <div style={{ flex: 1 }} />
+            <Button variant="primary" icon={<PlusIcon />} onClick={() => setNewOpen(true)}>New SO</Button>
           </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-          <Input value={q} onChange={v => { setQ(v); setPage(1); }}
-            placeholder="Filter by SO number or licence…" icon={<SearchIcon />}
-            style={{ flex: 1, minWidth: 120, maxWidth: 300 }} />
-          <Select value={vendorFilter} onChange={v => { setVendorFilter(v); setPage(1); }}
-            placeholder="All vendors"
-            options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            border: '1px solid var(--hair-strong)', borderRadius: 3,
-            background: 'var(--surface)', padding: '0 10px', height: 30,
-          }}>
-            <CalendarIcon />
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-              style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', width: 110 }} />
-            <span style={{ color: 'var(--ink-4)' }}>→</span>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-              style={{ border: 0, outline: 0, background: 'transparent', fontSize: 12, color: 'var(--ink)', width: 110 }} />
-          </div>
-          {hasFilter && <Button variant="ghost" onClick={clearFilters}>Clear</Button>}
-          <div style={{ flex: 1 }} />
-          <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Table (desktop) / Cards (mobile) */}
       {isMobile ? (
@@ -246,7 +243,7 @@ export default function SOListPage() {
                 <Th label="Vendor" w="13%" />
                 <Th label="Date" sortKey="date" w="12%" />
                 <Th label="Pallets" align="right" w="9%" />
-                <Th label="Total Weight (lb)" align="right" w="14%" />
+                <Th label="Total Wt Gross" align="right" w="14%" />
                 <Th label="Boards(Real)" align="right" w="11%" />
                 <Th label="Boards(Scan)" align="right" w="11%" />
                 <Th label="" w="10%" />

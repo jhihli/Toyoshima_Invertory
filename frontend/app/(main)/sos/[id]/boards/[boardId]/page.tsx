@@ -72,20 +72,20 @@ export default function BoardDetailPage() {
     } catch { toast('Failed to delete chip'); }
   };
 
-  const handleAddChip = async (brandId: string, qty: string, note: string) => {
+  const handleAddChip = async (brandId: string, qty: string, description: string) => {
     try {
-      const chip = await api.chips.create(board.id, { brand: +brandId || null, qty: +qty, note });
+      const chip = await api.chips.create(board.id, { brand: +brandId || null, qty: +qty, description });
       setBoard(b => b ? { ...b, chips: [...b.chips, chip] } : b);
       toast('Chip added');
     } catch { toast('Failed to add chip'); }
   };
 
-  const handleSaveEdit = async (patch: { barcode: string; catalog: string; mpn: string; weight: string; qty: string; note: string }) => {
+  const handleSaveEdit = async (patch: { barcode: string; mpn: string; qty: string }) => {
     try {
       const updated = await api.boards.update(board.id, {
-        barcode: patch.barcode, catalog: patch.catalog, mpn: patch.mpn,
-        weight: patch.weight as any, qty: +patch.qty, note: patch.note,
-      });
+        barcode: patch.barcode, mpn: patch.mpn,
+        qty: +patch.qty,
+      } as any);
       setBoard(b => b ? { ...b, ...updated } : b);
       toast('Board updated');
     } catch { toast('Failed to update board'); }
@@ -120,9 +120,7 @@ export default function BoardDetailPage() {
 
   const fields: [string, any, string][] = [
     ['Barcode', board.barcode, 'mono'],
-    ['Catalog', board.catalog || '—', 'mono'],
-    ['MPN', board.mpn || '—', 'mono'],
-    ['Weight (lb)', board.weight ? parseFloat(board.weight).toFixed(2) : '—', 'num'],
+    ['MPN', board.mpn?.name || '—', 'mono'],
     ['Quantity', board.qty, 'num'],
     ['Scanned At', board.scanned_at?.slice(0, 16).replace('T', ' '), 'num'],
   ];
@@ -133,19 +131,19 @@ export default function BoardDetailPage() {
         { label: 'Home', onClick: () => router.push('/dashboard') },
         { label: 'Sales Orders', onClick: () => router.push('/sos') },
         { label: `SO ${soId}`, onClick: () => router.push(`/sos/${soId}`) },
-        { label: board.mpn || board.barcode || `Board #${board.id}` },
+        { label: board.mpn?.name || board.barcode || `Board #${board.id}` },
       ]} />
 
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', margin: isMobile ? '10px 0 14px' : '14px 0 20px', gap: 10 }}>
         <div>
           {isMobile ? (
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-              <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.mpn || board.barcode || `Board #${board.id}`}</h1>
+              <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.mpn?.name || board.barcode || `Board #${board.id}`}</h1>
               <span style={{ fontSize: 12, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>SO {soId} · {board.scanned_at?.slice(0, 10)}</span>
             </div>
           ) : (
             <>
-              <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.mpn || board.barcode || `Board #${board.id}`}</h1>
+              <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400 }}>{board.mpn?.name || board.barcode || `Board #${board.id}`}</h1>
               <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 6 }}>SO {soId} · Scanned {board.scanned_at?.slice(0, 10)}</div>
             </>
           )}
@@ -240,13 +238,6 @@ export default function BoardDetailPage() {
               ))}
             </div>
           </div>
-          {board.note && (
-            <div style={{
-              marginTop: 12, padding: '10px 14px',
-              background: 'var(--warn-soft)', border: '1px solid var(--hair)',
-              borderRadius: 3, fontSize: 12, color: 'var(--warn-ink)', fontStyle: 'italic',
-            }}>{board.note}</div>
-          )}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20, marginBottom: 24 }}>
@@ -277,12 +268,6 @@ export default function BoardDetailPage() {
                 </div>
               ))}
             </div>
-            {board.note && (
-              <div style={{ padding: '14px 22px', borderTop: '1px solid var(--hair)', background: 'var(--surface-2)', display: 'flex', gap: 10 }}>
-                <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginTop: 2 }}>Note</span>
-                <span style={{ fontSize: 12.5, color: 'var(--ink-2)', flex: 1 }}>{board.note}</span>
-              </div>
-            )}
           </Card>
         </div>
       )}
@@ -332,7 +317,7 @@ export default function BoardDetailPage() {
                       onSave={v => handleUpdateChip(c.id, { qty: +v })} />
                   </td>
                   <td style={{ ...tdS, color: 'var(--ink-3)' }}>
-                    <EditableCell value={c.note} onSave={v => handleUpdateChip(c.id, { note: v })} />
+                    <EditableCell value={c.description} onSave={v => handleUpdateChip(c.id, { description: v })} />
                   </td>
                   <td style={{ ...tdS, textAlign: 'right' }}>
                     <button onClick={() => handleDeleteChip(c.id)} style={ghostBtn}><TrashIcon /></button>
@@ -374,7 +359,7 @@ export default function BoardDetailPage() {
           </Button>
         </>}>
         <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>
-          Delete board <span className="mono" style={{ color: 'var(--ink)' }}>{board.mpn || board.barcode}</span> from
+          Delete board <span className="mono" style={{ color: 'var(--ink)' }}>{board.mpn?.name || board.barcode}</span> from
           SO <span className="mono" style={{ color: 'var(--ink)' }}>{soId}</span>?
         </div>
         {board.chips.length > 0 && (
@@ -395,31 +380,25 @@ export default function BoardDetailPage() {
 // ─── Edit Board Modal ─────────────────────────────────────────────
 function EditBoardModal({ open, board, onClose, onSave }: {
   open: boolean; board: Board; onClose: () => void;
-  onSave: (d: { barcode: string; catalog: string; mpn: string; weight: string; qty: string; note: string }) => void;
+  onSave: (d: { barcode: string; mpn: string; qty: string }) => void;
 }) {
   const [barcode, setBarcode] = useState('');
-  const [catalog, setCatalog] = useState('');
   const [mpn, setMpn] = useState('');
-  const [weight, setWeight] = useState('');
   const [qty, setQty] = useState('');
-  const [note, setNote] = useState('');
   useEffect(() => {
     if (open && board) {
       setBarcode(board.barcode || '');
-      setCatalog(board.catalog || '');
-      setMpn(board.mpn || '');
-      setWeight(board.weight ? parseFloat(board.weight).toString() : '');
+      setMpn(board.mpn?.name || '');
       setQty(String(board.qty ?? ''));
-      setNote(board.note || '');
     }
   }, [open, board]);
-  const canSave = mpn.trim() && catalog.trim() && qty.trim();
+  const canSave = mpn.trim() && qty.trim();
   return (
     <Modal open={open} onClose={onClose} title="Edit board" width={520}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={!canSave}
-          onClick={() => { onSave({ barcode, catalog, mpn, weight, qty, note }); onClose(); }}>
+          onClick={() => { onSave({ barcode, mpn, qty }); onClose(); }}>
           Save changes
         </Button>
       </>}>
@@ -428,19 +407,11 @@ function EditBoardModal({ open, board, onClose, onSave }: {
           <Input value={mpn} onChange={setMpn} placeholder="NVMe-PCIe4-1T" autoFocus
             style={{ fontFamily: 'ui-monospace, monospace' }} />
         </Field>
-        <Field label="Catalog"><Input value={catalog} onChange={setCatalog} placeholder="SSD-C3" /></Field>
         <Field label="Barcode">
           <Input value={barcode} onChange={setBarcode} placeholder="BC-000-0000"
             style={{ fontFamily: 'ui-monospace, monospace' }} />
         </Field>
-        <Field label="Weight (lb)"><Input value={weight} onChange={setWeight} type="number" placeholder="0.00" /></Field>
         <Field label="Qty"><Input value={qty} onChange={setQty} type="number" placeholder="1" /></Field>
-        <Field label="Note" span={2}>
-          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Optional…" rows={2}
-            style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--hair-strong)',
-              background: 'var(--surface)', borderRadius: 3, resize: 'vertical',
-              fontSize: 13, color: 'var(--ink)', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} />
-        </Field>
       </div>
     </Modal>
   );

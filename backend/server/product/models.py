@@ -1,5 +1,6 @@
 from django.db import models
 from django.db.models import Sum
+from django.utils import timezone
 
 
 class Vendor(models.Model):
@@ -54,7 +55,7 @@ class SO(models.Model):
 
     @property
     def total_pallet_weight(self):
-        result = self.pallets.aggregate(total=Sum('weight'))['total']
+        result = self.pallets.aggregate(total=Sum('in_weight_gross'))['total']
         return result or 0
 
     @property
@@ -90,8 +91,10 @@ class Pallet(models.Model):
     so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='pallets')
     pallet_seq = models.IntegerField()
     licence_number = models.CharField(max_length=50, blank=True)
-    payload_number = models.CharField(max_length=50, blank=True)
-    weight = models.DecimalField(max_digits=10, decimal_places=2)
+    gateload_number = models.CharField(max_length=50, blank=True)
+    in_weight_gross = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    actual_weight = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    material_type = models.CharField(max_length=100, blank=True)
     qty = models.IntegerField()
     board_qty = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -107,6 +110,13 @@ class Pallet(models.Model):
 
 class MPN(models.Model):
     name = models.CharField(max_length=100, unique=True, db_index=True)
+    part_type = models.CharField(max_length=100, blank=True)
+    beforecut_weight = models.IntegerField(null=True, blank=True)
+    aftercut_weight = models.IntegerField(null=True, blank=True)
+    chip_qty = models.IntegerField(null=True, blank=True)
+    beforecut_photo = models.ImageField(upload_to='mpn_photos/%Y/%m/', blank=True, null=True)
+    aftercut_photo = models.ImageField(upload_to='mpn_photos/%Y/%m/', blank=True, null=True)
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
 
     class Meta:
         db_table = 'mpn'
@@ -118,14 +128,11 @@ class MPN(models.Model):
 
 class Board(models.Model):
     so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='boards')
-    pallet = models.ForeignKey(Pallet, on_delete=models.SET_NULL, null=True, blank=True, related_name='boards')
+    pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, null=True, blank=True, related_name='boards')
     barcode = models.CharField(max_length=100, blank=True, db_index=True)
-    catalog = models.CharField(max_length=100, blank=True)
-    mpn = models.ForeignKey(MPN, on_delete=models.SET_NULL, null=True, blank=True, related_name='boards')
-    weight = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    mpn = models.ForeignKey(MPN, on_delete=models.PROTECT, null=True, blank=True, related_name='boards')
     qty = models.IntegerField(default=1)
     photo = models.ImageField(upload_to='boards/%Y/%m/', blank=True, null=True)
-    note = models.TextField(blank=True)
     scanned_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -166,8 +173,11 @@ class Chip(models.Model):
     brand = models.ForeignKey(
         ChipBrand, on_delete=models.PROTECT, null=True, blank=True
     )
+    chip_mpn = models.CharField(max_length=100, blank=True)
+    chip_type = models.CharField(max_length=100, blank=True)
+    chip_photo = models.ImageField(upload_to='chip_photos/%Y/%m/', blank=True, null=True)
     qty = models.IntegerField(default=1)
-    note = models.TextField(blank=True)
+    description = models.TextField(blank=True)
 
     class Meta:
         db_table = 'chip'

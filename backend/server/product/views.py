@@ -6,12 +6,93 @@ from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.db import transaction
+from django.db.models import ProtectedError
 from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
     SOPhotoSerializer, PalletSerializer, BoardSerializer,
-    ChipBrandSerializer, ChipSerializer,
+    ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
 )
+
+
+# ─────────────────────────────────────────────────── MPN
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def mpn_list(request):
+    if request.method == 'GET':
+        q = request.query_params.get('q', '').strip()
+        qs = MPN.objects.all()
+        if q:
+            qs = qs.filter(name__icontains=q)
+        return Response(MPNSerializer(qs, many=True, context={'request': request}).data)
+    serializer = MPNSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def mpn_detail(request, pk):
+    mpn = get_object_or_404(MPN, pk=pk)
+    if request.method == 'GET':
+        return Response(MPNDetailSerializer(mpn, context={'request': request}).data)
+    if request.method == 'PUT':
+        serializer = MPNSerializer(mpn, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        mpn.delete()
+    except ProtectedError:
+        count = mpn.boards.count()
+        return Response(
+            {'error': f'Cannot delete: {count} board(s) are still assigned to this MPN. Reassign them first.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def mpn_beforecut_photo(request, pk):
+    mpn = get_object_or_404(MPN, pk=pk)
+    if request.method == 'POST':
+        if not request.FILES.get('photo'):
+            return Response({'error': 'No photo provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if mpn.beforecut_photo:
+            mpn.beforecut_photo.delete(save=False)
+        mpn.beforecut_photo = request.FILES['photo']
+        mpn.save()
+        mpn.refresh_from_db()
+        return Response(MPNDetailSerializer(mpn, context={'request': request}).data)
+    if mpn.beforecut_photo:
+        mpn.beforecut_photo.delete(save=False)
+        mpn.beforecut_photo = None
+        mpn.save()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def mpn_aftercut_photo(request, pk):
+    mpn = get_object_or_404(MPN, pk=pk)
+    if request.method == 'POST':
+        if not request.FILES.get('photo'):
+            return Response({'error': 'No photo provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if mpn.aftercut_photo:
+            mpn.aftercut_photo.delete(save=False)
+        mpn.aftercut_photo = request.FILES['photo']
+        mpn.save()
+        mpn.refresh_from_db()
+        return Response(MPNDetailSerializer(mpn, context={'request': request}).data)
+    if mpn.aftercut_photo:
+        mpn.aftercut_photo.delete(save=False)
+        mpn.aftercut_photo = None
+        mpn.save()
+    return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 # ─────────────────────────────────────────────────── Vendor
@@ -219,10 +300,7 @@ def board_detail(request, pk):
             board.refresh_from_db()
             return Response(BoardSerializer(board, context={'request': request}).data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    mpn_id = board.mpn_id
     board.delete()
-    if mpn_id and not Board.objects.filter(mpn_id=mpn_id).exists():
-        MPN.objects.filter(pk=mpn_id).delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -275,6 +353,54 @@ def chip_detail(request, board_pk, pk):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     chip.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mpn_chip_create(request, mpn_pk):
+    mpn = get_object_or_404(MPN, pk=mpn_pk)
+    data = request.data.copy()
+    data['mpn'] = mpn.pk
+    serializer = ChipSerializer(data=data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def mpn_chip_detail(request, mpn_pk, pk):
+    mpn = get_object_or_404(MPN, pk=mpn_pk)
+    chip = get_object_or_404(Chip, pk=pk, mpn=mpn)
+    if request.method == 'PUT':
+        serializer = ChipSerializer(chip, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    chip.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def chip_photo(request, mpn_pk, pk):
+    chip = get_object_or_404(Chip, pk=pk, mpn_id=mpn_pk)
+    if request.method == 'POST':
+        if not request.FILES.get('photo'):
+            return Response({'error': 'No photo provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if chip.chip_photo:
+            chip.chip_photo.delete(save=False)
+        chip.chip_photo = request.FILES['photo']
+        chip.save()
+        chip.refresh_from_db()
+        return Response(ChipSerializer(chip, context={'request': request}).data)
+    if chip.chip_photo:
+        chip.chip_photo.delete(save=False)
+        chip.chip_photo = None
+        chip.save()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -413,10 +539,10 @@ def _lot_inbound(data):
     pallet = Pallet.objects.create(
         so=so,
         pallet_seq=(last_seq or 0) + 1,
-        weight=pallet_weight or 0,
+        in_weight_gross=pallet_weight or 0,
         qty=pallet_qty or 1,
         licence_number=data.get('licence_number', ''),
-        payload_number=data.get('payload_number', ''),
+        gateload_number=data.get('gateload_number', ''),
         board_qty=data.get('board_qty') or None,
     )
     return Response({'success': True, 'data': {
@@ -455,11 +581,8 @@ def _board_inbound(data):
             so=so,
             pallet=pallet_obj,
             barcode=bc,
-            catalog=data.get('catalog', ''),
-            weight=data.get('weight') or None,
             qty=data.get('qty', 1),
             mpn=mpn_obj,
-            note=data.get('noted', data.get('note', '')),
         )
         created.append(board)
     return Response({'success': True, 'data': BoardSerializer(created, many=True).data})

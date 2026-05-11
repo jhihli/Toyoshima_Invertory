@@ -38,33 +38,105 @@ class SOPhotoSerializer(serializers.ModelSerializer):
 class PalletSerializer(serializers.ModelSerializer):
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'payload_number', 'weight', 'qty', 'board_qty', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'in_weight_gross', 'actual_weight', 'material_type', 'qty', 'board_qty', 'created_at']
         read_only_fields = ['created_at']
 
 
 class ChipSerializer(serializers.ModelSerializer):
     brand_name = serializers.SerializerMethodField(read_only=True)
+    chip_photo_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Chip
-        fields = ['id', 'mpn', 'brand', 'brand_name', 'qty', 'note']
+        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'description']
 
     def get_brand_name(self, obj):
         if obj.brand:
             return obj.brand.name
         return None
 
+    def get_chip_photo_url(self, obj):
+        if not obj.chip_photo:
+            return None
+        public_domain = os.getenv('PUBLIC_DOMAIN', '')
+        if public_domain:
+            return f"{public_domain}{obj.chip_photo.url}"
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.chip_photo.url)
+        return obj.chip_photo.url
+
+
+class MPNSerializer(serializers.ModelSerializer):
+    beforecut_photo_url = serializers.SerializerMethodField(read_only=True)
+    aftercut_photo_url = serializers.SerializerMethodField(read_only=True)
+    board_count = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = MPN
+        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count']
+        read_only_fields = ['created_at']
+
+    def get_board_count(self, obj):
+        return obj.boards.count()
+
+    def get_beforecut_photo_url(self, obj):
+        if not obj.beforecut_photo:
+            return None
+        public_domain = os.getenv('PUBLIC_DOMAIN', '')
+        if public_domain:
+            return f"{public_domain}{obj.beforecut_photo.url}"
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.beforecut_photo.url)
+        return obj.beforecut_photo.url
+
+    def get_aftercut_photo_url(self, obj):
+        if not obj.aftercut_photo:
+            return None
+        public_domain = os.getenv('PUBLIC_DOMAIN', '')
+        if public_domain:
+            return f"{public_domain}{obj.aftercut_photo.url}"
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.aftercut_photo.url)
+        return obj.aftercut_photo.url
+
+
+class MPNDetailSerializer(MPNSerializer):
+    chips = ChipSerializer(many=True, read_only=True)
+
+    class Meta(MPNSerializer.Meta):
+        fields = MPNSerializer.Meta.fields + ['chips']
+
 
 class MPNField(serializers.Field):
-    """Serializes Board.mpn FK as a plain string; accepts a string on write and auto get_or_creates the MPN record."""
+    """Serializes Board.mpn as a full MPN object; accepts a string name or {id, name} dict on write."""
 
     def to_representation(self, value):
-        return value.name if value else ''
+        if not value:
+            return None
+        return MPNSerializer(value).data
 
     def to_internal_value(self, data):
-        if not data or not str(data).strip():
+        if data is None or data == '':
             return None
-        mpn, _ = MPN.objects.get_or_create(name=str(data).strip())
+        if isinstance(data, dict):
+            mpn_id = data.get('id')
+            if mpn_id:
+                try:
+                    return MPN.objects.get(pk=mpn_id)
+                except MPN.DoesNotExist:
+                    pass
+            name = str(data.get('name', '')).strip()
+            if name:
+                mpn, _ = MPN.objects.get_or_create(name=name)
+                return mpn
+            return None
+        name = str(data).strip()
+        if not name:
+            return None
+        mpn, _ = MPN.objects.get_or_create(name=name)
         return mpn
 
 
@@ -78,9 +150,9 @@ class BoardSerializer(serializers.ModelSerializer):
     class Meta:
         model = Board
         fields = [
-            'id', 'so', 'pallet', 'pallet_label', 'barcode', 'catalog',
-            'mpn', 'weight', 'qty',
-            'photo', 'photo_url', 'note', 'scanned_at',
+            'id', 'so', 'pallet', 'pallet_label', 'barcode',
+            'mpn', 'qty',
+            'photo', 'photo_url', 'scanned_at',
             'chips', 'chip_count',
         ]
         read_only_fields = ['scanned_at']
@@ -99,7 +171,7 @@ class BoardSerializer(serializers.ModelSerializer):
         if not obj.pallet_id:
             return None
         p = obj.pallet
-        parts = [x for x in [p.licence_number, p.payload_number] if x]
+        parts = [x for x in [p.licence_number, p.gateload_number] if x]
         return '-'.join(parts) if parts else f'#{p.pallet_seq:02d}'
 
     def get_photo_url(self, obj):

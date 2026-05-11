@@ -2,6 +2,15 @@ from django.urls import path
 from . import views
 
 urlpatterns = [
+    # MPNs
+    path('mpns/', views.mpn_list, name='mpn-list'),
+    path('mpns/<int:pk>/', views.mpn_detail, name='mpn-detail'),
+    path('mpns/<int:mpn_pk>/chips/', views.mpn_chip_create, name='mpn-chip-create'),
+    path('mpns/<int:mpn_pk>/chips/<int:pk>/', views.mpn_chip_detail, name='mpn-chip-detail'),
+    path('mpns/<int:mpn_pk>/chips/<int:pk>/photo/', views.chip_photo, name='chip-photo'),
+    path('mpns/<int:pk>/beforecut_photo/', views.mpn_beforecut_photo, name='mpn-beforecut-photo'),
+    path('mpns/<int:pk>/aftercut_photo/', views.mpn_aftercut_photo, name='mpn-aftercut-photo'),
+
     # Vendors
     path('vendors/', views.vendor_list, name='vendor-list'),
     path('vendors/<int:pk>/', views.vendor_detail, name='vendor-detail'),
