@@ -334,7 +334,7 @@ export default function SODetailPage() {
           'Created At':        b.mpn.created_at?.slice(0, 10) || '',
         };
         if (b.chips.length === 0) {
-          return [{ ...mpnBase, 'Brand': '', 'Chip MPN': '', 'Type': '', 'Chip Qty': '', 'Description': '' }];
+          return [{ ...mpnBase, 'Brand': '', 'Chip MPN': '', 'Type': '', 'Chip Qty': 0, 'Description': '' }];
         }
         return b.chips.map(c => ({
           ...mpnBase,
