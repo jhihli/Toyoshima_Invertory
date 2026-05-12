@@ -111,8 +111,8 @@ class Pallet(models.Model):
 class MPN(models.Model):
     name = models.CharField(max_length=100, unique=True, db_index=True)
     part_type = models.CharField(max_length=100, blank=True)
-    beforecut_weight = models.IntegerField(null=True, blank=True)
-    aftercut_weight = models.IntegerField(null=True, blank=True)
+    beforecut_weight = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    aftercut_weight = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     chip_qty = models.IntegerField(null=True, blank=True)
     beforecut_photo = models.ImageField(upload_to='mpn_photos/%Y/%m/', blank=True, null=True)
     aftercut_photo = models.ImageField(upload_to='mpn_photos/%Y/%m/', blank=True, null=True)
