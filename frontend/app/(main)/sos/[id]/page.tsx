@@ -1336,7 +1336,9 @@ function BoardsTab({ boards, pallets, soNumber, dateFrom, dateTo, palletFilter,
                                   <span className="num" style={{ fontSize: 10.5, color: 'var(--ink-4)', flexShrink: 0, minWidth: 26 }}>
                                     {String(idx + 1).padStart(3, '0')}
                                   </span>
-                                  <span className="mono" style={{ fontSize: 12, color: isHit ? '#b45309' : 'var(--ink)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isHit ? 600 : 400 }}>
+                                  <span className="mono" onClick={() => router.push(`/sos/${soId}/boards/${b.id}`)} style={{ fontSize: 12, color: isHit ? '#b45309' : 'var(--accent)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isHit ? 600 : 400, cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'transparent' }}
+                                    onMouseEnter={e => (e.currentTarget.style.textDecorationColor = 'currentColor')}
+                                    onMouseLeave={e => (e.currentTarget.style.textDecorationColor = 'transparent')}>
                                     {b.barcode || '—'}
                                   </span>
                                   <button onClick={() => onDeleteBoard(b.id)} style={{ ...ghostBtn, flexShrink: 0 }} title="Delete"><TrashIcon /></button>
