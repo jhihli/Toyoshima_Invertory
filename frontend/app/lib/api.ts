@@ -147,6 +147,13 @@ export const api = {
     create: (boardId: number, d: Partial<Chip>) => apiPost<Chip>(`/boards/${boardId}/chips/`, d),
     update: (boardId: number, id: number, d: Partial<Chip>) => apiPut<Chip>(`/boards/${boardId}/chips/${id}/`, d),
     delete: (boardId: number, id: number) => apiDelete(`/boards/${boardId}/chips/${id}/`),
+    copyFromMpn: (boardId: number) => apiPost<{ created: number; chips: Chip[] }>(`/boards/${boardId}/chips/copy_from_mpn/`, {}),
+    uploadPhoto: (boardId: number, chipId: number, file: File) => {
+      const form = new FormData();
+      form.append('photo', file);
+      return apiPostForm<Chip>(`/boards/${boardId}/chips/${chipId}/photo/`, form);
+    },
+    deletePhoto: (boardId: number, chipId: number) => apiDelete(`/boards/${boardId}/chips/${chipId}/photo/`),
   },
 
   // Chip Brands

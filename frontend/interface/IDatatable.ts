@@ -88,6 +88,7 @@ export interface ChipBrand {
 export interface Chip {
   id: number;
   mpn: number | null;
+  board: number | null;
   brand: number | null;
   brand_name: string | null;
   chip_mpn: string;

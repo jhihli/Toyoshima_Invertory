@@ -145,16 +145,12 @@ class Board(models.Model):
 
     @property
     def total_chip_count(self):
-        if not self.mpn_id:
-            return 0
-        result = self.mpn.chips.aggregate(total=Sum('qty'))['total']
+        result = self.chips.aggregate(total=Sum('qty'))['total']
         return result or 0
 
     @property
     def chip_brand_count(self):
-        if not self.mpn_id:
-            return 0
-        return self.mpn.chips.values('brand').distinct().count()
+        return self.chips.values('brand').distinct().count()
 
 
 class ChipBrand(models.Model):
@@ -170,6 +166,7 @@ class ChipBrand(models.Model):
 
 class Chip(models.Model):
     mpn = models.ForeignKey(MPN, on_delete=models.CASCADE, null=True, blank=True, related_name='chips')
+    board = models.ForeignKey('Board', on_delete=models.CASCADE, null=True, blank=True, related_name='chips')
     brand = models.ForeignKey(
         ChipBrand, on_delete=models.PROTECT, null=True, blank=True
     )
@@ -181,7 +178,10 @@ class Chip(models.Model):
 
     class Meta:
         db_table = 'chip'
-        indexes = [models.Index(fields=['mpn', 'brand'])]
+        indexes = [
+            models.Index(fields=['mpn', 'brand']),
+            models.Index(fields=['board', 'brand']),
+        ]
         ordering = ['brand__name']
 
     def __str__(self):

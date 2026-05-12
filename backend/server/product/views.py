@@ -245,10 +245,10 @@ def board_list_by_so(request, so_pk):
         serializer = BoardSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             serializer.save()
-            board = Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand').get(pk=serializer.data['id'])
+            board = Board.objects.select_related('pallet', 'mpn').prefetch_related('chips__brand').get(pk=serializer.data['id'])
             return Response(BoardSerializer(board, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    qs = so.boards.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand')
+    qs = so.boards.select_related('pallet', 'mpn').prefetch_related('chips__brand')
     date_from = request.query_params.get('date_from', '').strip()
     date_to = request.query_params.get('date_to', '').strip()
     pallet_id = request.query_params.get('pallet', '').strip()
@@ -283,14 +283,14 @@ def board_bulk_create(request, so_pk):
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
             serializer.save()
             created_ids.append(serializer.data['id'])
-    boards = Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand').filter(pk__in=created_ids)
+    boards = Board.objects.select_related('pallet', 'mpn').prefetch_related('chips__brand').filter(pk__in=created_ids)
     return Response(BoardSerializer(boards, many=True, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def board_detail(request, pk):
-    board = get_object_or_404(Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand'), pk=pk)
+    board = get_object_or_404(Board.objects.select_related('pallet', 'mpn').prefetch_related('chips__brand'), pk=pk)
     if request.method == 'GET':
         return Response(BoardSerializer(board, context={'request': request}).data)
     if request.method == 'PUT':
@@ -330,10 +330,9 @@ def board_photo(request, pk):
 @permission_classes([IsAuthenticated])
 def chip_create(request, board_pk):
     board = get_object_or_404(Board, pk=board_pk)
-    if not board.mpn_id:
-        return Response({'error': 'Board has no MPN set'}, status=status.HTTP_400_BAD_REQUEST)
     data = request.data.copy()
-    data['mpn'] = board.mpn_id
+    data['board'] = board.pk
+    data.pop('mpn', None)
     serializer = ChipSerializer(data=data)
     if serializer.is_valid():
         serializer.save()
@@ -345,7 +344,7 @@ def chip_create(request, board_pk):
 @permission_classes([IsAuthenticated])
 def chip_detail(request, board_pk, pk):
     board = get_object_or_404(Board, pk=board_pk)
-    chip = get_object_or_404(Chip, pk=pk, mpn=board.mpn)
+    chip = get_object_or_404(Chip, pk=pk, board=board)
     if request.method == 'PUT':
         serializer = ChipSerializer(chip, data=request.data, partial=True)
         if serializer.is_valid():
@@ -353,6 +352,49 @@ def chip_detail(request, board_pk, pk):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     chip.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def copy_mpn_chips(request, board_pk):
+    board = get_object_or_404(Board, pk=board_pk)
+    if not board.mpn_id:
+        return Response({'error': 'Board has no MPN set'}, status=status.HTTP_400_BAD_REQUEST)
+    templates = list(Chip.objects.filter(mpn=board.mpn, board__isnull=True))
+    if not templates:
+        return Response({'created': 0, 'chips': []})
+    new_chips = Chip.objects.bulk_create([
+        Chip(
+            board=board,
+            brand=t.brand,
+            chip_mpn=t.chip_mpn,
+            chip_type=t.chip_type,
+            qty=t.qty,
+            description=t.description,
+        )
+        for t in templates
+    ])
+    return Response({'created': len(new_chips), 'chips': ChipSerializer(new_chips, many=True, context={'request': request}).data}, status=status.HTTP_201_CREATED)
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def board_chip_photo(request, board_pk, pk):
+    chip = get_object_or_404(Chip, pk=pk, board_id=board_pk)
+    if request.method == 'POST':
+        if not request.FILES.get('photo'):
+            return Response({'error': 'No photo provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if chip.chip_photo:
+            chip.chip_photo.delete(save=False)
+        chip.chip_photo = request.FILES['photo']
+        chip.save()
+        chip.refresh_from_db()
+        return Response(ChipSerializer(chip, context={'request': request}).data)
+    if chip.chip_photo:
+        chip.chip_photo.delete(save=False)
+        chip.chip_photo = None
+        chip.save()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 

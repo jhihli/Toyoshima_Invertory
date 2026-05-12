@@ -29,7 +29,9 @@ urlpatterns = [
     path('boards/<int:pk>/', views.board_detail, name='board-detail'),
     path('boards/<int:pk>/photo/', views.board_photo, name='board-photo'),
     path('boards/<int:board_pk>/chips/', views.chip_create, name='chip-create'),
+    path('boards/<int:board_pk>/chips/copy_from_mpn/', views.copy_mpn_chips, name='copy-mpn-chips'),
     path('boards/<int:board_pk>/chips/<int:pk>/', views.chip_detail, name='chip-detail'),
+    path('boards/<int:board_pk>/chips/<int:pk>/photo/', views.board_chip_photo, name='board-chip-photo'),
 
     # Chip Brands
     path('chipbrands/', views.chipbrand_list, name='chipbrand-list'),
