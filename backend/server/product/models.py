@@ -109,13 +109,15 @@ class Pallet(models.Model):
 
 
 class MPN(models.Model):
-    name = models.CharField(max_length=100, unique=True, db_index=True)
+    name = models.CharField(max_length=100, unique=True)
     part_type = models.CharField(max_length=100, blank=True)
     beforecut_weight = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     aftercut_weight = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     chip_qty = models.IntegerField(null=True, blank=True)
+    cutboard_cost = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     beforecut_photo = models.ImageField(upload_to='mpn_photos/%Y/%m/', blank=True, null=True)
     aftercut_photo = models.ImageField(upload_to='mpn_photos/%Y/%m/', blank=True, null=True)
+    note = models.TextField(blank=True)
     created_at = models.DateTimeField(default=timezone.now, editable=False)
 
     class Meta:
@@ -145,12 +147,16 @@ class Board(models.Model):
 
     @property
     def total_chip_count(self):
-        result = self.chips.aggregate(total=Sum('qty'))['total']
+        if not self.mpn_id:
+            return 0
+        result = self.mpn.chips.aggregate(total=Sum('qty'))['total']
         return result or 0
 
     @property
     def chip_brand_count(self):
-        return self.chips.values('brand').distinct().count()
+        if not self.mpn_id:
+            return 0
+        return self.mpn.chips.values('brand').distinct().count()
 
 
 class ChipBrand(models.Model):
@@ -166,7 +172,6 @@ class ChipBrand(models.Model):
 
 class Chip(models.Model):
     mpn = models.ForeignKey(MPN, on_delete=models.CASCADE, null=True, blank=True, related_name='chips')
-    board = models.ForeignKey('Board', on_delete=models.CASCADE, null=True, blank=True, related_name='chips')
     brand = models.ForeignKey(
         ChipBrand, on_delete=models.PROTECT, null=True, blank=True
     )
@@ -174,15 +179,51 @@ class Chip(models.Model):
     chip_type = models.CharField(max_length=100, blank=True)
     chip_photo = models.ImageField(upload_to='chip_photos/%Y/%m/', blank=True, null=True)
     qty = models.IntegerField(default=1)
+    cut_fail = models.IntegerField(null=True, blank=True)
+    chip_cost = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     description = models.TextField(blank=True)
 
     class Meta:
         db_table = 'chip'
-        indexes = [
-            models.Index(fields=['mpn', 'brand']),
-            models.Index(fields=['board', 'brand']),
-        ]
+        indexes = [models.Index(fields=['mpn', 'brand'])]
         ordering = ['brand__name']
 
     def __str__(self):
         return f"{self.brand} x{self.qty}" if self.brand else f"Chip x{self.qty}"
+
+
+class MPNReportConfig(models.Model):
+    """Singleton — only one row ever exists (id=1). Use get_config() to access."""
+    recipient         = models.TextField(blank=True)  # comma-separated emails
+    cc                = models.TextField(blank=True)   # comma-separated emails
+    auto_send_enabled = models.BooleanField(default=True)
+    send_time         = models.TimeField(default='19:00')  # local time HH:MM
+    updated_at        = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'mpn_report_config'
+
+    def __str__(self):
+        return f"MPNReportConfig → {self.recipient} (auto={'on' if self.auto_send_enabled else 'off'})"
+
+    @classmethod
+    def get_config(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+
+class MPNReportEmail(models.Model):
+    STATUS_CHOICES = [('ok', 'Sent successfully'), ('error', 'Send failed')]
+    sent_at      = models.DateTimeField(auto_now_add=True)
+    sent_to      = models.TextField()
+    cc           = models.TextField(blank=True)
+    status       = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    error        = models.TextField(blank=True)
+    triggered_by = models.CharField(max_length=20, default='cron')
+
+    class Meta:
+        db_table = 'mpn_report_email'
+        ordering = ['-sent_at']
+
+    def __str__(self):
+        return f"{self.sent_at:%Y-%m-%d %H:%M} → {self.sent_to} [{self.status}]"

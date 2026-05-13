@@ -29,9 +29,7 @@ urlpatterns = [
     path('boards/<int:pk>/', views.board_detail, name='board-detail'),
     path('boards/<int:pk>/photo/', views.board_photo, name='board-photo'),
     path('boards/<int:board_pk>/chips/', views.chip_create, name='chip-create'),
-    path('boards/<int:board_pk>/chips/copy_from_mpn/', views.copy_mpn_chips, name='copy-mpn-chips'),
     path('boards/<int:board_pk>/chips/<int:pk>/', views.chip_detail, name='chip-detail'),
-    path('boards/<int:board_pk>/chips/<int:pk>/photo/', views.board_chip_photo, name='board-chip-photo'),
 
     # Chip Brands
     path('chipbrands/', views.chipbrand_list, name='chipbrand-list'),
@@ -47,4 +45,9 @@ urlpatterns = [
 
     # Dashboard
     path('dashboard/', views.dashboard_stats, name='dashboard-stats'),
+
+    # MPN Report Email
+    path('mpn-report/config/',    views.mpn_report_config,    name='mpn-report-config'),
+    path('mpn-report/last-send/', views.mpn_report_last_send, name='mpn-report-last-send'),
+    path('mpn-report/send-now/',  views.mpn_report_send_now,  name='mpn-report-send-now'),
 ]

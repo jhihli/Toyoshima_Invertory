@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.conf import settings
-from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN
+from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail
 import os
 
 
@@ -48,7 +48,7 @@ class ChipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Chip
-        fields = ['id', 'mpn', 'board', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'description']
+        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'cut_fail', 'chip_cost', 'description']
 
     def get_brand_name(self, obj):
         if obj.brand:
@@ -71,14 +71,26 @@ class MPNSerializer(serializers.ModelSerializer):
     beforecut_photo_url = serializers.SerializerMethodField(read_only=True)
     aftercut_photo_url = serializers.SerializerMethodField(read_only=True)
     board_count = serializers.SerializerMethodField(read_only=True)
+    chip_brands = serializers.SerializerMethodField(read_only=True)
+    latest_board_date = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = MPN
-        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count']
+        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'cutboard_cost', 'note', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count', 'chip_brands', 'latest_board_date']
         read_only_fields = ['created_at']
 
     def get_board_count(self, obj):
         return obj.boards.count()
+
+    def get_chip_brands(self, obj):
+        return list(obj.chips.values_list('brand__name', flat=True))
+
+    def get_latest_board_date(self, obj):
+        from django.db.models import Max
+        result = obj.boards.aggregate(latest=Max('scanned_at'))['latest']
+        if result:
+            return result.strftime('%Y-%m-%d')
+        return None
 
     def get_beforecut_photo_url(self, obj):
         if not obj.beforecut_photo:
@@ -121,6 +133,11 @@ class MPNField(serializers.Field):
     def to_internal_value(self, data):
         if data is None or data == '':
             return None
+        if isinstance(data, int):
+            try:
+                return MPN.objects.get(pk=data)
+            except MPN.DoesNotExist:
+                raise serializers.ValidationError(f'MPN with id {data} not found.')
         if isinstance(data, dict):
             mpn_id = data.get('id')
             if mpn_id:
@@ -158,10 +175,14 @@ class BoardSerializer(serializers.ModelSerializer):
         read_only_fields = ['scanned_at']
 
     def get_chips(self, obj):
-        return ChipSerializer(obj.chips.all(), many=True).data
+        if not obj.mpn_id:
+            return []
+        return ChipSerializer(obj.mpn.chips.all(), many=True).data
 
     def get_chip_count(self, obj):
-        return obj.total_chip_count
+        if not obj.mpn_id:
+            return 0
+        return sum(c.qty for c in obj.mpn.chips.all())
 
     def get_pallet_label(self, obj):
         if not obj.pallet_id:
@@ -242,3 +263,17 @@ class ChipBrandSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChipBrand
         fields = ['id', 'name']
+
+
+class MPNReportConfigSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MPNReportConfig
+        fields = ['recipient', 'cc', 'auto_send_enabled', 'send_time', 'updated_at']
+        read_only_fields = ['updated_at']
+
+
+class MPNReportEmailSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MPNReportEmail
+        fields = ['id', 'sent_at', 'sent_to', 'cc', 'status', 'error', 'triggered_by']
+        read_only_fields = ['id', 'sent_at', 'sent_to', 'cc', 'status', 'error', 'triggered_by']

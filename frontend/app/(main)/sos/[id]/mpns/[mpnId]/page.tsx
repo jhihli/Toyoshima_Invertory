@@ -53,11 +53,13 @@ export default function SOContextMPNDetailPage() {
     } catch { toast('Failed to update MPN'); }
   };
 
+
   const handleAddChip = async (data: ChipFormData) => {
     try {
       let chip = await api.mpns.chips.create(mpnIdNum, {
         brand: data.brandId ? +data.brandId : null,
         qty: +data.qty, chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
+        cut_fail: data.cutFail !== '' ? +data.cutFail : null,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnIdNum, chip.id, data.photoFile);
       setMpn(m => m ? { ...m, chips: [...(m.chips ?? []), chip] } : m);
@@ -71,6 +73,7 @@ export default function SOContextMPNDetailPage() {
       let chip = await api.mpns.chips.update(mpnIdNum, chipId, {
         brand: data.brandId ? +data.brandId : null,
         qty: +data.qty, chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
+        cut_fail: data.cutFail !== '' ? +data.cutFail : null,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnIdNum, chipId, data.photoFile);
       else if (data.clearPhoto) { await api.mpns.chips.deletePhoto(mpnIdNum, chipId); chip = { ...chip, chip_photo_url: null }; }
@@ -114,6 +117,7 @@ export default function SOContextMPNDetailPage() {
           <PhotoCard
             label="Before Cut Photo"
             photoUrl={mpn.beforecut_photo_url}
+            onView={() => mpn.beforecut_photo_url && setLightbox({ src: mpn.beforecut_photo_url, title: 'Before Cut Photo' })}
             onUpload={async (file) => {
               try { const u = await api.mpns.photos.uploadBeforecut(mpnIdNum, file); setMpn(m => m ? { ...m, ...u } : m); toast('Photo uploaded'); }
               catch { toast('Failed to upload photo'); }
@@ -126,6 +130,7 @@ export default function SOContextMPNDetailPage() {
           <PhotoCard
             label="After Cut Photo"
             photoUrl={mpn.aftercut_photo_url}
+            onView={() => mpn.aftercut_photo_url && setLightbox({ src: mpn.aftercut_photo_url, title: 'After Cut Photo' })}
             onUpload={async (file) => {
               try { const u = await api.mpns.photos.uploadAftercut(mpnIdNum, file); setMpn(m => m ? { ...m, ...u } : m); toast('Photo uploaded'); }
               catch { toast('Failed to upload photo'); }
@@ -144,15 +149,23 @@ export default function SOContextMPNDetailPage() {
               {[
                 { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', mono: false, flex: '0 0 112px' },
                 { label: 'After Cut Wt', value: mpn.aftercut_weight ?? '—', mono: false, flex: '0 0 112px' },
-                { label: 'Chip Qty', value: mpn.chip_qty ?? '—', mono: false, flex: '0 0 112px' },
+                { label: 'Chip Qty', value: mpn.chip_qty ?? '—', mono: false, flex: '0 0 90px' },
+                { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false, flex: '0 0 110px' },
+                { label: 'Boards (Scanned)', value: mpn.board_count ?? 0, mono: false, flex: '0 0 120px' },
                 { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false, flex: '0 0 100px' },
-                { label: 'Part Type', value: mpn.part_type || '—', mono: true, flex: '1 1 auto' },
-              ].map((item, i, arr) => (
-                <div key={item.label} style={{ flex: item.flex, padding: '8px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--hair)' : 'none' }}>
+                { label: 'Part Type', value: mpn.part_type || '—', mono: true, flex: '0 0 120px' },
+              ].map((item) => (
+                <div key={item.label} style={{ flex: item.flex, padding: '8px 14px', borderRight: '1px solid var(--hair)' }}>
                   <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
                   <div className={item.mono ? 'mono' : 'num'} style={{ fontSize: 13, color: 'var(--ink)' }}>{item.value}</div>
                 </div>
               ))}
+              <div style={{ flex: '1 1 160px', padding: '8px 14px' }}>
+                <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
+                <div style={{ fontSize: 13, color: mpn.note ? 'var(--ink-2)' : 'var(--ink-5)', whiteSpace: 'pre-wrap', lineHeight: 1.5, fontStyle: mpn.note ? 'normal' : 'italic', fontWeight: mpn.note ? 600 : 400 }}>
+                  {mpn.note || '—'}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -169,13 +182,14 @@ export default function SOContextMPNDetailPage() {
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
               <colgroup>
-                <col style={{ width: '20%' }} />
-                <col style={{ width: '18%' }} />
-                <col style={{ width: '14%' }} />
-                <col style={{ width: 68 }} />
-                <col style={{ width: '10%' }} />
+                <col style={{ width: '16%' }} />
+                <col style={{ width: '15%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: 60 }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '9%' }} />
                 <col />
-                <col style={{ width: 72 }} />
+                <col style={{ width: 100 }} />
               </colgroup>
               <thead>
                 <tr>
@@ -183,14 +197,15 @@ export default function SOContextMPNDetailPage() {
                   <th style={thS}>Chip MPN</th>
                   <th style={thS}>Type</th>
                   <th style={thS}>Photo</th>
-                  <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>Cut Fail</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>Chip Cost</th>
                   <th style={thS}>Description</th>
-                  <th style={thS}></th>
+                  <th style={{ ...thS, textAlign: 'right' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {chips.length === 0 && (
-                  <tr><td colSpan={7}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
+                  <tr><td colSpan={8}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
                 )}
                 {chips.map(chip => (
                   <tr key={chip.id} className="chip-row" style={{ borderTop: '1px solid var(--hair)' }}>
@@ -209,12 +224,19 @@ export default function SOContextMPNDetailPage() {
                         onView={() => chip.chip_photo_url && setLightbox({ src: chip.chip_photo_url, title: [chip.brand_name, chip.chip_mpn].filter(Boolean).join(' · ') || 'Chip Photo' })}
                       />
                     </td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">{chip.qty}</td>
+                    <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                      {chip.cut_fail != null ? chip.cut_fail : 0}
+                    </td>
+                    <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                      {mpn.cutboard_cost != null && totalChips > 0
+                        ? (Number(mpn.cutboard_cost) / totalChips).toFixed(3)
+                        : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                    </td>
                     <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{chip.description || <span style={{ color: 'var(--ink-4)' }}>—</span>}</td>
                     <td style={{ ...tdS, textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: 4 }}>
-                        <button onClick={e => { e.stopPropagation(); setEditingChip(chip); }} style={ghostBtn} title="Edit"><EditIcon /></button>
-                        <button onClick={e => { e.stopPropagation(); setDeleteChipId(chip.id); }} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                      <div style={{ display: 'inline-flex', gap: 6 }}>
+                        <button onClick={e => { e.stopPropagation(); setEditingChip(chip); }} style={chipIconBtn} title="Edit"><EditIcon /></button>
+                        <button onClick={e => { e.stopPropagation(); setDeleteChipId(chip.id); }} style={{ ...chipIconBtn, color: 'var(--err)' }} title="Delete"><TrashIcon /></button>
                       </div>
                     </td>
                   </tr>
@@ -244,9 +266,9 @@ export default function SOContextMPNDetailPage() {
   );
 }
 
-function PhotoCard({ label, photoUrl, onUpload, onDelete }: {
+function PhotoCard({ label, photoUrl, onView, onUpload, onDelete }: {
   label: string; photoUrl?: string | null;
-  onUpload: (file: File) => void; onDelete: () => void;
+  onView: () => void; onUpload: (file: File) => void; onDelete: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -271,8 +293,16 @@ function PhotoCard({ label, photoUrl, onUpload, onDelete }: {
 
       {photoUrl ? (
         <>
-          <div style={{ background: 'var(--surface-2)' }}>
+          <div onClick={onView} title="Click to enlarge" style={{ background: 'var(--surface-2)', cursor: 'zoom-in', position: 'relative', overflow: 'hidden' }}
+            onMouseEnter={e => { const ov = e.currentTarget.querySelector('.photo-overlay') as HTMLElement; if (ov) ov.style.opacity = '1'; }}
+            onMouseLeave={e => { const ov = e.currentTarget.querySelector('.photo-overlay') as HTMLElement; if (ov) ov.style.opacity = '0'; }}>
             <img src={photoUrl} alt={label} style={{ width: '100%', height: 220, objectFit: 'cover', display: 'block' }} />
+            <div className="photo-overlay" style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0, transition: 'opacity .15s' }}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                <line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/>
+              </svg>
+            </div>
           </div>
           {filename && (
             <div style={{ padding: '4px 12px 6px', fontSize: 11, color: 'var(--ink-4)' }}>{filename}</div>
@@ -302,6 +332,12 @@ function PhotoCard({ label, photoUrl, onUpload, onDelete }: {
     </div>
   );
 }
+
+const chipIconBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  width: 32, height: 32, background: 'transparent', border: '1px solid var(--hair)',
+  borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', padding: 0, flexShrink: 0,
+};
 
 const EditIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -333,6 +369,8 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
   const [beforecutQty, setBeforecutQty] = useState(mpn.beforecut_weight != null ? String(mpn.beforecut_weight) : '');
   const [aftercutQty, setAftercutQty] = useState(mpn.aftercut_weight != null ? String(mpn.aftercut_weight) : '');
   const [chipQty, setChipQty] = useState(mpn.chip_qty != null ? String(mpn.chip_qty) : '');
+  const [cutboardCost, setCutboardCost] = useState(mpn.cutboard_cost != null ? String(mpn.cutboard_cost) : '');
+  const [note, setNote] = useState(mpn.note ?? '');
 
   useEffect(() => {
     if (open) {
@@ -340,6 +378,8 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
       setBeforecutQty(mpn.beforecut_weight != null ? String(mpn.beforecut_weight) : '');
       setAftercutQty(mpn.aftercut_weight != null ? String(mpn.aftercut_weight) : '');
       setChipQty(mpn.chip_qty != null ? String(mpn.chip_qty) : '');
+      setCutboardCost(mpn.cutboard_cost != null ? String(mpn.cutboard_cost) : '');
+      setNote(mpn.note ?? '');
     }
   }, [open, mpn]);
 
@@ -352,6 +392,8 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
           beforecut_weight: beforecutQty !== '' ? +beforecutQty : null,
           aftercut_weight: aftercutQty !== '' ? +aftercutQty : null,
           chip_qty: chipQty !== '' ? +chipQty : null,
+          cutboard_cost: cutboardCost !== '' ? +cutboardCost : null,
+          note,
         })}>Save</Button>
       </>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -359,13 +401,18 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
         <Field label="Part Type" span={2}><Input value={partType} onChange={setPartType} placeholder="e.g. IC" /></Field>
         <Field label="Before Cut Wt"><Input value={beforecutQty} onChange={setBeforecutQty} type="number" placeholder="—" /></Field>
         <Field label="After Cut Wt"><Input value={aftercutQty} onChange={setAftercutQty} type="number" placeholder="—" /></Field>
-        <Field label="Chip Qty" span={2}><Input value={chipQty} onChange={setChipQty} type="number" placeholder="—" /></Field>
+        <Field label="Chip Qty"><Input value={chipQty} onChange={setChipQty} type="number" placeholder="—" /></Field>
+        <Field label="Cutboard Cost"><Input value={cutboardCost} onChange={setCutboardCost} type="number" placeholder="—" /></Field>
+        <Field label="Note" span={2}>
+          <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Optional notes…" rows={3}
+            style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '6px 10px', fontSize: 13, fontFamily: 'inherit', border: '1px solid var(--hair)', borderRadius: 4, background: 'var(--surface)', color: 'var(--ink)', outline: 'none', lineHeight: 1.5 }} />
+        </Field>
       </div>
     </Modal>
   );
 }
 
-type ChipFormData = { brandId: string; qty: string; chipMpn: string; chipType: string; description: string; photoFile?: File | null; clearPhoto?: boolean; };
+type ChipFormData = { brandId: string; qty: string; chipMpn: string; chipType: string; description: string; cutFail: string; photoFile?: File | null; clearPhoto?: boolean; };
 
 function ChipPhotoSquare({ value, onChange }: { value: { src: string; name?: string; file?: File } | null; onChange: (v: { src: string; name: string; file: File } | null) => void; }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -483,6 +530,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
   const [chipMpn, setChipMpn] = useState('');
   const [chipType, setChipType] = useState('');
   const [description, setDescription] = useState('');
+  const [cutFail, setCutFail] = useState('');
   const [photo, setPhoto] = useState<{ src: string; name?: string; file?: File } | null>(null);
   const initialPhotoUrl = initial?.chip_photo_url ?? null;
 
@@ -493,6 +541,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
       setChipMpn(initial?.chip_mpn ?? '');
       setChipType(initial?.chip_type ?? '');
       setDescription(initial?.description ?? '');
+      setCutFail(initial?.cut_fail != null ? String(initial.cut_fail) : '');
       setPhoto(initial?.chip_photo_url ? { src: initial.chip_photo_url, name: initial.chip_photo_url.split('/').pop() } : null);
     }
   }, [open, initial]);
@@ -503,7 +552,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
   const submit = () => {
     if (overLimit) return;
     onAdd({
-      brandId, qty, chipMpn, chipType, description,
+      brandId, qty, chipMpn, chipType, description, cutFail,
       photoFile: photo?.file ?? null,
       clearPhoto: !photo && !!initialPhotoUrl,
     });
@@ -522,7 +571,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
             <Field label="Chip MPN"><Input value={chipMpn} onChange={setChipMpn} placeholder="e.g. TPS62130" autoFocus={mode === 'add'} /></Field>
             <Field label="Type"><Input value={chipType} onChange={setChipType} placeholder="e.g. DC-DC" /></Field>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 10, marginTop: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 1fr', gap: 10, marginTop: 12 }}>
             <Field label="Qty">
               <Input value={qty} onChange={setQty} type="number" placeholder="1" />
               {maxQty != null && (
@@ -531,6 +580,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
                 </div>
               )}
             </Field>
+            <Field label="Cut Fail"><Input value={cutFail} onChange={setCutFail} type="number" placeholder="—" /></Field>
             <Field label="Description"><Input value={description} onChange={setDescription} placeholder="Optional" /></Field>
           </div>
         </div>

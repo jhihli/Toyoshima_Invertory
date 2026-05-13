@@ -19,7 +19,6 @@ export default function BoardDetailPage() {
   const [chipBrands, setChipBrands] = useState<ChipBrand[]>([]);
   const [loading, setLoading] = useState(true);
   const [addChipOpen, setAddChipOpen] = useState(false);
-  const [copyingTemplate, setCopyingTemplate] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
@@ -71,21 +70,6 @@ export default function BoardDetailPage() {
       setBoard(b => b ? { ...b, chips: b.chips.filter(c => c.id !== chipId) } : b);
       toast('Chip removed');
     } catch { toast('Failed to delete chip'); }
-  };
-
-  const handleCopyFromTemplate = async () => {
-    if (!board?.mpn) return;
-    setCopyingTemplate(true);
-    try {
-      const res = await api.chips.copyFromMpn(board.id);
-      if (res.created === 0) {
-        toast('No template chips found on this MPN');
-      } else {
-        setBoard(b => b ? { ...b, chips: [...b.chips, ...res.chips] } : b);
-        toast(`${res.created} chip${res.created === 1 ? '' : 's'} copied from MPN template`);
-      }
-    } catch { toast('Failed to copy template chips'); }
-    finally { setCopyingTemplate(false); }
   };
 
   const handleAddChip = async (brandId: string, qty: string, description: string) => {
@@ -305,14 +289,7 @@ export default function BoardDetailPage() {
             background: 'rgba(45,106,79,0.15)', padding: '1px 7px', borderRadius: 10, lineHeight: 1.6,
           }}>{totalChips} chip{totalChips === 1 ? '' : 's'}</span>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          {board.mpn && (
-            <Button size="sm" variant="outline" onClick={handleCopyFromTemplate} disabled={copyingTemplate}>
-              {copyingTemplate ? 'Copying…' : 'Copy from MPN template'}
-            </Button>
-          )}
-          <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={() => setAddChipOpen(true)}>Add chip</Button>
-        </div>
+        <Button size="sm" variant="primary" icon={<PlusIcon />} onClick={() => setAddChipOpen(true)}>Add chip</Button>
       </div>
 
       <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>

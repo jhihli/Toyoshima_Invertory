@@ -243,7 +243,7 @@ export default function SODetailPage() {
     try {
       await api.boards.create(soId, {
         so: soId, barcode: data.barcode,
-        mpn: data.mpn, qty: +data.qty,
+        mpn: data.mpn || null, qty: +data.qty,
         pallet: data.pallet ? +data.pallet : null,
       } as any);
       toast('Board added');
@@ -256,18 +256,16 @@ export default function SODetailPage() {
     barcodes: { barcode: string }[],
     shared: { mpn: string; pallet: string }
   ) => {
-    try {
-      const boards = barcodes.map(r => ({
-        so: soId, barcode: r.barcode,
-        mpn: shared.mpn,
-        qty: 1,
-        pallet: shared.pallet ? +shared.pallet : null,
-      }));
-      const result = await api.boards.createBulk(soId, boards as any);
-      toast(`${result.length} board${result.length === 1 ? '' : 's'} added`);
-      loadBoards();
-      setSo(s => s ? { ...s, total_board_count: s.total_board_count + result.length } : s);
-    } catch { toast('Failed to add boards'); }
+    const boards = barcodes.map(r => ({
+      so: soId, barcode: r.barcode,
+      mpn: shared.mpn || null,
+      qty: 1,
+      pallet: shared.pallet ? +shared.pallet : null,
+    }));
+    const result = await api.boards.createBulk(soId, boards as any);
+    toast(`${result.length} board${result.length === 1 ? '' : 's'} added`);
+    loadBoards();
+    setSo(s => s ? { ...s, total_board_count: s.total_board_count + result.length } : s);
   };
 
 
@@ -1336,9 +1334,7 @@ function BoardsTab({ boards, pallets, soNumber, dateFrom, dateTo, palletFilter,
                                   <span className="num" style={{ fontSize: 10.5, color: 'var(--ink-4)', flexShrink: 0, minWidth: 26 }}>
                                     {String(idx + 1).padStart(3, '0')}
                                   </span>
-                                  <span className="mono" onClick={() => router.push(`/sos/${soId}/boards/${b.id}`)} style={{ fontSize: 12, color: isHit ? '#b45309' : 'var(--accent)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isHit ? 600 : 400, cursor: 'pointer', textDecoration: 'underline', textDecorationColor: 'transparent' }}
-                                    onMouseEnter={e => (e.currentTarget.style.textDecorationColor = 'currentColor')}
-                                    onMouseLeave={e => (e.currentTarget.style.textDecorationColor = 'transparent')}>
+                                  <span className="mono" style={{ fontSize: 12, color: isHit ? '#b45309' : 'var(--ink)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: isHit ? 600 : 400 }}>
                                     {b.barcode || '—'}
                                   </span>
                                   <button onClick={() => onDeleteBoard(b.id)} style={{ ...ghostBtn, flexShrink: 0 }} title="Delete"><TrashIcon /></button>
@@ -1629,21 +1625,23 @@ function PhotoThumb({ url, caption, size = 120, onClick, onDelete }: {
 }
 
 // ─── Add Board Modal ──────────────────────────────────────────────
-function MpnComboInput({ value, onChange, mpns, autoFocus, placeholder }: {
-  value: string; onChange: (v: string) => void; mpns: string[];
-  autoFocus?: boolean; placeholder?: string;
+function MpnComboInput({ value, onChange, mpns, autoFocus }: {
+  value: string; onChange: (v: string) => void;
+  mpns: string[]; autoFocus?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const filtered = mpns.filter(m => m.toLowerCase().includes(value.toLowerCase().trim()));
+  const [isTyping, setIsTyping] = useState(false);
+  const filtered = isTyping ? mpns.filter(m => m.toLowerCase().includes(value.toLowerCase().trim())) : mpns;
+
   return (
     <div style={{ position: 'relative' }}>
       <input
         value={value}
-        onChange={e => onChange(e.target.value.toUpperCase())}
+        onChange={e => { setIsTyping(true); onChange(e.target.value.toUpperCase()); }}
         onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        onBlur={() => { setTimeout(() => setOpen(false), 150); setIsTyping(false); }}
         autoFocus={autoFocus}
-        placeholder={placeholder ?? 'NVMe-PCIe4-1T'}
+        placeholder="SP#"
         style={{
           width: '100%', padding: '6px 10px', boxSizing: 'border-box',
           border: '1px solid var(--hair-strong)', borderRadius: 3,
@@ -1656,14 +1654,15 @@ function MpnComboInput({ value, onChange, mpns, autoFocus, placeholder }: {
           position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
           background: 'var(--surface)', border: '1px solid var(--hair-strong)',
           borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
-          maxHeight: 180, overflowY: 'auto', marginTop: 2,
+          maxHeight: 220, overflowY: 'auto', marginTop: 2,
         }}>
-          {filtered.map(m => (
-            <div key={m} onMouseDown={() => { onChange(m); setOpen(false); }}
-              style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 12.5, fontFamily: 'ui-monospace, monospace', color: 'var(--ink)' }}
+          {filtered.map(name => (
+            <div key={name} onMouseDown={() => { onChange(name); setIsTyping(false); setOpen(false); }}
+              style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 12.5,
+                fontFamily: 'ui-monospace, monospace', color: 'var(--ink)' }}
               onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
               onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-              {m}
+              {name}
             </div>
           ))}
         </div>
@@ -1675,7 +1674,7 @@ function MpnComboInput({ value, onChange, mpns, autoFocus, placeholder }: {
 function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, onAddBulk }: {
   open: boolean; pallets: Pallet[]; mpns: string[]; existingBoards: Board[]; onClose: () => void;
   onAdd: (d: { barcode: string; mpn: string; qty: string; pallet: string }) => void;
-  onAddBulk: (rows: { barcode: string }[], shared: { mpn: string; pallet: string }) => void;
+  onAddBulk: (rows: { barcode: string }[], shared: { mpn: string; pallet: string }) => Promise<void>;
 }) {
   const [mode, setMode] = useState<'single' | 'bulk'>('single');
   // single
@@ -1693,6 +1692,8 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
   const [bulkPage, setBulkPage] = useState(1);
   const BULK_PAGE_SIZE = 108;
   const [dbDupBarcodes, setDbDupBarcodes] = useState<Set<string>>(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
     if (open) {
@@ -1717,24 +1718,32 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
   const canSaveSingle = mpn.trim() !== '' && pallet !== '' && barcode.trim() !== '' && qty.trim() !== '' && +qty > 0;
   const dupCount = bulkRows.length - new Set(bulkRows.map(r => r.barcode)).size;
   const nonDupCount = dbDupBarcodes.size > 0 ? bulkRows.filter(r => !dbDupBarcodes.has(r.barcode)).length : bulkRows.length;
-  const canSaveBulk = bulkRows.length > 0 && bMpn.trim() !== '' && bPallet !== '' && (dbDupBarcodes.size === 0 || nonDupCount > 0);
+  const canSaveBulk = bulkRows.length > 0 && bMpn.trim() !== '' && bPallet !== '' && dupCount === 0 && (dbDupBarcodes.size === 0 || nonDupCount > 0);
 
-  const handleBulkSubmit = () => {
+  const handleBulkSubmit = async () => {
+    setSubmitError('');
+    let rowsToAdd = bulkRows;
     if (dbDupBarcodes.size > 0) {
-      const rowsToAdd = bulkRows.filter(r => !dbDupBarcodes.has(r.barcode));
-      if (rowsToAdd.length > 0) onAddBulk(rowsToAdd, { mpn: bMpn, pallet: bPallet });
-      onClose();
-      return;
+      rowsToAdd = bulkRows.filter(r => !dbDupBarcodes.has(r.barcode));
+      if (rowsToAdd.length === 0) { onClose(); return; }
+    } else {
+      const existingBarcodeSet = new Set(
+        existingBoards
+          .filter(b => (b.mpn?.name ?? '') === bMpn && String(b.pallet ?? '') === bPallet)
+          .map(b => b.barcode)
+      );
+      const dupes = new Set(bulkRows.map(r => r.barcode).filter(bc => existingBarcodeSet.has(bc)));
+      if (dupes.size > 0) { setDbDupBarcodes(dupes); return; }
     }
-    const existingBarcodeSet = new Set(
-      existingBoards
-        .filter(b => b.mpn?.name === bMpn && String(b.pallet ?? '') === bPallet)
-        .map(b => b.barcode)
-    );
-    const dupes = new Set(bulkRows.map(r => r.barcode).filter(bc => existingBarcodeSet.has(bc)));
-    if (dupes.size > 0) { setDbDupBarcodes(dupes); return; }
-    onAddBulk(bulkRows, { mpn: bMpn, pallet: bPallet });
-    onClose();
+    setSubmitting(true);
+    try {
+      await onAddBulk(rowsToAdd, { mpn: bMpn, pallet: bPallet });
+      onClose();
+    } catch {
+      setSubmitError('Network error — boards were not saved. Please check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
   const bulkTotalPages = Math.max(1, Math.ceil(bulkRows.length / BULK_PAGE_SIZE));
   const bulkSafePage = Math.min(bulkPage, bulkTotalPages);
@@ -1769,7 +1778,7 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
           {mode === 'bulk' && (
             <div style={{ display: 'flex', gap: 12, flex: 1, minWidth: 0, alignItems: 'flex-end', flexWrap: 'wrap', rowGap: 6 }}>
               {/* MPN */}
-              <div style={{ flex: '0 0 180px', minWidth: 140 }}>
+              <div style={{ flex: '0 0 280px', minWidth: 200 }}>
                 <div style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.07em', color: 'var(--ink-3)', marginBottom: 3 }}>MPN <span style={{ color: 'red' }}>*</span></div>
                 <MpnComboInput value={bMpn} onChange={setBMpn} mpns={mpns} />
               </div>
@@ -1839,17 +1848,26 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
               </div>
             )}
             {bulkTotalPages <= 1 && <span style={{ flex: 1 }} />}
-            <Button variant="ghost" onClick={onClose}>Cancel</Button>
-            <Button variant="primary" disabled={!canSaveBulk} onClick={handleBulkSubmit}>
-              {dbDupBarcodes.size > 0
+            <Button variant="ghost" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button variant="primary" disabled={!canSaveBulk || submitting} onClick={handleBulkSubmit}>
+              {submitting ? 'Saving…' : dbDupBarcodes.size > 0
                 ? `Add ${nonDupCount} new board${nonDupCount === 1 ? '' : 's'} (skip ${dbDupBarcodes.size})`
                 : `Add ${bulkRows.length || ''} board${bulkRows.length === 1 ? '' : 's'}`}
             </Button>
           </>}>
 
+      {submitError && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 12, background: '#fff5f5', border: '1px solid #fca5a5', borderRadius: 6, color: '#b91c1c', fontSize: 13 }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          {submitError}
+        </div>
+      )}
+
       {mode === 'single' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          <Field label={<>MPN <span style={{ color: 'red' }}>*</span></>}>
+          <Field label={<>MPN <span style={{ color: 'red' }}>*</span></>} span={2}>
             <MpnComboInput value={mpn} onChange={setMpn} mpns={mpns} autoFocus />
           </Field>
           <Field label={<>Pallet <span style={{ color: 'red' }}>*</span></>} span={2}>

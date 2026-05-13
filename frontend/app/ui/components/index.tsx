@@ -226,15 +226,9 @@ interface ModalProps {
 export const Modal: React.FC<ModalProps> = ({ open, onClose, title, children, width = 480, footer }) => {
   const [mounted, setMounted] = useState(false);
   useEffect(() => { setMounted(true); }, []);
-  useEffect(() => {
-    if (!open) return;
-    const h = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [open, onClose]);
   if (!open || !mounted) return null;
   return createPortal(
-    <div onClick={onClose} style={{
+    <div style={{
       position: 'fixed', inset: 0, background: 'rgba(26,25,23,0.28)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       zIndex: 1000, padding: '72px 0 24px',

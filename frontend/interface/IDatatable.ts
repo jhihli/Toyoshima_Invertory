@@ -58,10 +58,14 @@ export interface MPN {
   beforecut_weight: number | null;
   aftercut_weight: number | null;
   chip_qty: number | null;
+  cutboard_cost: number | null;
   beforecut_photo_url?: string | null;
   aftercut_photo_url?: string | null;
   board_count?: number;
+  chip_brands: string[];
+  note?: string;
   created_at: string;
+  latest_board_date?: string | null;
   chips?: Chip[];
 }
 
@@ -88,7 +92,6 @@ export interface ChipBrand {
 export interface Chip {
   id: number;
   mpn: number | null;
-  board: number | null;
   brand: number | null;
   brand_name: string | null;
   chip_mpn: string;
@@ -96,7 +99,31 @@ export interface Chip {
   chip_photo: string | null;
   chip_photo_url: string | null;
   qty: number;
+  cut_fail: number | null;
+  chip_cost: number | null;
   description: string;
+}
+
+export interface MPNReportConfig {
+  recipient: string;
+  cc: string;
+  auto_send_enabled: boolean;
+  send_time: string;
+  updated_at: string;
+}
+
+export interface MPNReportStatus {
+  id: number;
+  sent_at: string;
+  sent_to: string;
+  cc: string;
+  status: 'ok' | 'error';
+  error: string;
+  triggered_by: 'cron' | 'manual';
+}
+
+export interface MPNReportLastSend {
+  record: MPNReportStatus | null;
 }
 
 export interface PaginatedResult<T> {

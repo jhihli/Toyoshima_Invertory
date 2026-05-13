@@ -1,12 +1,13 @@
 'use client';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import * as XLSX from 'xlsx-js-style';
 import {
   Button, Modal, Breadcrumbs, Input, Empty,
   Field, useToast, thS, tdS, ghostBtn,
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
-import type { MPN } from '@/interface/IDatatable';
+import type { MPN, MPNReportConfig, MPNReportStatus } from '@/interface/IDatatable';
 
 export default function MPNsPage() {
   const router = useRouter();
@@ -16,7 +17,14 @@ export default function MPNsPage() {
   const [search, setSearch] = useState('');
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [modalMpn, setModalMpn] = useState<MPN | null>(null); // null = create mode
+  const [modalMpn, setModalMpn] = useState<MPN | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const [reportStatus, setReportStatus] = useState<MPNReportStatus | null>(null);
+  const [reportConfig, setReportConfig] = useState<MPNReportConfig | null>(null);
+  const [reportLoading, setReportLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
 
   // Text fields
   const [name, setName] = useState('');
@@ -24,6 +32,7 @@ export default function MPNsPage() {
   const [beforecutQty, setBeforecutQty] = useState('');
   const [aftercutQty, setAftercutQty] = useState('');
   const [chipQty, setChipQty] = useState('');
+  const [note, setNote] = useState('');
 
   // Local pending files (create mode only — uploaded atomically on "Create")
   const [beforecutFile, setBeforecutFile] = useState<File | null>(null);
@@ -32,9 +41,17 @@ export default function MPNsPage() {
   const [aftercutPreview, setAftercutPreview] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try { setMpns(await api.mpns.list()); }
-    catch { toast('Failed to load MPNs'); }
-    finally { setLoading(false); }
+    try {
+      const [mpnData, statusData, configData] = await Promise.all([
+        api.mpns.list(),
+        api.mpnReport.lastSend(),
+        api.mpnReport.getConfig(),
+      ]);
+      setMpns(mpnData);
+      setReportStatus(statusData.record);
+      setReportConfig(configData);
+    } catch { toast('Failed to load MPNs'); }
+    finally { setLoading(false); setReportLoading(false); }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -47,7 +64,7 @@ export default function MPNsPage() {
 
   const openNew = () => {
     setModalMpn(null);
-    setName(''); setPartType(''); setBeforecutQty(''); setAftercutQty(''); setChipQty('');
+    setName(''); setPartType(''); setBeforecutQty(''); setAftercutQty(''); setChipQty(''); setNote('');
     setBeforecutFile(null); setAftercutFile(null);
     setBeforecutPreview(null); setAftercutPreview(null);
     setModalOpen(true);
@@ -60,6 +77,7 @@ export default function MPNsPage() {
     setBeforecutQty(m.beforecut_weight != null ? String(m.beforecut_weight) : '');
     setAftercutQty(m.aftercut_weight != null ? String(m.aftercut_weight) : '');
     setChipQty(m.chip_qty != null ? String(m.chip_qty) : '');
+    setNote(m.note ?? '');
     setBeforecutFile(null); setAftercutFile(null);
     setBeforecutPreview(null); setAftercutPreview(null);
     setModalOpen(true);
@@ -97,6 +115,7 @@ export default function MPNsPage() {
       beforecut_weight: beforecutQty !== '' ? +beforecutQty : null,
       aftercut_weight: aftercutQty !== '' ? +aftercutQty : null,
       chip_qty: chipQty !== '' ? +chipQty : null,
+      note,
     };
     try {
       if (modalMpn) {
@@ -160,6 +179,89 @@ export default function MPNsPage() {
     }
   };
 
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const details = await Promise.all(mpns.map(m => api.mpns.get(m.id)));
+
+      const aoa: any[][] = [[
+        'MPN', 'Date Processed', 'Chip MPN', 'Chips Failed',
+        'Failure Rate (BOARDS Scanned / Chips Failed)',
+        'BOARDS (Scanned)', 'CUTBOARD COST', 'CHIP COST',
+      ]];
+
+      for (const mpn of details) {
+        const chips = mpn.chips ?? [];
+        const totalChipQty = chips.reduce((s, c) => s + c.qty, 0);
+        const chipCost = mpn.cutboard_cost != null && totalChipQty > 0
+          ? parseFloat((Number(mpn.cutboard_cost) / totalChipQty).toFixed(4))
+          : null;
+        const boardCount = mpn.board_count ?? 0;
+
+        if (chips.length === 0) {
+          aoa.push([mpn.name, mpn.latest_board_date ?? '', '', '', null, boardCount, mpn.cutboard_cost ?? '', '']);
+        } else {
+          for (const chip of chips) {
+            const failureRate = (chip.cut_fail != null && chip.cut_fail > 0 && boardCount > 0)
+              ? chip.cut_fail / boardCount
+              : 0;
+            aoa.push([
+              mpn.name,
+              mpn.latest_board_date ?? '',
+              chip.chip_mpn || '',
+              chip.cut_fail ?? 0,
+              failureRate,
+              boardCount,
+              mpn.cutboard_cost ?? '',
+              chipCost ?? '',
+            ]);
+          }
+        }
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const range = XLSX.utils.decode_range(ws['!ref']!);
+      // Apply left alignment to all cells; format failure rate (col E) as percentage
+      for (let r = range.s.r; r <= range.e.r; r++) {
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const cellAddr = XLSX.utils.encode_cell({ r, c });
+          if (!ws[cellAddr]) continue;
+          const cell = ws[cellAddr];
+          cell.s = { ...(cell.s ?? {}), alignment: { horizontal: 'left' } };
+          if (c === 4 && r > 0 && cell.v != null) {
+            cell.t = 'n';
+            cell.z = '0.00%';
+          }
+        }
+      }
+      // Set column widths
+      ws['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 38 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'MPN Export');
+      XLSX.writeFile(wb, `mpn_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch { toast('Export failed'); }
+    finally { setExporting(false); }
+  };
+
+  const handleSendNow = async () => {
+    setSending(true);
+    try {
+      const record = await api.mpnReport.sendNow();
+      setReportStatus(record);
+      toast(record.status === 'ok' ? 'Report sent successfully' : 'Send failed — check status for details');
+    } catch { toast('Failed to send report'); }
+    finally { setSending(false); }
+  };
+
+  const handleSaveConfig = async (cfg: Partial<MPNReportConfig>) => {
+    try {
+      const updated = await api.mpnReport.saveConfig(cfg);
+      setReportConfig(updated);
+      toast('Settings saved');
+    } catch { toast('Failed to save settings'); }
+  };
+
   const filtered = search.trim()
     ? mpns.filter(m =>
         m.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -182,6 +284,28 @@ export default function MPNsPage() {
         </div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <Input value={search} onChange={setSearch} placeholder="Search name or part type…" />
+
+          {/* Report email status bar */}
+          {!reportLoading && (
+            <>
+              <ReportStatusBadge record={reportStatus} />
+              <Button variant="outline" onClick={handleSendNow} disabled={sending}>
+                {sending ? 'Sending…' : 'Send Now'}
+              </Button>
+              <button
+                onClick={() => setConfigOpen(true)}
+                title="Email report settings"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: '1px solid var(--hair)', borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0 }}
+              >
+                <GearIcon />
+              </button>
+              <div style={{ width: 1, height: 20, background: 'var(--hair)', flexShrink: 0 }} />
+            </>
+          )}
+
+          <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport} disabled={exporting || mpns.length === 0}>
+            {exporting ? 'Exporting…' : 'Export'}
+          </Button>
           <Button variant="primary" icon={<PlusIcon />} onClick={openNew}>New MPN</Button>
         </div>
       </div>
@@ -190,13 +314,14 @@ export default function MPNsPage() {
         <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '26%' }} />
-              <col style={{ width: '13%' }} />
+              <col style={{ width: '20%' }} />
               <col style={{ width: '10%' }} />
-              <col style={{ width: '10%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '6%' }} />
               <col style={{ width: '8%' }} />
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '11%' }} />
+              <col style={{ width: '9%' }} />
+              <col />
               <col style={{ width: 110 }} />
             </colgroup>
             <thead>
@@ -206,15 +331,16 @@ export default function MPNsPage() {
                 <th style={{ ...thS, textAlign: 'right' }}>Beforecut Weight</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Aftercut Weight</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Boards</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Boards (Scanned)</th>
                 <th style={thS}>Created</th>
+                <th style={thS}>Note</th>
                 <th style={{ ...thS, textAlign: 'right' }}></th>
               </tr>
             </thead>
             <tbody>
-              {loading && <tr><td colSpan={8}><Empty label="Loading…" /></td></tr>}
+              {loading && <tr><td colSpan={9}><Empty label="Loading…" /></td></tr>}
               {!loading && filtered.length === 0 && (
-                <tr><td colSpan={8}>
+                <tr><td colSpan={9}>
                   <Empty
                     label={search ? 'No matching MPNs' : 'No MPNs yet'}
                     sub={search ? 'Try a different search.' : "Click 'New MPN' to add one."}
@@ -247,13 +373,19 @@ export default function MPNsPage() {
                       <span className="num" style={{ color: bc > 0 ? 'var(--ink)' : 'var(--ink-4)' }}>{bc}</span>
                     </td>
                     <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{m.created_at?.slice(0, 10) || '—'}</td>
+                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.note ? 600 : 400 }}
+                      title={m.note || undefined}>
+                      {m.note || <span style={{ color: 'var(--ink-5)', fontWeight: 400 }}>—</span>}
+                    </td>
                     <td style={{ ...tdS, textAlign: 'right' }}>
-                      <button onClick={() => openEdit(m)} style={ghostBtn}>Edit</button>
-                      <button
-                        onClick={() => handleDelete(m)}
-                        style={{ ...ghostBtn, color: bc > 0 ? 'var(--ink-4)' : 'var(--err)' }}
-                        title={bc > 0 ? `${bc} board${bc !== 1 ? 's' : ''} using this MPN` : 'Delete'}
-                      >Delete</button>
+                      <div style={{ display: 'inline-flex', gap: 4 }}>
+                        <button onClick={() => openEdit(m)} style={iconBtn} title="Edit"><EditIcon /></button>
+                        <button
+                          onClick={() => handleDelete(m)}
+                          style={{ ...iconBtn, color: bc > 0 ? 'var(--ink-4)' : 'var(--err)' }}
+                          title={bc > 0 ? `${bc} board${bc !== 1 ? 's' : ''} using this MPN` : 'Delete'}
+                        ><TrashIcon /></button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -262,6 +394,14 @@ export default function MPNsPage() {
           </table>
         </div>
       </div>
+
+      {configOpen && reportConfig && (
+        <EmailConfigModal
+          config={reportConfig}
+          onClose={() => setConfigOpen(false)}
+          onSave={handleSaveConfig}
+        />
+      )}
 
       <Modal
         open={modalOpen}
@@ -288,6 +428,10 @@ export default function MPNsPage() {
           </Field>
           <Field label="Chip Qty" span={2}>
             <Input value={chipQty} onChange={setChipQty} type="number" placeholder="—" />
+          </Field>
+          <Field label="Note" span={2}>
+            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Optional notes…" rows={3}
+              style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: '6px 10px', fontSize: 13, fontFamily: 'inherit', border: '1px solid var(--hair)', borderRadius: 4, background: 'var(--surface)', color: 'var(--ink)', outline: 'none', lineHeight: 1.5 }} />
           </Field>
 
           {/* Photos */}
@@ -421,9 +565,203 @@ function IconRefresh() {
   );
 }
 
+const iconBtn: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+  width: 28, height: 28, background: 'transparent', border: '1px solid var(--hair)',
+  borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', padding: 0,
+};
+
+const EditIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+  </svg>
+);
+const TrashIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+  </svg>
+);
+
 const PlusIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
+
+const DownloadIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+
+const GearIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+
+function formatSentAt(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    + ', ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function ReportStatusBadge({ record }: { record: MPNReportStatus | null }) {
+  if (!record) {
+    return (
+      <span style={{ fontSize: 12, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>Never sent</span>
+    );
+  }
+  const ok = record.status === 'ok';
+  return (
+    <span
+      title={ok ? `Sent to ${record.sent_to}` : record.error}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        fontSize: 12, whiteSpace: 'nowrap',
+        color: ok ? '#2e7d32' : '#c62828',
+        cursor: ok ? 'default' : 'help',
+      }}
+    >
+      <span style={{
+        width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+        background: ok ? '#4caf50' : '#e53935',
+      }} />
+      {ok ? 'Sent' : 'Failed'} {formatSentAt(record.sent_at)}
+    </span>
+  );
+}
+
+function EmailTagInput({ tags, onChange, placeholder }: {
+  tags: string[]; onChange: (v: string[]) => void; placeholder?: string;
+}) {
+  const [draft, setDraft] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const commit = () => {
+    const val = draft.trim();
+    if (val && !tags.includes(val)) onChange([...tags, val]);
+    setDraft('');
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit(); }
+    if (e.key === 'Backspace' && draft === '' && tags.length > 0)
+      onChange(tags.slice(0, -1));
+  };
+
+  return (
+    <div
+      onClick={() => inputRef.current?.focus()}
+      style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: '6px 8px', border: '1px solid var(--hair)', borderRadius: 4, background: 'var(--surface)', cursor: 'text', minHeight: 38 }}
+    >
+      {tags.map((tag, i) => (
+        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--accent-tint)', border: '1px solid #afd2ea', borderRadius: 3, padding: '2px 6px', fontSize: 12, color: '#1a5f8b' }}>
+          {tag}
+          <button onClick={e => { e.stopPropagation(); onChange(tags.filter((_, idx) => idx !== i)); }}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5a9cbf', padding: 0, display: 'inline-flex', lineHeight: 1, fontSize: 14 }}>×</button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={commit}
+        placeholder={tags.length === 0 ? placeholder : ''}
+        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--ink)', fontFamily: 'inherit', minWidth: 160, flex: 1, padding: '2px 0' }}
+      />
+    </div>
+  );
+}
+
+function EmailConfigModal({ config, onClose, onSave }: {
+  config: MPNReportConfig;
+  onClose: () => void;
+  onSave: (d: Partial<MPNReportConfig>) => Promise<void>;
+}) {
+  const splitEmails = (s: string) => s.split(',').map(e => e.trim()).filter(Boolean);
+  const [recipients, setRecipients] = useState<string[]>(() => splitEmails(config.recipient));
+  const [ccs, setCcs] = useState<string[]>(() => splitEmails(config.cc));
+  const [autoSend, setAutoSend] = useState(config.auto_send_enabled);
+  const [sendTime, setSendTime] = useState(config.send_time?.slice(0, 5) ?? '19:00');
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave({ recipient: recipients.join(','), cc: ccs.join(','), auto_send_enabled: autoSend, send_time: sendTime });
+      onClose();
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Email Report Settings" width={480}
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={handleSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+      </>}
+    >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+
+        {/* Recipients */}
+        <div style={{ padding: '4px 0 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>To</span>
+            <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-5)' }}>Press Enter or comma to add</span>
+          </div>
+          <EmailTagInput tags={recipients} onChange={setRecipients} placeholder="recipient@example.com" />
+        </div>
+
+        <div style={{ height: 1, background: 'var(--hair)', margin: '0 0 16px' }} />
+
+        {/* CC */}
+        <div style={{ paddingBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>CC</span>
+            <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--ink-5)' }}>Optional</span>
+          </div>
+          <EmailTagInput tags={ccs} onChange={setCcs} placeholder="cc@example.com" />
+        </div>
+
+        <div style={{ height: 1, background: 'var(--hair)', margin: '0 0 16px' }} />
+
+        {/* Schedule */}
+        <div>
+          <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-3)', display: 'block', marginBottom: 12 }}>Schedule</span>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', border: '1px solid var(--hair)', borderRadius: 6, background: 'var(--surface)' }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--ink)', marginBottom: 2 }}>Auto-send daily</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-4)' }}>{autoSend ? `Sends at ${sendTime} every day` : 'Disabled — use Send Now to send manually'}</div>
+            </div>
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+              <div style={{ position: 'relative', width: 36, height: 20 }}>
+                <input type="checkbox" checked={autoSend} onChange={e => setAutoSend(e.target.checked)}
+                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
+                <div style={{ position: 'absolute', inset: 0, borderRadius: 20, background: autoSend ? 'var(--accent)' : 'var(--hair)', transition: 'background .2s', cursor: 'pointer' }}
+                  onClick={() => setAutoSend(v => !v)} />
+                <div style={{ position: 'absolute', top: 3, left: autoSend ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left .2s', pointerEvents: 'none' }} />
+              </div>
+            </label>
+          </div>
+          {autoSend && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, padding: '10px 14px', border: '1px solid var(--hair)', borderRadius: 6, background: 'var(--surface)' }}>
+              <span style={{ fontSize: 13, color: 'var(--ink-2)', flex: 1 }}>Send time</span>
+              <input type="time" value={sendTime} onChange={e => setSendTime(e.target.value)}
+                style={{ height: 30, padding: '0 8px', fontSize: 13, fontFamily: 'inherit', border: '1px solid var(--hair)', borderRadius: 4, background: 'var(--surface)', color: 'var(--ink)', outline: 'none', cursor: 'pointer' }} />
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
