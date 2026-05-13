@@ -329,8 +329,8 @@ export default function MPNsPage() {
         <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '10%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '7%' }} />
               <col style={{ width: '9%' }} />
               <col style={{ width: '9%' }} />
               <col style={{ width: '6%' }} />
@@ -385,7 +385,13 @@ export default function MPNsPage() {
                     <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.aftercut_weight ?? '—'}</td>
                     <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.chip_qty ?? '—'}</td>
                     <td style={{ ...tdS, textAlign: 'right' }}>
-                      <span className="num" style={{ color: bc > 0 ? 'var(--ink)' : 'var(--ink-4)' }}>{bc}</span>
+                      <span className="num" style={{
+                        display: 'inline-block', padding: '2px 8px', fontSize: 12,
+                        background: bc > 0 ? '#e6f4ea' : 'var(--surface-2)',
+                        border: `1px solid ${bc > 0 ? '#a8d5b0' : 'var(--hair)'}`,
+                        borderRadius: 3, color: bc > 0 ? '#2e7d32' : 'var(--ink-4)',
+                        lineHeight: 1.6,
+                      }}>{bc}</span>
                     </td>
                     <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{m.created_at?.slice(0, 10) || '—'}</td>
                     <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.note ? 600 : 400 }}
