@@ -190,6 +190,9 @@ export default function MPNsPage() {
         'BOARDS (Scanned)', 'CUTBOARD COST', 'CHIP COST',
       ]];
 
+      const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
+      let currentRow = 1; // row 0 is header
+
       for (const mpn of details) {
         const chips = mpn.chips ?? [];
         const totalChipQty = chips.reduce((s, c) => s + c.qty, 0);
@@ -197,9 +200,11 @@ export default function MPNsPage() {
           ? parseFloat((Number(mpn.cutboard_cost) / totalChipQty).toFixed(4))
           : null;
         const boardCount = mpn.board_count ?? 0;
+        const startRow = currentRow;
 
         if (chips.length === 0) {
           aoa.push([mpn.name, mpn.latest_board_date ?? '', '', '', null, boardCount, mpn.cutboard_cost ?? '', '']);
+          currentRow++;
         } else {
           for (const chip of chips) {
             const failureRate = (chip.cut_fail != null && chip.cut_fail > 0 && boardCount > 0)
@@ -215,26 +220,33 @@ export default function MPNsPage() {
               mpn.cutboard_cost ?? '',
               chipCost ?? '',
             ]);
+            currentRow++;
           }
+        }
+
+        const endRow = currentRow - 1;
+        if (endRow > startRow) {
+          merges.push({ s: { r: startRow, c: 0 }, e: { r: endRow, c: 0 } }); // MPN
+          merges.push({ s: { r: startRow, c: 6 }, e: { r: endRow, c: 6 } }); // CUTBOARD COST
         }
       }
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!merges'] = merges;
+
       const range = XLSX.utils.decode_range(ws['!ref']!);
-      // Apply left alignment to all cells; format failure rate (col E) as percentage
       for (let r = range.s.r; r <= range.e.r; r++) {
         for (let c = range.s.c; c <= range.e.c; c++) {
           const cellAddr = XLSX.utils.encode_cell({ r, c });
           if (!ws[cellAddr]) continue;
           const cell = ws[cellAddr];
-          cell.s = { ...(cell.s ?? {}), alignment: { horizontal: 'left' } };
+          cell.s = { ...(cell.s ?? {}), alignment: { horizontal: 'left', vertical: 'center' } };
           if (c === 4 && r > 0 && cell.v != null) {
             cell.t = 'n';
             cell.z = '0.00%';
           }
         }
       }
-      // Set column widths
       ws['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 38 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
 
       const wb = XLSX.utils.book_new();
