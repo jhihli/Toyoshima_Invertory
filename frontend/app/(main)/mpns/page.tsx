@@ -32,6 +32,7 @@ export default function MPNsPage() {
   const [beforecutQty, setBeforecutQty] = useState('');
   const [aftercutQty, setAftercutQty] = useState('');
   const [chipQty, setChipQty] = useState('');
+  const [cutboardCost, setCutboardCost] = useState('');
   const [note, setNote] = useState('');
 
   // Local pending files (create mode only — uploaded atomically on "Create")
@@ -64,7 +65,7 @@ export default function MPNsPage() {
 
   const openNew = () => {
     setModalMpn(null);
-    setName(''); setPartType(''); setBeforecutQty(''); setAftercutQty(''); setChipQty(''); setNote('');
+    setName(''); setPartType(''); setBeforecutQty(''); setAftercutQty(''); setChipQty(''); setCutboardCost(''); setNote('');
     setBeforecutFile(null); setAftercutFile(null);
     setBeforecutPreview(null); setAftercutPreview(null);
     setModalOpen(true);
@@ -77,6 +78,7 @@ export default function MPNsPage() {
     setBeforecutQty(m.beforecut_weight != null ? String(m.beforecut_weight) : '');
     setAftercutQty(m.aftercut_weight != null ? String(m.aftercut_weight) : '');
     setChipQty(m.chip_qty != null ? String(m.chip_qty) : '');
+    setCutboardCost(m.cutboard_cost != null ? String(m.cutboard_cost) : '');
     setNote(m.note ?? '');
     setBeforecutFile(null); setAftercutFile(null);
     setBeforecutPreview(null); setAftercutPreview(null);
@@ -115,6 +117,7 @@ export default function MPNsPage() {
       beforecut_weight: beforecutQty !== '' ? +beforecutQty : null,
       aftercut_weight: aftercutQty !== '' ? +aftercutQty : null,
       chip_qty: chipQty !== '' ? +chipQty : null,
+      cutboard_cost: cutboardCost !== '' ? +cutboardCost : null,
       note,
     };
     try {
@@ -438,8 +441,11 @@ export default function MPNsPage() {
           <Field label="After Cut Wt">
             <Input value={aftercutQty} onChange={setAftercutQty} type="number" placeholder="—" />
           </Field>
-          <Field label="Chip Qty" span={2}>
+          <Field label="Chip Qty">
             <Input value={chipQty} onChange={setChipQty} type="number" placeholder="—" />
+          </Field>
+          <Field label="Cutboard Cost">
+            <Input value={cutboardCost} onChange={setCutboardCost} type="number" placeholder="—" />
           </Field>
           <Field label="Note" span={2}>
             <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Optional notes…" rows={3}
