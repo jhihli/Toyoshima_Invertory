@@ -747,8 +747,7 @@ function EmailConfigModal({ config, onClose, onSave }: {
               <div style={{ position: 'relative', width: 36, height: 20 }}>
                 <input type="checkbox" checked={autoSend} onChange={e => setAutoSend(e.target.checked)}
                   style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }} />
-                <div style={{ position: 'absolute', inset: 0, borderRadius: 20, background: autoSend ? 'var(--accent)' : 'var(--hair)', transition: 'background .2s', cursor: 'pointer' }}
-                  onClick={() => setAutoSend(v => !v)} />
+                <div style={{ position: 'absolute', inset: 0, borderRadius: 20, background: autoSend ? 'var(--accent)' : 'var(--hair)', transition: 'background .2s', cursor: 'pointer' }} />
                 <div style={{ position: 'absolute', top: 3, left: autoSend ? 19 : 3, width: 14, height: 14, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.2)', transition: 'left .2s', pointerEvents: 'none' }} />
               </div>
             </label>
