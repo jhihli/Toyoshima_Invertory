@@ -8,12 +8,14 @@ import {
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
 import type { MPN, Chip, ChipBrand } from '@/interface/IDatatable';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 export default function MPNDetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
   const mpnId = Number(id);
   const toast = useToast();
+  const isMobile = useIsMobile();
 
   const [mpn, setMpn] = useState<MPN | null>(null);
   const [chipBrands, setChipBrands] = useState<ChipBrand[]>([]);
@@ -109,7 +111,7 @@ export default function MPNDetailPage() {
 
       <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         {/* Left: Photos */}
-        <div style={{ width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ width: isMobile ? '100%' : 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
           <PhotoCard
             label="Before Cut Photo"
             photoUrl={mpn.beforecut_photo_url}
@@ -141,28 +143,57 @@ export default function MPNDetailPage() {
         {/* Right: Meta + Chips */}
         <div style={{ flex: 1, minWidth: 320 }}>
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)', marginBottom: 14, overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'stretch', flexWrap: 'wrap' }}>
-              {[
-                { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', mono: false, flex: '0 0 112px' },
-                { label: 'After Cut Wt', value: mpn.aftercut_weight ?? '—', mono: false, flex: '0 0 112px' },
-                { label: 'Chip Qty', value: mpn.chip_qty ?? '—', mono: false, flex: '0 0 90px' },
-                { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false, flex: '0 0 110px' },
-                { label: 'Boards (Scanned)', value: mpn.board_count ?? 0, mono: false, flex: '0 0 120px' },
-                { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false, flex: '0 0 100px' },
-                { label: 'Part Type', value: mpn.part_type || '—', mono: true, flex: '0 0 120px' },
-              ].map((item, i) => (
-                <div key={item.label} style={{ flex: item.flex, padding: '8px 14px', borderRight: '1px solid var(--hair)' }}>
-                  <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
-                  <div className={item.mono ? 'mono' : 'num'} style={{ fontSize: 13, color: 'var(--ink)' }}>{item.value}</div>
-                </div>
-              ))}
-              <div style={{ flex: '1 1 160px', padding: '8px 14px' }}>
-                <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
-                <div style={{ fontSize: 13, color: mpn.note ? 'var(--ink-2)' : 'var(--ink-5)', whiteSpace: 'pre-wrap', lineHeight: 1.5, fontStyle: mpn.note ? 'normal' : 'italic', fontWeight: mpn.note ? 600 : 400 }}>
-                  {mpn.note || '—'}
+            {isMobile ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+                {[
+                  { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', mono: false },
+                  { label: 'After Cut Wt', value: mpn.aftercut_weight ?? '—', mono: false },
+                  { label: 'Chip Qty', value: mpn.chip_qty ?? '—', mono: false },
+                  { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false },
+                  { label: 'Boards (Scanned)', value: mpn.board_count ?? 0, mono: false },
+                  { label: 'Part Type', value: mpn.part_type || '—', mono: true },
+                  { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false },
+                ].map((item, i) => (
+                  <div key={item.label} style={{
+                    padding: '10px 14px',
+                    borderRight: i % 2 === 0 ? '1px solid var(--hair)' : 'none',
+                    borderBottom: '1px solid var(--hair)',
+                  }}>
+                    <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>{item.label}</div>
+                    <div className={item.mono ? 'mono' : 'num'} style={{ fontSize: 13, color: 'var(--ink)' }}>{item.value}</div>
+                  </div>
+                ))}
+                <div style={{ gridColumn: '1 / -1', padding: '10px 14px' }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
+                  <div style={{ fontSize: 13, color: mpn.note ? 'var(--ink-2)' : 'var(--ink-5)', whiteSpace: 'pre-wrap', lineHeight: 1.5, fontStyle: mpn.note ? 'normal' : 'italic', fontWeight: mpn.note ? 600 : 400 }}>
+                    {mpn.note || '—'}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'stretch', flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', mono: false, flex: '0 0 112px' },
+                  { label: 'After Cut Wt', value: mpn.aftercut_weight ?? '—', mono: false, flex: '0 0 112px' },
+                  { label: 'Chip Qty', value: mpn.chip_qty ?? '—', mono: false, flex: '0 0 90px' },
+                  { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false, flex: '0 0 110px' },
+                  { label: 'Boards (Scanned)', value: mpn.board_count ?? 0, mono: false, flex: '0 0 120px' },
+                  { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false, flex: '0 0 100px' },
+                  { label: 'Part Type', value: mpn.part_type || '—', mono: true, flex: '0 0 120px' },
+                ].map((item, i) => (
+                  <div key={item.label} style={{ flex: item.flex, padding: '8px 14px', borderRight: '1px solid var(--hair)' }}>
+                    <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
+                    <div className={item.mono ? 'mono' : 'num'} style={{ fontSize: 13, color: 'var(--ink)' }}>{item.value}</div>
+                  </div>
+                ))}
+                <div style={{ flex: '1 1 160px', padding: '8px 14px' }}>
+                  <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
+                  <div style={{ fontSize: 13, color: mpn.note ? 'var(--ink-2)' : 'var(--ink-5)', whiteSpace: 'pre-wrap', lineHeight: 1.5, fontStyle: mpn.note ? 'normal' : 'italic', fontWeight: mpn.note ? 600 : 400 }}>
+                    {mpn.note || '—'}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
@@ -176,7 +207,8 @@ export default function MPNDetailPage() {
           </div>
 
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+            <div className="table-scroll">
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 620 }}>
               <colgroup>
                 <col style={{ width: '16%' }} />
                 <col style={{ width: '15%' }} />
@@ -239,6 +271,7 @@ export default function MPNDetailPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </div>
@@ -521,6 +554,7 @@ function Lightbox({ src, title, onClose }: { src: string | null; title?: string;
 function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd, maxQty }: {
   open: boolean; mode?: 'add' | 'edit'; initial?: Chip | null; chipBrands: ChipBrand[]; onClose: () => void; onAdd: (data: ChipFormData) => void; maxQty?: number;
 }) {
+  const isMobile = useIsMobile();
   const [brandId, setBrandId] = useState('');
   const [qty, setQty] = useState('1');
   const [chipMpn, setChipMpn] = useState('');
@@ -560,14 +594,14 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={overLimit} onClick={submit}>{mode === 'edit' ? 'Save' : 'Add'}</Button>
       </>}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px', gap: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 180px', gap: 18 }}>
         <div>
           <Field label="Brand"><Select value={brandId} onChange={setBrandId} options={[{ value: '', label: 'No brand' }, ...chipBrands.map(b => ({ value: String(b.id), label: b.name }))]} /></Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
             <Field label="Chip MPN"><Input value={chipMpn} onChange={setChipMpn} placeholder="e.g. TPS62130" autoFocus={mode === 'add'} /></Field>
             <Field label="Type"><Input value={chipType} onChange={setChipType} placeholder="e.g. DC-DC" /></Field>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 110px 1fr', gap: 10, marginTop: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 110px', gap: 10, marginTop: 12 }}>
             <Field label="Qty">
               <Input value={qty} onChange={setQty} type="number" placeholder="1" />
               {maxQty != null && (
@@ -577,6 +611,8 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
               )}
             </Field>
             <Field label="Cut Fail"><Input value={cutFail} onChange={setCutFail} type="number" placeholder="—" /></Field>
+          </div>
+          <div style={{ marginTop: 12 }}>
             <Field label="Description"><Input value={description} onChange={setDescription} placeholder="Optional" /></Field>
           </div>
         </div>

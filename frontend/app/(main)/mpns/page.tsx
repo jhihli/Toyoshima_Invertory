@@ -8,10 +8,12 @@ import {
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
 import type { MPN, MPNReportConfig, MPNReportStatus } from '@/interface/IDatatable';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 export default function MPNsPage() {
   const router = useRouter();
   const toast = useToast();
+  const isMobile = useIsMobile();
   const [mpns, setMpns] = useState<MPN[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -290,130 +292,217 @@ export default function MPNsPage() {
         { label: 'MPNs' },
       ]} />
 
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px', gap: 12 }}>
-        <div>
+      {isMobile ? (
+        <div style={{ margin: '14px 0 16px' }}>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>MPNs</h1>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>
+          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4, marginBottom: 10 }}>
             <span className="num">{mpns.length}</span> part numbers
           </div>
+          <Input value={search} onChange={setSearch} placeholder="Search name or part type…" style={{ width: '100%' }} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
+            {!reportLoading && (
+              <>
+                <Button variant="outline" onClick={handleSendNow} disabled={sending}>
+                  {sending ? 'Sending…' : 'Send Now'}
+                </Button>
+                <button
+                  onClick={() => setConfigOpen(true)}
+                  title="Email report settings"
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: '1px solid var(--hair)', borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0 }}
+                >
+                  <GearIcon />
+                </button>
+              </>
+            )}
+            <div style={{ flex: 1 }} />
+            <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport} disabled={exporting || mpns.length === 0}>
+              {exporting ? 'Exporting…' : 'Export'}
+            </Button>
+            <Button variant="primary" icon={<PlusIcon />} onClick={openNew}>New MPN</Button>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <Input value={search} onChange={setSearch} placeholder="Search name or part type…" />
-
-          {/* Report email status bar */}
-          {!reportLoading && (
-            <>
-              <ReportStatusBadge record={reportStatus} />
-              <Button variant="outline" onClick={handleSendNow} disabled={sending}>
-                {sending ? 'Sending…' : 'Send Now'}
-              </Button>
-              <button
-                onClick={() => setConfigOpen(true)}
-                title="Email report settings"
-                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: '1px solid var(--hair)', borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0 }}
-              >
-                <GearIcon />
-              </button>
-              <div style={{ width: 1, height: 20, background: 'var(--hair)', flexShrink: 0 }} />
-            </>
-          )}
-
-          <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport} disabled={exporting || mpns.length === 0}>
-            {exporting ? 'Exporting…' : 'Export'}
-          </Button>
-          <Button variant="primary" icon={<PlusIcon />} onClick={openNew}>New MPN</Button>
+      ) : (
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px', gap: 12 }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>MPNs</h1>
+            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>
+              <span className="num">{mpns.length}</span> part numbers
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <Input value={search} onChange={setSearch} placeholder="Search name or part type…" />
+            {!reportLoading && (
+              <>
+                <ReportStatusBadge record={reportStatus} />
+                <Button variant="outline" onClick={handleSendNow} disabled={sending}>
+                  {sending ? 'Sending…' : 'Send Now'}
+                </Button>
+                <button
+                  onClick={() => setConfigOpen(true)}
+                  title="Email report settings"
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: '1px solid var(--hair)', borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0 }}
+                >
+                  <GearIcon />
+                </button>
+                <div style={{ width: 1, height: 20, background: 'var(--hair)', flexShrink: 0 }} />
+              </>
+            )}
+            <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport} disabled={exporting || mpns.length === 0}>
+              {exporting ? 'Exporting…' : 'Export'}
+            </Button>
+            <Button variant="primary" icon={<PlusIcon />} onClick={openNew}>New MPN</Button>
+          </div>
         </div>
-      </div>
+      )}
 
       <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
-        <div className="table-scroll">
-          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '6%' }} />
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '9%' }} />
-              <col />
-              <col style={{ width: 110 }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th style={thS}>Name</th>
-                <th style={thS}>Part Type</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Beforecut Weight</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Aftercut Weight</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Boards (Scanned)</th>
-                <th style={thS}>Created</th>
-                <th style={thS}>Note</th>
-                <th style={{ ...thS, textAlign: 'right' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && <tr><td colSpan={9}><Empty label="Loading…" /></td></tr>}
-              {!loading && filtered.length === 0 && (
-                <tr><td colSpan={9}>
-                  <Empty
-                    label={search ? 'No matching MPNs' : 'No MPNs yet'}
-                    sub={search ? 'Try a different search.' : "Click 'New MPN' to add one."}
-                  />
-                </td></tr>
-              )}
-              {!loading && filtered.map(m => {
-                const bc = m.board_count ?? 0;
-                return (
-                  <tr key={m.id} style={{ borderBottom: '1px solid var(--hair)' }}>
-                    <td style={{ ...tdS }}>
+        {isMobile ? (
+          <>
+            {loading && <Empty label="Loading…" />}
+            {!loading && filtered.length === 0 && (
+              <Empty
+                label={search ? 'No matching MPNs' : 'No MPNs yet'}
+                sub={search ? 'Try a different search.' : "Click 'New MPN' to add one."}
+              />
+            )}
+            {!loading && filtered.map(m => {
+              const bc = m.board_count ?? 0;
+              return (
+                <div key={m.id} style={{ borderBottom: '1px solid var(--hair)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <button
+                      onClick={() => router.push(`/mpns/${m.id}`)}
+                      className="mono"
+                      style={{
+                        background: '#ddeef8', border: '1px solid #afd2ea', borderRadius: 3,
+                        cursor: 'pointer', padding: '2px 8px', fontSize: 12,
+                        color: '#1a5f8b', fontFamily: 'inherit', letterSpacing: '0.02em',
+                        lineHeight: 1.6, whiteSpace: 'nowrap', overflow: 'hidden',
+                        textOverflow: 'ellipsis', maxWidth: '60%', flexShrink: 1,
+                      }}
+                    >
+                      {m.name}
+                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {m.part_type && (
+                        <span style={{ fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{m.part_type}</span>
+                      )}
+                      <button onClick={() => openEdit(m)} style={iconBtn} title="Edit"><EditIcon /></button>
                       <button
-                        onClick={() => router.push(`/mpns/${m.id}`)}
-                        className="mono"
-                        style={{
-                          background: '#ddeef8', border: '1px solid #afd2ea', borderRadius: 3,
-                          cursor: 'pointer', padding: '2px 8px', fontSize: 12,
-                          color: '#1a5f8b', fontFamily: 'inherit', letterSpacing: '0.02em',
-                          lineHeight: 1.6, whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {m.name}
-                      </button>
-                    </td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{m.part_type || '—'}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.beforecut_weight ?? '—'}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.aftercut_weight ?? '—'}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.chip_qty ?? '—'}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }}>
-                      <span className="num" style={{
-                        display: 'inline-block', padding: '2px 8px', fontSize: 12,
-                        background: bc > 0 ? '#e6f4ea' : 'var(--surface-2)',
-                        border: `1px solid ${bc > 0 ? '#a8d5b0' : 'var(--hair)'}`,
-                        borderRadius: 3, color: bc > 0 ? '#2e7d32' : 'var(--ink-4)',
-                        lineHeight: 1.6,
-                      }}>{bc}</span>
-                    </td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{m.created_at?.slice(0, 10) || '—'}</td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.note ? 600 : 400 }}
-                      title={m.note || undefined}>
-                      {m.note || <span style={{ color: 'var(--ink-5)', fontWeight: 400 }}>—</span>}
-                    </td>
-                    <td style={{ ...tdS, textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: 4 }}>
-                        <button onClick={() => openEdit(m)} style={iconBtn} title="Edit"><EditIcon /></button>
+                        onClick={() => handleDelete(m)}
+                        style={{ ...iconBtn, color: bc > 0 ? 'var(--ink-4)' : 'var(--err)' }}
+                        title={bc > 0 ? `${bc} board${bc !== 1 ? 's' : ''} using this MPN` : 'Delete'}
+                      ><TrashIcon /></button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: 'var(--ink-3)' }}>
+                    <span><span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-4)' }}>BF/AF</span> <span className="num">{m.beforecut_weight ?? '—'} / {m.aftercut_weight ?? '—'}</span></span>
+                    <span><span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-4)' }}>Chips</span> <span className="num">{m.chip_qty ?? '—'}</span></span>
+                    <span className="num" style={{
+                      padding: '1px 7px', fontSize: 11,
+                      background: bc > 0 ? '#e6f4ea' : 'var(--surface-2)',
+                      border: `1px solid ${bc > 0 ? '#a8d5b0' : 'var(--hair)'}`,
+                      borderRadius: 3, color: bc > 0 ? '#2e7d32' : 'var(--ink-4)',
+                    }}>{bc} boards</span>
+                    <span style={{ color: 'var(--ink-5)' }}>{m.created_at?.slice(0, 10) || '—'}</span>
+                  </div>
+                  {m.note && (
+                    <div style={{ fontSize: 12, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.note}</div>
+                  )}
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <div className="table-scroll">
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 720 }}>
+              <colgroup>
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '9%' }} />
+                <col style={{ width: '6%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '9%' }} />
+                <col />
+                <col style={{ width: 110 }} />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style={thS}>Name</th>
+                  <th style={thS}>Part Type</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>Beforecut Weight</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>Aftercut Weight</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>Boards (Scanned)</th>
+                  <th style={thS}>Created</th>
+                  <th style={thS}>Note</th>
+                  <th style={{ ...thS, textAlign: 'right' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && <tr><td colSpan={9}><Empty label="Loading…" /></td></tr>}
+                {!loading && filtered.length === 0 && (
+                  <tr><td colSpan={9}>
+                    <Empty
+                      label={search ? 'No matching MPNs' : 'No MPNs yet'}
+                      sub={search ? 'Try a different search.' : "Click 'New MPN' to add one."}
+                    />
+                  </td></tr>
+                )}
+                {!loading && filtered.map(m => {
+                  const bc = m.board_count ?? 0;
+                  return (
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--hair)' }}>
+                      <td style={{ ...tdS }}>
                         <button
-                          onClick={() => handleDelete(m)}
-                          style={{ ...iconBtn, color: bc > 0 ? 'var(--ink-4)' : 'var(--err)' }}
-                          title={bc > 0 ? `${bc} board${bc !== 1 ? 's' : ''} using this MPN` : 'Delete'}
-                        ><TrashIcon /></button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                          onClick={() => router.push(`/mpns/${m.id}`)}
+                          className="mono"
+                          style={{
+                            background: '#ddeef8', border: '1px solid #afd2ea', borderRadius: 3,
+                            cursor: 'pointer', padding: '2px 8px', fontSize: 12,
+                            color: '#1a5f8b', fontFamily: 'inherit', letterSpacing: '0.02em',
+                            lineHeight: 1.6, whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {m.name}
+                        </button>
+                      </td>
+                      <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{m.part_type || '—'}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.beforecut_weight ?? '—'}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.aftercut_weight ?? '—'}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.chip_qty ?? '—'}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }}>
+                        <span className="num" style={{
+                          display: 'inline-block', padding: '2px 8px', fontSize: 12,
+                          background: bc > 0 ? '#e6f4ea' : 'var(--surface-2)',
+                          border: `1px solid ${bc > 0 ? '#a8d5b0' : 'var(--hair)'}`,
+                          borderRadius: 3, color: bc > 0 ? '#2e7d32' : 'var(--ink-4)',
+                          lineHeight: 1.6,
+                        }}>{bc}</span>
+                      </td>
+                      <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{m.created_at?.slice(0, 10) || '—'}</td>
+                      <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.note ? 600 : 400 }}
+                        title={m.note || undefined}>
+                        {m.note || <span style={{ color: 'var(--ink-5)', fontWeight: 400 }}>—</span>}
+                      </td>
+                      <td style={{ ...tdS, textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: 4 }}>
+                          <button onClick={() => openEdit(m)} style={iconBtn} title="Edit"><EditIcon /></button>
+                          <button
+                            onClick={() => handleDelete(m)}
+                            style={{ ...iconBtn, color: bc > 0 ? 'var(--ink-4)' : 'var(--err)' }}
+                            title={bc > 0 ? `${bc} board${bc !== 1 ? 's' : ''} using this MPN` : 'Delete'}
+                          ><TrashIcon /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {configOpen && reportConfig && (
