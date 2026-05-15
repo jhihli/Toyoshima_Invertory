@@ -14,6 +14,25 @@ import { WeightRuleField } from '../WeightRuleField';
 import type { SODetail, Pallet, Board, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
+function downloadBackup(data: { so_number: string; mpn: string; pallet: string; barcodes: string[] }) {
+  const backup = {
+    saved_at: new Date().toISOString(),
+    so_number: data.so_number,
+    mpn: data.mpn,
+    pallet: data.pallet,
+    barcodes: data.barcodes,
+    total: data.barcodes.length,
+  };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0, 16).replace('T', '_').replace(':', '-');
+  a.href = url;
+  a.download = `scan_backup_${data.so_number}_${dateStr}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function SODetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
@@ -262,10 +281,20 @@ export default function SODetailPage() {
       qty: 1,
       pallet: shared.pallet ? +shared.pallet : null,
     }));
-    const result = await api.boards.createBulk(soId, boards as any);
-    toast(`${result.length} board${result.length === 1 ? '' : 's'} added`);
-    loadBoards();
-    setSo(s => s ? { ...s, total_board_count: s.total_board_count + result.length } : s);
+    try {
+      const result = await api.boards.createBulk(soId, boards as any);
+      toast(`${result.length} board${result.length === 1 ? '' : 's'} added`);
+      loadBoards();
+      setSo(s => s ? { ...s, total_board_count: s.total_board_count + result.length } : s);
+    } catch (err) {
+      downloadBackup({
+        so_number: so?.so_number ?? String(soId),
+        mpn: shared.mpn,
+        pallet: shared.pallet,
+        barcodes: barcodes.map(r => r.barcode),
+      });
+      throw err;
+    }
   };
 
 
@@ -1740,7 +1769,7 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
       await onAddBulk(rowsToAdd, { mpn: bMpn, pallet: bPallet });
       onClose();
     } catch {
-      setSubmitError('Network error — boards were not saved. Please check your connection and try again.');
+      setSubmitError('Network error — barcode list saved to your Downloads folder.');
     } finally {
       setSubmitting(false);
     }
