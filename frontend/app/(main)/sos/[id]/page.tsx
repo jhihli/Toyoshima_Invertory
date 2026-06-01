@@ -281,20 +281,21 @@ export default function SODetailPage() {
       qty: 1,
       pallet: shared.pallet ? +shared.pallet : null,
     }));
+    const palletLabel = shared.pallet
+      ? `Pallet ${so?.pallets.find(p => String(p.id) === shared.pallet)?.pallet_seq ?? shared.pallet}`
+      : 'No pallet';
     try {
-      const result = await api.boards.createBulk(soId, boards as any);
-      toast(`${result.length} board${result.length === 1 ? '' : 's'} added`);
-      loadBoards();
-      setSo(s => s ? { ...s, total_board_count: s.total_board_count + result.length } : s);
-    } catch (err) {
       downloadBackup({
         so_number: so?.so_number ?? String(soId),
         mpn: shared.mpn,
-        pallet: shared.pallet,
+        pallet: palletLabel,
         barcodes: barcodes.map(r => r.barcode),
       });
-      throw err;
-    }
+    } catch { /* download blocked by browser — don't break the save */ }
+    const result = await api.boards.createBulk(soId, boards as any);
+    toast(`${result.length} board${result.length === 1 ? '' : 's'} added`);
+    loadBoards();
+    setSo(s => s ? { ...s, total_board_count: s.total_board_count + result.length } : s);
   };
 
 
@@ -1723,6 +1724,40 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
   const [dbDupBarcodes, setDbDupBarcodes] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+    const addBarcodes = (barcodes: string[]) => {
+      const valid = barcodes.map(b => b.trim()).filter(Boolean);
+      if (!valid.length) return;
+      setBulkRows(rs => {
+        const next = [...rs, ...valid.map(b => ({ barcode: b }))];
+        setBulkPage(Math.ceil(next.length / BULK_PAGE_SIZE));
+        return next;
+      });
+    };
+    if (ext === 'xlsx' || ext === 'xls') {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const wb = XLSX.read(ev.target?.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1 });
+        addBarcodes((rows as unknown[][]).flatMap(row => row).map(c => String(c ?? '')));
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const text = (ev.target?.result as string) || '';
+        addBarcodes(text.split(/[\r\n\t,]+/));
+      };
+      reader.readAsText(file);
+    }
+    e.target.value = '';
+  };
 
   useEffect(() => {
     if (open) {
@@ -1737,11 +1772,7 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
 
   const palletOptions = [
     { value: '', label: '— No pallet —' },
-    ...pallets.map(p => {
-      const parts = [p.licence_number, p.gateload_number].filter(Boolean);
-      const label = parts.length ? parts.join('-') : `#${String(p.pallet_seq).padStart(2, '0')}`;
-      return { value: String(p.id), label: `#${String(p.pallet_seq).padStart(2, '0')} · ${label}` };
-    }),
+    ...pallets.map(p => ({ value: String(p.id), label: `Pallet ${p.pallet_seq}` })),
   ];
 
   const canSaveSingle = mpn.trim() !== '' && pallet !== '' && barcode.trim() !== '' && qty.trim() !== '' && +qty > 0;
@@ -1768,8 +1799,8 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
     try {
       await onAddBulk(rowsToAdd, { mpn: bMpn, pallet: bPallet });
       onClose();
-    } catch {
-      setSubmitError('Network error — barcode list saved to your Downloads folder.');
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : 'Failed to save boards.');
     } finally {
       setSubmitting(false);
     }
@@ -1842,6 +1873,20 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
                     fontFamily: 'ui-monospace, monospace', width: '100%',
                     ...(bulkBarcodeFocused ? { background: '#e8f5e9', border: '1px solid #4caf50' } : {}),
                   }} />
+              </div>
+              {/* Import from file */}
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+                <input ref={importInputRef} type="file" accept=".xlsx,.xls,.txt,.csv,.tsv,.note" style={{ display: 'none' }} onChange={handleImportFile} />
+                <button onClick={() => importInputRef.current?.click()}
+                  title="Import barcodes from Excel or text file"
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', fontSize: 12, fontWeight: 500,
+                    border: '1px solid var(--hair-strong)', borderRadius: 4, background: 'var(--surface)',
+                    color: 'var(--ink-2)', cursor: 'pointer', whiteSpace: 'nowrap', height: 36 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+                  </svg>
+                  Import file
+                </button>
               </div>
             </div>
           )}
