@@ -48,6 +48,7 @@ export interface Pallet {
   material_type: string;
   qty: number;
   board_qty: number | null;
+  board_count: number;
   created_at: string;
 }
 

@@ -164,7 +164,7 @@ def so_list(request):
 @permission_classes([IsAuthenticated])
 def so_detail(request, pk):
     so = get_object_or_404(
-        SO.objects.select_related('vendor').prefetch_related('pallets', 'photos'),
+        SO.objects.select_related('vendor').prefetch_related('pallets__boards', 'photos'),
         pk=pk
     )
     if request.method == 'GET':

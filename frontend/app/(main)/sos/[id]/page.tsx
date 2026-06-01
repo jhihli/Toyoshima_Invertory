@@ -968,13 +968,14 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
           <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '18%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '13%' }} />
               <col style={{ width: '16%' }} />
+              <col style={{ width: '16%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '7%' }} />
               <col style={{ width: '8%' }} />
-              <col style={{ width: '8%' }} />
+              <col style={{ width: '9%' }} />
               <col style={{ width: '6%' }} />
             </colgroup>
             <thead>
@@ -986,6 +987,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 <th style={thS}>Material Type</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Pallet Qty</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Board Qty (Real)</th>
                 <th style={{ ...thS, textAlign: 'right' }}></th>
               </tr>
             </thead>
@@ -1006,6 +1008,11 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">
                     {p.board_qty != null ? p.board_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                   </td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                    <span style={{ fontWeight: 600, color: p.board_count > 0 ? 'var(--ink)' : 'var(--ink-5)' }}>
+                      {p.board_count}
+                    </span>
+                  </td>
                   <td style={{ ...tdS, textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
                       <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={ghostBtn} title="Edit"><EditIcon /></button>
@@ -1023,11 +1030,14 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   <td colSpan={2} />
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.qty}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.boardQty || '—'}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num" >
+                    <span style={{ fontWeight: 600 }}>{pallets.reduce((s, p) => s + p.board_count, 0)}</span>
+                  </td>
                   <td />
                 </tr>
               )}
               {pallets.length === 0 && (
-                <tr><td colSpan={8}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
+                <tr><td colSpan={9}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
               )}
             </tbody>
           </table>

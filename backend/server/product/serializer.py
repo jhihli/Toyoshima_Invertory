@@ -36,10 +36,15 @@ class SOPhotoSerializer(serializers.ModelSerializer):
 
 
 class PalletSerializer(serializers.ModelSerializer):
+    board_count = serializers.SerializerMethodField(read_only=True)
+
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'in_weight_gross', 'actual_weight', 'material_type', 'qty', 'board_qty', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'in_weight_gross', 'actual_weight', 'material_type', 'qty', 'board_qty', 'board_count', 'created_at']
         read_only_fields = ['created_at']
+
+    def get_board_count(self, obj):
+        return obj.boards.count()
 
 
 class ChipSerializer(serializers.ModelSerializer):
