@@ -365,7 +365,55 @@ export default function SODetailPage() {
       wsBoards['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 6 }, { wch: 18 }];
       XLSX.utils.book_append_sheet(wb, wsBoards, 'Boards');
 
-      // ── Sheet 4: MPN & Chips ──────────────────────────────────────
+      // ── Sheet 4: MPN Export (matches MPN management page export) ────
+      const mpnMap = new Map<number, { mpn: NonNullable<Board['mpn']>; chips: Board['chips']; boardCount: number; latestDate: string }>();
+      for (const b of allBoardData) {
+        if (!b.mpn) continue;
+        if (!mpnMap.has(b.mpn.id)) mpnMap.set(b.mpn.id, { mpn: b.mpn, chips: b.chips, boardCount: 0, latestDate: '' });
+        const entry = mpnMap.get(b.mpn.id)!;
+        entry.boardCount++;
+        if (b.scanned_at > entry.latestDate) entry.latestDate = b.scanned_at;
+      }
+      const mpnExportAoa: unknown[][] = [[
+        'MPN', 'Date Processed', 'Chip MPN', 'Chips Failed',
+        'Failure Rate (BOARDS Scanned / Chips Failed)',
+        'BOARDS (Scanned)', 'CUTBOARD COST', 'CHIP COST',
+      ]];
+      const mpnMerges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
+      let mpnRow = 1;
+      for (const [, { mpn, chips, boardCount, latestDate }] of mpnMap) {
+        const totalChipQty = (chips ?? []).reduce((s, c) => s + c.qty, 0);
+        const chipCost = mpn.cutboard_cost != null && totalChipQty > 0
+          ? parseFloat((Number(mpn.cutboard_cost) / totalChipQty).toFixed(4)) : null;
+        const dateStr = latestDate ? latestDate.slice(0, 10) : (mpn.latest_board_date ?? '');
+        const startRow = mpnRow;
+        if (!chips || chips.length === 0) {
+          mpnExportAoa.push([mpn.name, dateStr, '', '', null, boardCount, mpn.cutboard_cost ?? '', '']);
+          mpnRow++;
+        } else {
+          for (const chip of chips) {
+            const failureRate = (chip.cut_fail != null && chip.cut_fail > 0 && boardCount > 0) ? chip.cut_fail / boardCount : 0;
+            mpnExportAoa.push([mpn.name, dateStr, chip.chip_mpn || '', chip.cut_fail ?? 0, failureRate, boardCount, mpn.cutboard_cost ?? '', chipCost ?? '']);
+            mpnRow++;
+          }
+        }
+        const endRow = mpnRow - 1;
+        if (endRow > startRow) {
+          mpnMerges.push({ s: { r: startRow, c: 0 }, e: { r: endRow, c: 0 } });
+          mpnMerges.push({ s: { r: startRow, c: 6 }, e: { r: endRow, c: 6 } });
+        }
+      }
+      const wsMpnExport = XLSX.utils.aoa_to_sheet(mpnExportAoa);
+      wsMpnExport['!merges'] = mpnMerges;
+      const mpnRange = XLSX.utils.decode_range(wsMpnExport['!ref'] ?? 'A1');
+      for (let r = 1; r <= mpnRange.e.r; r++) {
+        const ca = XLSX.utils.encode_cell({ r, c: 4 });
+        if (wsMpnExport[ca]?.v != null) { wsMpnExport[ca].t = 'n'; wsMpnExport[ca].z = '0.00%'; }
+      }
+      wsMpnExport['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 38 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, wsMpnExport, 'MPN Export');
+
+      // ── Sheet 5: MPN & Chips ──────────────────────────────────────
       const seenMpnIds = new Set<number>();
       const mpnChipRows = allBoardData.flatMap(b => {
         if (!b.mpn || seenMpnIds.has(b.mpn.id)) return [];
