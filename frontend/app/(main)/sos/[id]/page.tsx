@@ -347,9 +347,10 @@ export default function SODetailPage() {
         'Material Type':        p.material_type || '',
         'Pallet Qty':           p.qty,
         'Board Qty':            p.board_qty ?? '',
+        'Board Qty (Real)':     p.board_count,
       }));
       const wsPallets = XLSX.utils.json_to_sheet(palletRows.length ? palletRows : [{}]);
-      wsPallets['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 }];
+      wsPallets['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 16 }];
       XLSX.utils.book_append_sheet(wb, wsPallets, 'Pallets');
 
       // ── Sheet 3: Boards ───────────────────────────────────────────
