@@ -33,6 +33,22 @@ function downloadBackup(data: { so_number: string; mpn: string; pallet: string; 
   URL.revokeObjectURL(url);
 }
 
+/** Build pallet dropdown options. Uses gateload_number as the label number when available
+ *  (user's mental model: "Pallet 2" = the pallet whose gateload is 2).
+ *  Falls back to 1-based sorted position when no gateload_number exists. */
+function sortedPalletOptions(pallets: import('@/interface/IDatatable').Pallet[]) {
+  const sorted = [...pallets].sort((a, b) => {
+    const la = [a.licence_number, a.gateload_number].filter(Boolean).join('-') || `#${String(a.pallet_seq).padStart(2, '0')}`;
+    const lb = [b.licence_number, b.gateload_number].filter(Boolean).join('-') || `#${String(b.pallet_seq).padStart(2, '0')}`;
+    return la.localeCompare(lb);
+  });
+  return sorted.map((p, i) => ({
+    value: String(p.id),
+    label: p.gateload_number ? `Pallet ${p.gateload_number}` : `Pallet ${i + 1}`,
+    pallet: p,
+  }));
+}
+
 export default function SODetailPage() {
   const router = useRouter();
   const { id } = useParams<{ id: string }>();
@@ -282,7 +298,7 @@ export default function SODetailPage() {
       pallet: shared.pallet ? +shared.pallet : null,
     }));
     const palletLabel = shared.pallet
-      ? `Pallet ${so?.pallets.find(p => String(p.id) === shared.pallet)?.pallet_seq ?? shared.pallet}`
+      ? (sortedPalletOptions(so?.pallets ?? []).find(o => o.value === shared.pallet)?.label ?? shared.pallet)
       : 'No pallet';
     try {
       downloadBackup({
@@ -1772,7 +1788,7 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
 
   const palletOptions = [
     { value: '', label: '— No pallet —' },
-    ...pallets.map(p => ({ value: String(p.id), label: `Pallet ${p.pallet_seq}` })),
+    ...sortedPalletOptions(pallets).map(({ value, label }) => ({ value, label })),
   ];
 
   const canSaveSingle = mpn.trim() !== '' && pallet !== '' && barcode.trim() !== '' && qty.trim() !== '' && +qty > 0;
