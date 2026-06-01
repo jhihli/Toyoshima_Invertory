@@ -411,9 +411,7 @@ export default function SODetailPage() {
         if (wsMpnExport[ca]?.v != null) { wsMpnExport[ca].t = 'n'; wsMpnExport[ca].z = '0.00%'; }
       }
       wsMpnExport['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 38 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
-      XLSX.utils.book_append_sheet(wb, wsMpnExport, 'MPN Export');
-
-      // ── Sheet 5: MPN & Chips ──────────────────────────────────────
+      // ── Sheet 4: MPN & Chips ──────────────────────────────────────
       const seenMpnIds = new Set<number>();
       const mpnChipRows = allBoardData.flatMap(b => {
         if (!b.mpn || seenMpnIds.has(b.mpn.id)) return [];
@@ -441,6 +439,7 @@ export default function SODetailPage() {
       const wsMpnChips = XLSX.utils.json_to_sheet(mpnChipRows.length ? mpnChipRows : [{}]);
       wsMpnChips['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 18 }, { wch: 12 }, { wch: 8 }, { wch: 30 }];
       XLSX.utils.book_append_sheet(wb, wsMpnChips, 'MPN&Chips');
+      XLSX.utils.book_append_sheet(wb, wsMpnExport, 'MPN Detail');
 
       const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
       saveAs(new Blob([buf], { type: 'application/octet-stream' }), `${so.so_number}-${new Date().toISOString().slice(0, 10)}.xlsx`);
