@@ -379,7 +379,7 @@ export default function SODetailPage() {
         'MPN', 'Date Processed', 'Part Type', 'Before Cut Wt', 'After Cut Wt',
         'Brand', 'Chip MPN', 'Chip Type', 'Chip Qty', 'Description',
         'Chips Failed', 'Failure Rate (BOARDS Scanned / Chips Failed)',
-        'MPN Quantity', 'CUTBOARD COST', 'CHIP COST', 'Chip Quantity',
+        'MPN Quantity', 'CUTBOARD COST', 'CHIP COST', 'Chip Quantity', 'Process Type',
       ]];
       const combinedMerges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
       let combinedRow = 1;
@@ -395,7 +395,7 @@ export default function SODetailPage() {
             mpn.name, dateStr, mpn.part_type || '', mpn.beforecut_weight ?? '', mpn.aftercut_weight ?? '',
             '', '', '', '', '',
             '', null,
-            boardCount, mpn.cutboard_cost ?? '', '', chipQuantity,
+            boardCount, mpn.cutboard_cost ?? '', '', chipQuantity, 'Chip Harvest',
           ]);
           combinedRow++;
         } else {
@@ -405,7 +405,7 @@ export default function SODetailPage() {
               mpn.name, dateStr, mpn.part_type || '', mpn.beforecut_weight ?? '', mpn.aftercut_weight ?? '',
               chip.brand_name || '', chip.chip_mpn || '', chip.chip_type || '', chip.qty, chip.description || '',
               chip.cut_fail ?? 0, failureRate,
-              boardCount, mpn.cutboard_cost ?? '', chipCostPerChip ?? '', chipQuantity,
+              boardCount, mpn.cutboard_cost ?? '', chipCostPerChip ?? '', chipQuantity, 'Chip Harvest',
             ]);
             combinedRow++;
           }
@@ -427,7 +427,7 @@ export default function SODetailPage() {
       wsMpnDetail['!cols'] = [
         { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
         { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 10 }, { wch: 30 },
-        { wch: 12 }, { wch: 38 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 },
+        { wch: 12 }, { wch: 38 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
       ];
       XLSX.utils.book_append_sheet(wb, wsMpnDetail, 'MPN Detail');
 
