@@ -29,7 +29,8 @@ class SO(models.Model):
     so_number = models.CharField(max_length=50, unique=True, db_index=True)
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='sos')
     weight_rule = models.CharField(max_length=20, blank=True)
-    date = models.DateField()
+    inbound_date = models.DateField()
+    outbound_date = models.DateField(null=True, blank=True)
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

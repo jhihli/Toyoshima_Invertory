@@ -326,7 +326,8 @@ export default function SODetailPage() {
       const soRows = [
         ['SO Number',           so.so_number],
         ['Vendor',              so.vendor_name],
-        ['Date Received',       so.date],
+        ['Inbound Date',        so.inbound_date],
+        ['Outbound Date',       so.outbound_date || ''],
         ['Weight Rule',         so.effective_weight_rule === 'per_pallet' ? 'Per Pallet' : 'Aggregated'],
         ['Note',                so.note || ''],
         ['Total Pallets',       so.total_pallet_count],
@@ -452,7 +453,7 @@ export default function SODetailPage() {
           </h1>
           {!isMobile && (
             <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              Received {so.date} · {so.vendor_name} · Created {so.created_at?.slice(0, 10)}
+              Inbound {so.inbound_date}{so.outbound_date ? ` · Outbound ${so.outbound_date}` : ''} · {so.vendor_name} · Created {so.created_at?.slice(0, 10)}
             </span>
           )}
         </div>
@@ -1458,19 +1459,21 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
 }) {
   const [soNumber, setSoNumber] = useState(so.so_number);
   const [vendorId, setVendorId] = useState(String(so.vendor));
-  const [date, setDate] = useState(so.date);
+  const [inboundDate, setInboundDate] = useState(so.inbound_date);
+  const [outboundDate, setOutboundDate] = useState(so.outbound_date ?? '');
   const [note, setNote] = useState(so.note);
   useEffect(() => {
     if (open) {
       setSoNumber(so.so_number); setVendorId(String(so.vendor));
-      setDate(so.date); setNote(so.note);
+      setInboundDate(so.inbound_date); setOutboundDate(so.outbound_date ?? '');
+      setNote(so.note);
     }
   }, [open]);
   return (
     <Modal open={open} onClose={onClose} title={`Edit ${so.so_number}`} width={560}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" onClick={() => onSave({ so_number: soNumber, vendor: +vendorId, date, note })}>Save</Button>
+        <Button variant="primary" onClick={() => onSave({ so_number: soNumber, vendor: +vendorId, inbound_date: inboundDate, outbound_date: outboundDate || null, note } as any)}>Save</Button>
       </>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="SO Number"><Input value={soNumber} onChange={setSoNumber} /></Field>
@@ -1478,7 +1481,8 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
           <Select value={vendorId} onChange={setVendorId}
             options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
         </Field>
-        <Field label="Date" span={2}><Input value={date} onChange={setDate} type="date" /></Field>
+        <Field label="Inbound Date"><Input value={inboundDate} onChange={setInboundDate} type="date" /></Field>
+        <Field label="Outbound Date"><Input value={outboundDate} onChange={setOutboundDate} type="date" /></Field>
         <Field label="Note" span={2}>
           <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
             style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--hair-strong)', background: 'var(--surface)', borderRadius: 3, fontFamily: 'inherit', fontSize: 13, resize: 'vertical', outline: 'none', color: 'var(--ink)' }} />

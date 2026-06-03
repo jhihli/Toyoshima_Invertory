@@ -141,9 +141,9 @@ def so_list(request):
         if vendor_id:
             qs = qs.filter(vendor_id=vendor_id)
         if date_from:
-            qs = qs.filter(date__gte=date_from)
+            qs = qs.filter(inbound_date__gte=date_from)
         if date_to:
-            qs = qs.filter(date__lte=date_to)
+            qs = qs.filter(inbound_date__lte=date_to)
 
         page = int(request.query_params.get('page', 1))
         page_size = int(request.query_params.get('page_size', 15))

@@ -86,9 +86,9 @@ export default function SOListPage() {
       all.results.forEach((s, idx) => {
         const pallets = palletsPerSO[idx];
         if (pallets.length === 0) {
-          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': '', 'Licence No': '', 'Gateload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards(REAL)': '', 'Boards(Scan)': s.total_board_count });
+          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.inbound_date, 'Pallet #': '', 'Licence No': '', 'Gateload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards(REAL)': '', 'Boards(Scan)': s.total_board_count });
         } else {
-          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Gateload No': p.gateload_number || '', 'Weight (lb)': parseFloat(p.in_weight_gross), 'Pallet Qty': p.qty, 'Boards(REAL)': p.board_qty ?? '', 'Boards(Scan)': s.total_board_count }));
+          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.inbound_date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Gateload No': p.gateload_number || '', 'Weight (lb)': parseFloat(p.in_weight_gross), 'Pallet Qty': p.qty, 'Boards(REAL)': p.board_qty ?? '', 'Boards(Scan)': s.total_board_count }));
         }
       });
       const ws1 = XLSX.utils.json_to_sheet(rows);
@@ -241,7 +241,7 @@ export default function SOListPage() {
               <tr>
                 <Th label="SO Number" sortKey="so_number" w="20%" />
                 <Th label="Vendor" w="13%" />
-                <Th label="Date" sortKey="date" w="12%" />
+                <Th label="Inbound Date" sortKey="date" w="12%" />
                 <Th label="Pallets" align="right" w="9%" />
                 <Th label="Total Wt Gross" align="right" w="14%" />
                 <Th label="Boards(Real)" align="right" w="11%" />
@@ -312,7 +312,7 @@ function SORow({ so, onClick }: { so: SO; onClick: () => void }) {
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <td style={tdS}><span className="mono" style={{ fontSize: 12.5 }}>{so.so_number}</span></td>
       <td style={{ ...tdS, fontSize: 12.5 }}>{so.vendor_name}</td>
-      <td style={{ ...tdS, fontSize: 12.5 }} className="num">{so.date}</td>
+      <td style={{ ...tdS, fontSize: 12.5 }} className="num">{so.inbound_date}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_pallet_count}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(so.total_pallet_weight).toFixed(2)}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_board_qty ?? '—'}</td>
@@ -339,7 +339,7 @@ function SOCard({ so, onClick }: { so: SO; onClick: () => void }) {
       <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
       <span style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>{so.vendor_name}</span>
       <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
-      <span className="num" style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>{so.date}</span>
+      <span className="num" style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>{so.inbound_date}</span>
       <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
       <span className="num" style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>
         {so.total_pallet_count}P · {so.total_board_count}B · {parseFloat(so.total_pallet_weight).toFixed(0)}lb
@@ -361,14 +361,15 @@ function NewSOModal({ open, vendors, onClose, onCreate }: {
   const today = new Date().toISOString().slice(0, 10);
   const [soNumber, setSoNumber] = useState('');
   const [vendorId, setVendorId] = useState('');
-  const [date, setDate] = useState(today);
+  const [inboundDate, setInboundDate] = useState(today);
+  const [outboundDate, setOutboundDate] = useState('');
   const [weightRule, setWeightRule] = useState('');
   const [note, setNote] = useState('');
 
   useEffect(() => {
     if (open) {
-      setSoNumber(''); setVendorId(''); setDate(today);
-      setWeightRule(''); setNote('');
+      setSoNumber(''); setVendorId(''); setInboundDate(today);
+      setOutboundDate(''); setWeightRule(''); setNote('');
     }
   }, [open]);
 
@@ -378,8 +379,8 @@ function NewSOModal({ open, vendors, onClose, onCreate }: {
     <Modal open={open} onClose={onClose} title="New Sales Order" width={560}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={!soNumber || !vendorId || !date}
-          onClick={() => onCreate({ so_number: soNumber, vendor: +vendorId, date, weight_rule: weightRule, note })}>
+        <Button variant="primary" disabled={!soNumber || !vendorId || !inboundDate}
+          onClick={() => onCreate({ so_number: soNumber, vendor: +vendorId, inbound_date: inboundDate, outbound_date: outboundDate || null, weight_rule: weightRule, note } as any)}>
           Create
         </Button>
       </>}>
@@ -414,7 +415,8 @@ function NewSOModal({ open, vendors, onClose, onCreate }: {
           <Select value={vendorId} onChange={setVendorId} placeholder="Select vendor"
             options={vendors.map(v => ({ value: String(v.id), label: v.name }))} />
         </Field>
-        <Field label="Date" span={2}><Input value={date} onChange={setDate} type="date" /></Field>
+        <Field label="Inbound Date"><Input value={inboundDate} onChange={setInboundDate} type="date" /></Field>
+        <Field label="Outbound Date"><Input value={outboundDate} onChange={setOutboundDate} type="date" /></Field>
         <Field label="Weight Rule" span={2}>
           <WeightRuleField vendor={vendor ?? null} value={weightRule} onChange={setWeightRule} />
         </Field>

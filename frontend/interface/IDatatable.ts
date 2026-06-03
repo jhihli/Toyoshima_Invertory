@@ -13,7 +13,8 @@ export interface SO {
   vendor_weight_rule: 'per_pallet' | 'aggregated';
   weight_rule: string;
   effective_weight_rule: 'per_pallet' | 'aggregated';
-  date: string;
+  inbound_date: string;
+  outbound_date: string | null;
   note: string;
   created_at: string;
   total_pallet_count: number;
