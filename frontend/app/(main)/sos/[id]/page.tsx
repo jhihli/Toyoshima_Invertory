@@ -152,7 +152,8 @@ export default function SODetailPage() {
     boardQty: acc.boardQty + (p.board_qty ?? 0),
     outWeightGross: acc.outWeightGross + (p.out_weight_gross ? parseFloat(p.out_weight_gross) : 0),
     outWeightNet: acc.outWeightNet + (p.out_weight_net ? parseFloat(p.out_weight_net) : 0),
-  }), { weight: 0, qty: 0, boardQty: 0, outWeightGross: 0, outWeightNet: 0 });
+    tantalumWt: acc.tantalumWt + (p.tantalum_wt ? parseFloat(p.tantalum_wt) : 0),
+  }), { weight: 0, qty: 0, boardQty: 0, outWeightGross: 0, outWeightNet: 0, tantalumWt: 0 });
 
   const palletOptions = [
     { value: '', label: 'All pallets' },
@@ -181,13 +182,14 @@ export default function SODetailPage() {
     } catch { toast('Failed to delete pallet'); }
   };
 
-  const handleAddPallet = async (data: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string }) => {
+  const handleAddPallet = async (data: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string }) => {
     try {
       const created = await api.pallets.create(soId, {
         in_weight_gross: data.in_weight_gross as any,
         actual_weight: data.actual_weight ? (data.actual_weight as any) : null,
         out_weight_gross: data.out_weight_gross ? (data.out_weight_gross as any) : null,
         out_weight_net: data.out_weight_net ? (data.out_weight_net as any) : null,
+        tantalum_wt: data.tantalum_wt ? (data.tantalum_wt as any) : null,
         material_type: data.material_type,
         qty: +data.qty,
         licence_number: data.licence_number,
@@ -199,7 +201,7 @@ export default function SODetailPage() {
     } catch { toast('Failed to add pallet'); }
   };
 
-  const handleAddPalletsBulk = async (rows: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string }[]) => {
+  const handleAddPalletsBulk = async (rows: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string }[]) => {
     let added = 0;
     for (const data of rows) {
       try {
@@ -208,6 +210,7 @@ export default function SODetailPage() {
           actual_weight: data.actual_weight ? (data.actual_weight as any) : null,
           out_weight_gross: data.out_weight_gross ? (data.out_weight_gross as any) : null,
           out_weight_net: data.out_weight_net ? (data.out_weight_net as any) : null,
+          tantalum_wt: data.tantalum_wt ? (data.tantalum_wt as any) : null,
           material_type: data.material_type,
           qty: +data.qty,
           licence_number: data.licence_number,
@@ -354,13 +357,14 @@ export default function SODetailPage() {
         'Actual Wt (lb)':       p.actual_weight ? parseFloat(p.actual_weight) : '',
         'Out Wt Gross (lb)':    p.out_weight_gross ? parseFloat(p.out_weight_gross) : '',
         'Out Wt Net (lb)':      p.out_weight_net ? parseFloat(p.out_weight_net) : '',
+        'Tantalum Wt (g)':      p.tantalum_wt ? parseFloat(p.tantalum_wt) : '',
         'Material Type':        p.material_type || '',
         'Pallet Qty':           p.qty,
         'Board Qty':            p.board_qty ?? '',
         'Board Qty (Real)':     p.board_count,
       }));
       const wsPallets = XLSX.utils.json_to_sheet(palletRows.length ? palletRows : [{}]);
-      wsPallets['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 16 }];
+      wsPallets['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 16 }];
       XLSX.utils.book_append_sheet(wb, wsPallets, 'Pallets');
 
       // ── Sheet 3: Boards ───────────────────────────────────────────
@@ -954,7 +958,7 @@ export default function SODetailPage() {
 // ─── Pallets Tab ──────────────────────────────────────────────────
 function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards }: {
   pallets: Pallet[]; effectiveRule: string; ruleIsOverride: boolean; vendorName: string;
-  palletTotal: { weight: number; qty: number; boardQty: number; outWeightGross: number; outWeightNet: number }; addDisabled: boolean;
+  palletTotal: { weight: number; qty: number; boardQty: number; outWeightGross: number; outWeightNet: number; tantalumWt: number }; addDisabled: boolean;
   onAdd: () => void; onUpdate: (id: number, p: Partial<Pallet>) => void; onDelete: (id: number) => void;
   onGoToBoards: (palletId: number) => void;
 }) {
@@ -1015,17 +1019,18 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
           <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '9%' }} />
               <col style={{ width: '10%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '6%' }} />
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '8%' }} />
-              <col style={{ width: '6%' }} />
             </colgroup>
             <thead>
               <tr>
@@ -1035,6 +1040,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 <th style={{ ...thS, textAlign: 'right' }}>Actual Wt (lb)</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Out Wt Gross (lb)</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Out Wt Net (lb)</th>
+                <th style={{ ...thS, textAlign: 'right' }}>Tantalum Wt (g)</th>
                 <th style={thS}>Material Type</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Pallet Qty</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
@@ -1059,6 +1065,9 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   </td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">
                     {p.out_weight_net ? parseFloat(p.out_weight_net).toFixed(2) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                  </td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                    {p.tantalum_wt ? parseFloat(p.tantalum_wt).toFixed(2) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                   </td>
                   <td style={{ ...tdS }}>{p.material_type || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{p.qty}</td>
@@ -1087,6 +1096,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   <td />
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.outWeightGross > 0 ? palletTotal.outWeightGross.toFixed(2) : '—'}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.outWeightNet > 0 ? palletTotal.outWeightNet.toFixed(2) : '—'}</td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.tantalumWt > 0 ? palletTotal.tantalumWt.toFixed(2) : '—'}</td>
                   <td />
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.qty}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.boardQty || '—'}</td>
@@ -1097,7 +1107,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 </tr>
               )}
               {pallets.length === 0 && (
-                <tr><td colSpan={11}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
+                <tr><td colSpan={12}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
               )}
             </tbody>
           </table>
@@ -1133,6 +1143,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   const [actualWeight, setActualWeight] = useState(pallet.actual_weight ? parseFloat(pallet.actual_weight).toFixed(2) : '');
   const [outWeightGross, setOutWeightGross] = useState(pallet.out_weight_gross ? parseFloat(pallet.out_weight_gross).toFixed(2) : '');
   const [outWeightNet, setOutWeightNet] = useState(pallet.out_weight_net ? parseFloat(pallet.out_weight_net).toFixed(2) : '');
+  const [tantalumWt, setTantalumWt] = useState(pallet.tantalum_wt ? parseFloat(pallet.tantalum_wt).toFixed(2) : '');
   const [matType, setMatType] = useState(pallet.material_type);
   const [qty, setQty] = useState(String(pallet.qty));
   const [boardQty, setBoardQty] = useState(pallet.board_qty != null ? String(pallet.board_qty) : '');
@@ -1146,6 +1157,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
       setActualWeight(pallet.actual_weight ? parseFloat(pallet.actual_weight).toFixed(2) : '');
       setOutWeightGross(pallet.out_weight_gross ? parseFloat(pallet.out_weight_gross).toFixed(2) : '');
       setOutWeightNet(pallet.out_weight_net ? parseFloat(pallet.out_weight_net).toFixed(2) : '');
+      setTantalumWt(pallet.tantalum_wt ? parseFloat(pallet.tantalum_wt).toFixed(2) : '');
       setMatType(pallet.material_type);
       setQty(String(pallet.qty));
       setBoardQty(pallet.board_qty != null ? String(pallet.board_qty) : '');
@@ -1162,6 +1174,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
       actual_weight: actualWeight ? (actualWeight as any) : null,
       out_weight_gross: outWeightGross ? (outWeightGross as any) : null,
       out_weight_net: outWeightNet ? (outWeightNet as any) : null,
+      tantalum_wt: tantalumWt ? (tantalumWt as any) : null,
       material_type: matType,
       qty: +qty,
       board_qty: boardQty !== '' ? +boardQty : null,
@@ -1194,6 +1207,9 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
         </Field>
         <Field label="Out Weight Net (lb)">
           <Input value={outWeightNet} onChange={setOutWeightNet} type="number" placeholder="Optional" />
+        </Field>
+        <Field label="Tantalum Wt (g)">
+          <Input value={tantalumWt} onChange={setTantalumWt} type="number" placeholder="Optional" />
         </Field>
         <Field label="Material Type">
           <Input value={matType} onChange={setMatType} placeholder="Optional" />
@@ -1526,7 +1542,7 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
 }
 
 // ─── Add Pallet Modal ─────────────────────────────────────────────
-type PalletRowData = { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string };
+type PalletRowData = { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string };
 
 function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   open: boolean; rule: string; onClose: () => void;
@@ -1541,6 +1557,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   const [actualW, setActualW] = useState('');
   const [outWGross, setOutWGross] = useState('');
   const [outWNet, setOutWNet] = useState('');
+  const [tanWt, setTanWt] = useState('');
   const [materialType, setMaterialType] = useState('');
   const [q, setQ] = useState('');
   const [licence, setLicence] = useState('');
@@ -1548,13 +1565,13 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   const [boardQty, setBoardQty] = useState('');
 
   // bulk
-  const blankRow = (): PalletRowData => ({ licence_number: '', gateload_number: '', in_weight_gross: '', actual_weight: '', out_weight_gross: '', out_weight_net: '', material_type: '', qty: aggregated ? '' : '1', board_qty: '' });
+  const blankRow = (): PalletRowData => ({ licence_number: '', gateload_number: '', in_weight_gross: '', actual_weight: '', out_weight_gross: '', out_weight_net: '', tantalum_wt: '', material_type: '', qty: aggregated ? '' : '1', board_qty: '' });
   const [rows, setRows] = useState<PalletRowData[]>(Array.from({ length: 10 }, blankRow));
 
   useEffect(() => {
     if (open) {
       setMode('single');
-      setW(''); setActualW(''); setOutWGross(''); setOutWNet(''); setMaterialType(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload(''); setBoardQty('');
+      setW(''); setActualW(''); setOutWGross(''); setOutWNet(''); setTanWt(''); setMaterialType(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload(''); setBoardQty('');
       setRows(Array.from({ length: 10 }, blankRow));
     }
   }, [open, aggregated]);
@@ -1572,7 +1589,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   const dupLicences = new Set(licList.filter((l, i) => licList.indexOf(l) !== i));
 
   const submitSingle = () => {
-    onAdd({ in_weight_gross: w, actual_weight: actualW, out_weight_gross: outWGross, out_weight_net: outWNet, material_type: materialType, qty: q, licence_number: licence, gateload_number: payload, board_qty: boardQty });
+    onAdd({ in_weight_gross: w, actual_weight: actualW, out_weight_gross: outWGross, out_weight_net: outWNet, tantalum_wt: tanWt, material_type: materialType, qty: q, licence_number: licence, gateload_number: payload, board_qty: boardQty });
     onClose();
   };
   const submitBulk = () => {
@@ -1581,6 +1598,9 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
       gateload_number: r.gateload_number,
       in_weight_gross: r.in_weight_gross,
       actual_weight: r.actual_weight,
+      out_weight_gross: r.out_weight_gross,
+      out_weight_net: r.out_weight_net,
+      tantalum_wt: r.tantalum_wt,
       material_type: r.material_type,
       qty: aggregated ? r.qty : '1',
       board_qty: r.board_qty,
@@ -1634,6 +1654,9 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
             <Field label="Out Weight Net (lb)">
               <Input value={outWNet} onChange={setOutWNet} type="number" placeholder="Optional" />
             </Field>
+            <Field label="Tantalum Wt (g)">
+              <Input value={tanWt} onChange={setTanWt} type="number" placeholder="Optional" />
+            </Field>
             <Field label="Material Type">
               <Input value={materialType} onChange={setMaterialType} placeholder="Optional" />
             </Field>
@@ -1652,7 +1675,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
       {mode === 'bulk' && (
         <>
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)', overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '28px 1.2fr 1.2fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 24px', gap: 0, padding: '8px 10px', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: 'var(--ink-4)', background: 'var(--surface-2)', borderBottom: '1px solid var(--hair)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '28px 1.2fr 1.2fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 24px', gap: 0, padding: '8px 10px', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: 'var(--ink-4)', background: 'var(--surface-2)', borderBottom: '1px solid var(--hair)' }}>
               <div>#</div>
               <div style={{ paddingLeft: 6 }}>Licence No</div>
               <div style={{ paddingLeft: 6 }}>Gateload No</div>
@@ -1660,6 +1683,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Actual Wt</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Out Wt Gross</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Out Wt Net</div>
+              <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Tantalum Wt</div>
               <div style={{ paddingLeft: 6 }}>Material Type</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Pallet Qty</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Board Qty</div>
@@ -1669,7 +1693,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
               {rows.map((r, i) => {
                 const isDup = !!r.licence_number && dupLicences.has(r.licence_number.trim());
                 return (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '28px 1.2fr 1.2fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 24px', gap: 0, padding: '6px 10px', alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '28px 1.2fr 1.2fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 24px', gap: 0, padding: '6px 10px', alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
                     <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
                       {String(i + 1).padStart(2, '0')}
                     </span>
@@ -1683,6 +1707,8 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
                     <BulkCellP value={r.out_weight_gross} onChange={v => updateRow(i, { out_weight_gross: v })}
                       type="number" placeholder="—" align="right" />
                     <BulkCellP value={r.out_weight_net} onChange={v => updateRow(i, { out_weight_net: v })}
+                      type="number" placeholder="—" align="right" />
+                    <BulkCellP value={r.tantalum_wt} onChange={v => updateRow(i, { tantalum_wt: v })}
                       type="number" placeholder="—" align="right" />
                     <BulkCellP value={r.material_type} onChange={v => updateRow(i, { material_type: v })} />
                     {aggregated

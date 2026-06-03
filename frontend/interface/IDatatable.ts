@@ -48,6 +48,7 @@ export interface Pallet {
   actual_weight: string | null;
   out_weight_gross: string | null;
   out_weight_net: string | null;
+  tantalum_wt: string | null;
   material_type: string;
   qty: number;
   board_qty: number | null;
