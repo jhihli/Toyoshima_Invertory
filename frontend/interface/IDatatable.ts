@@ -46,6 +46,8 @@ export interface Pallet {
   gateload_number: string;
   in_weight_gross: string;
   actual_weight: string | null;
+  out_weight_gross: string | null;
+  out_weight_net: string | null;
   material_type: string;
   qty: number;
   board_qty: number | null;
