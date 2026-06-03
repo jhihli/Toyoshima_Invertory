@@ -239,22 +239,23 @@ export default function SOListPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <thead>
               <tr>
-                <Th label="SO Number" sortKey="so_number" w="20%" />
-                <Th label="Vendor" w="13%" />
-                <Th label="Inbound Date" sortKey="date" w="12%" />
-                <Th label="Pallets" align="right" w="9%" />
-                <Th label="Total Wt Gross" align="right" w="14%" />
+                <Th label="SO Number" sortKey="so_number" w="15%" />
+                <Th label="Vendor" w="10%" />
+                <Th label="Inbound Date" sortKey="date" w="11%" />
+                <Th label="Outbound Date" w="11%" />
+                <Th label="Pallets" align="right" w="7%" />
+                <Th label="Total Wt Gross" align="right" w="13%" />
                 <Th label="Boards(Real)" align="right" w="11%" />
                 <Th label="Boards(Scan)" align="right" w="11%" />
-                <Th label="" w="10%" />
+                <Th label="" w="6%" />
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={8}><Empty label="Loading…" /></td></tr>
+                <tr><td colSpan={9}><Empty label="Loading…" /></td></tr>
               )}
               {!loading && sos.length === 0 && (
-                <tr><td colSpan={8}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
+                <tr><td colSpan={9}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
               )}
               {!loading && sos.map(s => (
                 <SORow key={s.id} so={s} onClick={() => router.push(`/sos/${s.id}`)} />
@@ -313,6 +314,7 @@ function SORow({ so, onClick }: { so: SO; onClick: () => void }) {
       <td style={tdS}><span className="mono" style={{ fontSize: 12.5 }}>{so.so_number}</span></td>
       <td style={{ ...tdS, fontSize: 12.5 }}>{so.vendor_name}</td>
       <td style={{ ...tdS, fontSize: 12.5 }} className="num">{so.inbound_date}</td>
+      <td style={{ ...tdS, fontSize: 12.5, color: so.outbound_date ? 'var(--ink)' : 'var(--ink-5)' }} className="num">{so.outbound_date ?? '—'}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_pallet_count}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(so.total_pallet_weight).toFixed(2)}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_board_qty ?? '—'}</td>
