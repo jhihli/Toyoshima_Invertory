@@ -105,7 +105,7 @@ export default function SOListPage() {
         pallets.forEach(p => {
           totalW += parseFloat(p.in_weight_gross);
           totalQ += p.qty;
-          aoaData.push([s.so_number, s.vendor_name, s.date, p.pallet_seq, p.licence_number || '', p.gateload_number || '', parseFloat(p.in_weight_gross), p.qty, p.board_qty ?? '', s.total_board_count]);
+          aoaData.push([s.so_number, s.vendor_name, s.inbound_date, p.pallet_seq, p.licence_number || '', p.gateload_number || '', parseFloat(p.in_weight_gross), p.qty, p.board_qty ?? '', s.total_board_count]);
           rowPtr++;
         });
         // Subtotal row for this SO — includes Boards(REAL) and Boards(Scan) totals
