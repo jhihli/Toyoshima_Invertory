@@ -175,6 +175,15 @@ class ChipBrand(models.Model):
 
 
 class Chip(models.Model):
+    PROCESSED_TYPE_CHOICES = [
+        ('harvested', 'Harvested'),
+        ('tested & reballed', 'Tested & Reballed'),
+    ]
+    PACKAGING_TYPE_CHOICES = [
+        ('tray', 'Tray'),
+        ('reel', 'Reel'),
+    ]
+
     mpn = models.ForeignKey(MPN, on_delete=models.CASCADE, null=True, blank=True, related_name='chips')
     brand = models.ForeignKey(
         ChipBrand, on_delete=models.PROTECT, null=True, blank=True
@@ -186,6 +195,9 @@ class Chip(models.Model):
     cut_fail = models.IntegerField(null=True, blank=True)
     chip_cost = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     description = models.TextField(blank=True)
+    processed_type = models.CharField(max_length=50, choices=PROCESSED_TYPE_CHOICES, default='harvested')
+    packaging_type = models.CharField(max_length=50, choices=PACKAGING_TYPE_CHOICES, default='tray')
+    container_uid = models.CharField(max_length=50, blank=True)
 
     class Meta:
         db_table = 'chip'

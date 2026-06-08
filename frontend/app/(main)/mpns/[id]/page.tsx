@@ -60,6 +60,8 @@ export default function MPNDetailPage() {
         brand: data.brandId ? +data.brandId : null,
         qty: +data.qty, chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
         cut_fail: data.cutFail !== '' ? +data.cutFail : null,
+        processed_type: data.processedType, packaging_type: data.packagingType,
+        container_uid: data.containerUid,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnId, chip.id, data.photoFile);
       setMpn(m => m ? { ...m, chips: [...(m.chips ?? []), chip] } : m);
@@ -74,6 +76,8 @@ export default function MPNDetailPage() {
         brand: data.brandId ? +data.brandId : null,
         qty: +data.qty, chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
         cut_fail: data.cutFail !== '' ? +data.cutFail : null,
+        processed_type: data.processedType, packaging_type: data.packagingType,
+        container_uid: data.containerUid,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnId, chipId, data.photoFile);
       else if (data.clearPhoto) { await api.mpns.chips.deletePhoto(mpnId, chipId); chip = { ...chip, chip_photo_url: null }; }
@@ -203,40 +207,49 @@ export default function MPNDetailPage() {
               {' · '}{chips.filter(c => c.chip_photo_url).length}/{chips.length} with photo
             </span>
             <div style={{ flex: 1 }} />
-            <Button size="sm" variant="primary" disabled={mpn.chip_qty != null && totalChips >= mpn.chip_qty} onClick={() => setAddChipOpen(true)}>+ Add chip</Button>
+            <Button size="sm" variant="primary" onClick={() => setAddChipOpen(true)}>+ Add chip</Button>
           </div>
 
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
             <div className="table-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 620 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 920 }}>
               <colgroup>
-                <col style={{ width: '16%' }} />
-                <col style={{ width: '15%' }} />
+                <col style={{ width: 100 }} />
+                <col style={{ width: '13%' }} />
                 <col style={{ width: '12%' }} />
+                <col style={{ width: '10%' }} />
                 <col style={{ width: 60 }} />
-                <col style={{ width: '8%' }} />
-                <col style={{ width: '9%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '7%' }} />
+                <col style={{ width: '12%' }} />
+                <col style={{ width: '12%' }} />
                 <col />
                 <col style={{ width: 100 }} />
               </colgroup>
               <thead>
                 <tr>
+                  <th style={thS}>Container UID</th>
                   <th style={thS}>Brand</th>
                   <th style={thS}>Chip MPN</th>
                   <th style={thS}>Type</th>
                   <th style={thS}>Photo</th>
                   <th style={{ ...thS, textAlign: 'right' }}>Cut Fail</th>
                   <th style={{ ...thS, textAlign: 'right' }}>Chip Cost</th>
+                  <th style={thS}>Processed Type</th>
+                  <th style={thS}>Packaging Type</th>
                   <th style={thS}>Description</th>
                   <th style={{ ...thS, textAlign: 'right' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {chips.length === 0 && (
-                  <tr><td colSpan={8}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
+                  <tr><td colSpan={11}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
                 )}
                 {chips.map(chip => (
                   <tr key={chip.id} className="chip-row" style={{ borderTop: '1px solid var(--hair)' }}>
+                    <td style={{ ...tdS, fontSize: 12 }} className="mono">
+                      {chip.container_uid || <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                    </td>
                     <td style={{ ...tdS, fontSize: 13, fontWeight: 500 }}>
                       {chip.brand_name || <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
@@ -259,6 +272,12 @@ export default function MPNDetailPage() {
                       {mpn.cutboard_cost != null && totalChips > 0
                         ? (Number(mpn.cutboard_cost) / totalChips).toFixed(3)
                         : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                    </td>
+                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }}>
+                      {chip.processed_type || 'harvested'}
+                    </td>
+                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }}>
+                      {chip.packaging_type || 'tray'}
                     </td>
                     <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{chip.description || <span style={{ color: 'var(--ink-4)' }}>—</span>}</td>
                     <td style={{ ...tdS, textAlign: 'right' }}>
@@ -287,9 +306,9 @@ export default function MPNDetailPage() {
       </Modal>
       <EditMPNModal open={editOpen} mpn={mpn} onClose={() => setEditOpen(false)} onSave={handleUpdateMPN} />
       <AddChipModal open={addChipOpen} chipBrands={chipBrands} onClose={() => setAddChipOpen(false)} onAdd={handleAddChip}
-        maxQty={mpn.chip_qty != null ? mpn.chip_qty - totalChips : undefined} />
+        boardCount={mpn.board_count ?? 0} />
       {editingChip && <AddChipModal open={true} mode="edit" initial={editingChip} chipBrands={chipBrands} onClose={() => setEditingChip(null)} onAdd={data => handleUpdateChip(editingChip.id, data)}
-        maxQty={mpn.chip_qty != null ? mpn.chip_qty - totalChips + editingChip.qty : undefined} />}
+        boardCount={mpn.board_count ?? 0} />}
       <Lightbox src={lightbox?.src ?? null} title={lightbox?.title} onClose={() => setLightbox(null)} />
     </div>
   );
@@ -441,7 +460,7 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
   );
 }
 
-type ChipFormData = { brandId: string; qty: string; chipMpn: string; chipType: string; description: string; cutFail: string; photoFile?: File | null; clearPhoto?: boolean; };
+type ChipFormData = { brandId: string; qty: string; chipMpn: string; chipType: string; description: string; cutFail: string; processedType: string; packagingType: string; containerUid: string; photoFile?: File | null; clearPhoto?: boolean; };
 
 function ChipPhotoSquare({ value, onChange }: { value: { src: string; name?: string; file?: File } | null; onChange: (v: { src: string; name: string; file: File } | null) => void; }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -551,38 +570,48 @@ function Lightbox({ src, title, onClose }: { src: string | null; title?: string;
   );
 }
 
-function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd, maxQty }: {
-  open: boolean; mode?: 'add' | 'edit'; initial?: Chip | null; chipBrands: ChipBrand[]; onClose: () => void; onAdd: (data: ChipFormData) => void; maxQty?: number;
+const PROCESSED_TYPE_OPTIONS = [
+  { value: 'harvested', label: 'Harvested' },
+  { value: 'tested & reballed', label: 'Tested & Reballed' },
+];
+const PACKAGING_TYPE_OPTIONS = [
+  { value: 'tray', label: 'Tray' },
+  { value: 'reel', label: 'Reel' },
+];
+
+function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd, boardCount }: {
+  open: boolean; mode?: 'add' | 'edit'; initial?: Chip | null; chipBrands: ChipBrand[]; onClose: () => void; onAdd: (data: ChipFormData) => void; boardCount: number;
 }) {
   const isMobile = useIsMobile();
   const [brandId, setBrandId] = useState('');
-  const [qty, setQty] = useState('1');
   const [chipMpn, setChipMpn] = useState('');
   const [chipType, setChipType] = useState('');
   const [description, setDescription] = useState('');
   const [cutFail, setCutFail] = useState('');
+  const [processedType, setProcessedType] = useState('harvested');
+  const [packagingType, setPackagingType] = useState('tray');
+  const [containerUid, setContainerUid] = useState('');
   const [photo, setPhoto] = useState<{ src: string; name?: string; file?: File } | null>(null);
   const initialPhotoUrl = initial?.chip_photo_url ?? null;
 
   useEffect(() => {
     if (open) {
       setBrandId(initial?.brand != null ? String(initial.brand) : '');
-      setQty(initial?.qty != null ? String(initial.qty) : '1');
       setChipMpn(initial?.chip_mpn ?? '');
       setChipType(initial?.chip_type ?? '');
       setDescription(initial?.description ?? '');
       setCutFail(initial?.cut_fail != null ? String(initial.cut_fail) : '');
+      setProcessedType(initial?.processed_type ?? 'harvested');
+      setPackagingType(initial?.packaging_type ?? 'tray');
+      setContainerUid(initial?.container_uid ?? '');
       setPhoto(initial?.chip_photo_url ? { src: initial.chip_photo_url, name: initial.chip_photo_url.split('/').pop() } : null);
     }
   }, [open, initial]);
 
-  const qtyNum = +qty || 0;
-  const overLimit = maxQty != null && qtyNum > maxQty;
-
   const submit = () => {
-    if (overLimit) return;
     onAdd({
-      brandId, qty, chipMpn, chipType, description, cutFail,
+      brandId, qty: String(boardCount), chipMpn, chipType, description, cutFail,
+      processedType, packagingType, containerUid,
       photoFile: photo?.file ?? null,
       clearPhoto: !photo && !!initialPhotoUrl,
     });
@@ -592,23 +621,30 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
     <Modal open={open} onClose={onClose} title={mode === 'edit' ? 'Edit Chip' : 'Add Chip'} width={560}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" disabled={overLimit} onClick={submit}>{mode === 'edit' ? 'Save' : 'Add'}</Button>
+        <Button variant="primary" onClick={submit}>{mode === 'edit' ? 'Save' : 'Add'}</Button>
       </>}>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 180px', gap: 18 }}>
         <div>
-          <Field label="Brand"><Select value={brandId} onChange={setBrandId} options={[{ value: '', label: 'No brand' }, ...chipBrands.map(b => ({ value: String(b.id), label: b.name }))]} /></Field>
+          <Field label="Container UID"><Input value={containerUid} onChange={setContainerUid} placeholder="e.g. U000001" autoFocus={mode === 'add'} /></Field>
+          <div style={{ marginTop: 12 }}>
+            <Field label="Brand"><Select value={brandId} onChange={setBrandId} options={[{ value: '', label: 'No brand' }, ...chipBrands.map(b => ({ value: String(b.id), label: b.name }))]} /></Field>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-            <Field label="Chip MPN"><Input value={chipMpn} onChange={setChipMpn} placeholder="e.g. TPS62130" autoFocus={mode === 'add'} /></Field>
+            <Field label="Chip MPN"><Input value={chipMpn} onChange={setChipMpn} placeholder="e.g. TPS62130" /></Field>
             <Field label="Type"><Input value={chipType} onChange={setChipType} placeholder="e.g. DC-DC" /></Field>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+            <Field label="Processed Type">
+              <Select value={processedType} onChange={setProcessedType} options={PROCESSED_TYPE_OPTIONS} />
+            </Field>
+            <Field label="Packaging Type">
+              <Select value={packagingType} onChange={setPackagingType} options={PACKAGING_TYPE_OPTIONS} />
+            </Field>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '110px 110px', gap: 10, marginTop: 12 }}>
             <Field label="Qty">
-              <Input value={qty} onChange={setQty} type="number" placeholder="1" />
-              {maxQty != null && (
-                <div style={{ fontSize: 11, marginTop: 3, color: overLimit ? '#a8472b' : 'var(--ink-4)' }}>
-                  {overLimit ? `Exceeds limit — max ${maxQty}` : `${maxQty} remaining`}
-                </div>
-              )}
+              <Input value={String(boardCount)} onChange={() => {}} type="number" disabled />
+              <div style={{ fontSize: 11, marginTop: 3, color: 'var(--ink-4)' }}>From boards scanned</div>
             </Field>
             <Field label="Cut Fail"><Input value={cutFail} onChange={setCutFail} type="number" placeholder="—" /></Field>
           </div>

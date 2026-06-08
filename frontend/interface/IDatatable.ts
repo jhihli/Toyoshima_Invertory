@@ -107,6 +107,9 @@ export interface Chip {
   cut_fail: number | null;
   chip_cost: number | null;
   description: string;
+  processed_type: string;
+  packaging_type: string;
+  container_uid: string;
 }
 
 export interface MPNReportConfig {

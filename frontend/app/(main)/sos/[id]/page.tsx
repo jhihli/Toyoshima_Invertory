@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useParams } from 'next/navigation';
+import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import {
@@ -329,58 +330,16 @@ export default function SODetailPage() {
     try {
       const allBoards = await api.boards.listBySO(soId, { page: 1, page_size: 9999 });
       const allBoardData = allBoards.results;
-      const wb = XLSX.utils.book_new();
+      const workbook = new ExcelJS.Workbook();
+      const palletMap = new Map(so.pallets.map(p => [p.id, p]));
 
-      // ── Sheet 1: SO Detail ────────────────────────────────────────
-      const soRows = [
-        ['SO Number',           so.so_number],
-        ['Vendor',              so.vendor_name],
-        ['Inbound Date',        so.inbound_date],
-        ['Outbound Date',       so.outbound_date || ''],
-        ['Weight Rule',         so.effective_weight_rule === 'per_pallet' ? 'Per Pallet' : 'Aggregated'],
-        ['Note',                so.note || ''],
-        ['Total Pallets',       so.total_pallet_count],
-        ['Total Wt Gross (lb)', parseFloat(so.total_pallet_weight)],
-        ['Total Boards Reported', so.total_board_qty ?? ''],
-        ['Total Boards Received', so.total_board_count],
-        ['Exported At',         new Date().toISOString().slice(0, 16).replace('T', ' ')],
-      ];
-      const wsSO = XLSX.utils.aoa_to_sheet(soRows);
-      wsSO['!cols'] = [{ wch: 22 }, { wch: 40 }];
-      XLSX.utils.book_append_sheet(wb, wsSO, 'SO Detail');
+      const HDR_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF156082' } };
+      const HDR_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' } };
+      const styleHdr = (row: ExcelJS.Row) => row.eachCell(cell => { cell.fill = HDR_FILL; cell.font = HDR_FONT; });
 
-      // ── Sheet 2: Pallets ──────────────────────────────────────────
-      const palletRows = so.pallets.map(p => ({
-        'Licence No':           p.licence_number || '',
-        'Gateload No':           p.gateload_number || '',
-        'In Wt Gross (lb)':     parseFloat(p.in_weight_gross),
-        'Actual Wt (lb)':       p.actual_weight ? parseFloat(p.actual_weight) : '',
-        'Out Wt Gross (lb)':    p.out_weight_gross ? parseFloat(p.out_weight_gross) : '',
-        'Out Wt Net (lb)':      p.out_weight_net ? parseFloat(p.out_weight_net) : '',
-        'Tantalum Wt (g)':      p.tantalum_wt ? parseFloat(p.tantalum_wt) : '',
-        'Material Type':        p.material_type || '',
-        'Pallet Qty':           p.qty,
-        'Board Qty':            p.board_qty ?? '',
-        'Board Qty (Real)':     p.board_count,
-      }));
-      const wsPallets = XLSX.utils.json_to_sheet(palletRows.length ? palletRows : [{}]);
-      wsPallets['!cols'] = [{ wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 16 }];
-      XLSX.utils.book_append_sheet(wb, wsPallets, 'Pallets');
-
-      // ── Sheet 3: Boards ───────────────────────────────────────────
-      const boardRows = [...allBoardData].sort((a, b) => (a.pallet_label ?? '').localeCompare(b.pallet_label ?? '')).map(b => ({
-        'MPN':        b.mpn?.name || '',
-        'Pallet':     b.pallet_label || '',
-        'Barcode':    b.barcode || '',
-        'Qty':        b.qty,
-        'Scanned At': b.scanned_at?.slice(0, 16).replace('T', ' ') || '',
-      }));
-      const wsBoards = XLSX.utils.json_to_sheet(boardRows.length ? boardRows : [{}]);
-      wsBoards['!cols'] = [{ wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 6 }, { wch: 18 }];
-      XLSX.utils.book_append_sheet(wb, wsBoards, 'Boards');
-
-      // ── Sheet 4: MPN Detail (combined MPN info + chip detail) ────
-      const mpnMap = new Map<number, { mpn: NonNullable<Board['mpn']>; chips: Board['chips']; boardCount: number; latestDate: string }>();
+      // Build MPN map once (reused across sheets)
+      type MpnEntry = { mpn: NonNullable<Board['mpn']>; chips: Board['chips']; boardCount: number; latestDate: string };
+      const mpnMap = new Map<number, MpnEntry>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
         if (!mpnMap.has(b.mpn.id)) mpnMap.set(b.mpn.id, { mpn: b.mpn, chips: b.chips, boardCount: 0, latestDate: '' });
@@ -388,63 +347,235 @@ export default function SODetailPage() {
         entry.boardCount++;
         if (b.scanned_at > entry.latestDate) entry.latestDate = b.scanned_at;
       }
-      const combinedMpnAoa: unknown[][] = [[
-        'MPN', 'Date Processed', 'Part Type', 'Before Cut Wt', 'After Cut Wt',
-        'Brand', 'Chip MPN', 'Chip Type', 'Chip Qty', 'Description',
-        'Chips Failed', 'Failure Rate (BOARDS Scanned / Chips Failed)',
-        'MPN Quantity', 'CUTBOARD COST', 'CHIP COST', 'Chip Quantity', 'Process Type',
-      ]];
-      const combinedMerges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
-      let combinedRow = 1;
-      for (const [, { mpn, chips, boardCount, latestDate }] of mpnMap) {
-        const totalChipQty = (chips ?? []).reduce((s, c) => s + c.qty, 0);
-        const chipCostPerChip = mpn.cutboard_cost != null && totalChipQty > 0
-          ? parseFloat((Number(mpn.cutboard_cost) / totalChipQty).toFixed(4)) : null;
-        const dateStr = latestDate ? latestDate.slice(0, 10) : (mpn.latest_board_date ?? '');
-        const startRow = combinedRow;
-        const chipQuantity = boardCount * (chips?.length ?? 0);
-        if (!chips || chips.length === 0) {
-          combinedMpnAoa.push([
-            mpn.name, dateStr, mpn.part_type || '', mpn.beforecut_weight ?? '', mpn.aftercut_weight ?? '',
-            '', '', '', '', '',
-            '', null,
-            boardCount, mpn.cutboard_cost ?? '', '', chipQuantity, 'Chip Harvest',
-          ]);
-          combinedRow++;
-        } else {
-          for (const chip of chips) {
-            const failureRate = (chip.cut_fail != null && chip.cut_fail > 0 && boardCount > 0) ? chip.cut_fail / boardCount : 0;
-            combinedMpnAoa.push([
-              mpn.name, dateStr, mpn.part_type || '', mpn.beforecut_weight ?? '', mpn.aftercut_weight ?? '',
-              chip.brand_name || '', chip.chip_mpn || '', chip.chip_type || '', chip.qty, chip.description || '',
-              chip.cut_fail ?? 0, failureRate,
-              boardCount, mpn.cutboard_cost ?? '', chipCostPerChip ?? '', chipQuantity, 'Chip Harvest',
-            ]);
-            combinedRow++;
-          }
+
+      // ── Sheet 1: Worksheet Descriptions (static) ─────────────────
+      const wsDesc = workbook.addWorksheet('Worksheet Descriptions');
+      wsDesc.columns = [{ width: 22 }, { width: 70 }, { width: 36 }, { width: 60 }];
+      styleHdr(wsDesc.addRow(['Report', 'Description', 'Driver', 'SLA']));
+      wsDesc.addRow(['In-Outbound report', 'E-E tracking of inbound and outbound material, per PO, per LP', 'Recycling reporting', 'inbound, day of receiving. Outbound, day of sending. Ongoing']);
+      wsDesc.addRow(['Processing PCB', "Tracking of processed PCB's and harvested chips qty., per PO, per LP, per MPN", 'Billing, harvested chips', 'per month (cadence of invoicing)']);
+      wsDesc.addRow(['Processing chips', 'Tracking of processed Chips for defined services, per Chip MPN, per Service', 'Billing, chips processing and packaging', 'per month (cadence of invoicing)']);
+      wsDesc.addRow(['Inventory', 'Tracking of all processed chips ready for shipping, per UID container, MPN, processed type, packaging type', 'RFQ and transaction, inventory management', 'on going, review monthly, expected updated immediately, expected monthly cycle count(for now)']);
+      wsDesc.addRow(['Board BOM', 'Bill of material for PCB, per MPN, each Chip for harvest', 'Material insight, validation', 'on going, each processed Board present before end of month']);
+      wsDesc.addRow(['Chip BOM', 'Bill of material for chips, per Chip MPN, Chip type, Chip description, chip picture', 'Material insight, validation, RFQ', 'on going, each processed Chip present before end of month']);
+      wsDesc.addRow(['Price list', 'Agreed pricing per provided service', 'Billing', 'fixed, mutual agreement for change.']);
+
+      // ── Sheet 2: In-outbound ──────────────────────────────────────
+      const wsInOut = workbook.addWorksheet('In-outbound');
+      wsInOut.columns = [
+        { width: 14 }, { width: 14 }, { width: 18 }, { width: 22 }, { width: 18 },
+        { width: 14 }, { width: 14 }, { width: 18 }, { width: 22 }, { width: 18 },
+      ];
+      styleHdr(wsInOut.addRow(['SO No.', 'Inbound Date', 'Inbound LP No.', 'Inbound Weight gross', 'Inbound Weight net', 'Material type', 'Outbound Date ', 'Outbound LP No.', 'Outbound Weight gross', 'Outbound Weight net']));
+      for (const p of so.pallets) {
+        wsInOut.addRow([
+          so.so_number, so.inbound_date, p.licence_number || '',
+          p.in_weight_gross ? parseFloat(p.in_weight_gross) : '',
+          p.actual_weight ? parseFloat(p.actual_weight) : '',
+          p.material_type || '', so.outbound_date || '', p.licence_number || '',
+          p.out_weight_gross ? parseFloat(p.out_weight_gross) : '',
+          p.out_weight_net ? parseFloat(p.out_weight_net) : '',
+        ]);
+      }
+
+      // ── Sheet 3: Processing PCB ───────────────────────────────────
+      const wsPCB = workbook.addWorksheet('Processing PCB');
+      wsPCB.columns = [{ width: 18 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 10 }, { width: 14 }];
+      styleHdr(wsPCB.addRow(['Inbound LP No.', 'Date processed', 'Part type', 'MPN', 'Part Qty.', 'Chip Total Qty.']));
+      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chipTotalQtyPerBoard: number }>();
+      for (const b of allBoardData) {
+        if (!b.mpn) continue;
+        const pallet = b.pallet ? palletMap.get(b.pallet) : null;
+        const lpNo = pallet?.licence_number || '';
+        const key = `${lpNo}||${b.mpn.id}`;
+        const chipTotalQtyPerBoard = (b.chips ?? []).reduce((s, c) => s + c.qty, 0);
+        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: b.scanned_at?.slice(0, 10) || '', partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chipTotalQtyPerBoard });
+        const entry = pcbMap.get(key)!;
+        entry.partQty++;
+        if ((b.scanned_at || '') > (entry.date + 'T')) entry.date = b.scanned_at?.slice(0, 10) || '';
+      }
+      for (const e of pcbMap.values()) wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.chipTotalQtyPerBoard * e.partQty]);
+
+      // ── Sheet 4: Processing chips ─────────────────────────────────
+      const wsChipProc = workbook.addWorksheet('Processing chips');
+      wsChipProc.columns = [{ width: 14 }, { width: 20 }, { width: 24 }, { width: 20 }, { width: 14 }, { width: 14 }];
+      styleHdr(wsChipProc.addRow(['Date processed', 'process type', 'Chip MPN', 'Chips processed qty.', 'Chips failed', 'Failure rate']));
+      const chipProcMap = new Map<string, { date: string; chipMpn: string; processed: number; failed: number }>();
+      for (const [, { chips, boardCount, latestDate }] of mpnMap) {
+        for (const chip of chips ?? []) {
+          const key = chip.chip_mpn || '';
+          if (!chipProcMap.has(key)) chipProcMap.set(key, { date: latestDate.slice(0, 10), chipMpn: chip.chip_mpn || '', processed: 0, failed: 0 });
+          const entry = chipProcMap.get(key)!;
+          entry.processed += chip.qty * boardCount;
+          entry.failed += chip.cut_fail ?? 0;
+          if (latestDate.slice(0, 10) > entry.date) entry.date = latestDate.slice(0, 10);
         }
-        const endRow = combinedRow - 1;
-        if (endRow > startRow) {
-          [0, 1, 2, 3, 4, 12, 13, 15].forEach(c => {
-            combinedMerges.push({ s: { r: startRow, c }, e: { r: endRow, c } });
+      }
+      for (const e of chipProcMap.values()) {
+        const row = wsChipProc.addRow([e.date, 'Chip Harvest', e.chipMpn, e.processed, e.failed, e.processed > 0 ? e.failed / e.processed : 0]);
+        row.getCell(6).numFmt = '0.00%';
+      }
+
+      // ── Sheet 5: Inventory ───────────────────────────────────────
+      const wsInventory = workbook.addWorksheet('Inventory');
+      wsInventory.columns = [{ width: 14 }, { width: 24 }, { width: 18 }, { width: 16 }, { width: 8 }];
+      styleHdr(wsInventory.addRow(['Container UID', 'Chip MPN', 'Processed type', 'Packaging type', 'Qty.']));
+      let invUid = 1;
+      for (const { chips } of mpnMap.values()) {
+        for (const chip of chips ?? []) {
+          const uid = chip.container_uid || `U${String(invUid).padStart(6, '0')}`;
+          wsInventory.addRow([uid, chip.chip_mpn || '', chip.processed_type || 'harvested', chip.packaging_type || 'tray', chip.qty]);
+          invUid++;
+        }
+      }
+
+      // ── Sheet 6: Board BOM ────────────────────────────────────────
+      const mpnBomEntries = [...mpnMap.values()].map(({ mpn, chips }) => ({
+        partType: mpn.part_type || '',
+        mpnName: mpn.name,
+        chips: (chips ?? []).map(c => ({ chipMpn: c.chip_mpn || '', qty: c.qty })),
+      }));
+      const maxChips = Math.max(0, ...mpnBomEntries.map(e => e.chips.length));
+      const bomHeader: string[] = ['Part type', 'MPN'];
+      const bomCols: { width: number }[] = [{ width: 14 }, { width: 20 }];
+      for (let i = 1; i <= maxChips; i++) {
+        bomHeader.push(`Chip ${String.fromCharCode(64 + i)} MPN`, `Chip ${String.fromCharCode(64 + i)} Qty.`);
+        bomCols.push({ width: 24 }, { width: 10 });
+      }
+      bomHeader.push('Chip Total Qty.');
+      bomCols.push({ width: 14 });
+      const wsBoardBom = workbook.addWorksheet('Board BOM');
+      wsBoardBom.columns = bomCols;
+      styleHdr(wsBoardBom.addRow(bomHeader));
+      for (const { partType, mpnName, chips } of mpnBomEntries) {
+        const row: (string | number)[] = [partType, mpnName];
+        let total = 0;
+        for (let i = 0; i < maxChips; i++) {
+          const chip = chips[i];
+          row.push(chip?.chipMpn ?? '', chip ? chip.qty : '');
+          if (chip) total += chip.qty;
+        }
+        row.push(total || '');
+        wsBoardBom.addRow(row);
+      }
+
+      // ── Sheet 7: Chip BOM (with embedded photos) ──────────────────
+      const chipBomMap = new Map<string, { manufacturer: string; chipType: string; description: string; photoUrl: string }>();
+      for (const b of allBoardData) {
+        for (const chip of b.chips ?? []) {
+          if (!chip.chip_mpn || chipBomMap.has(chip.chip_mpn)) continue;
+          chipBomMap.set(chip.chip_mpn, {
+            manufacturer: chip.brand_name || '',
+            chipType: chip.chip_type || '',
+            description: chip.description || '',
+            photoUrl: chip.chip_photo_url || '',
           });
         }
       }
-      const wsMpnDetail = XLSX.utils.aoa_to_sheet(combinedMpnAoa);
-      wsMpnDetail['!merges'] = combinedMerges;
-      const combinedRange = XLSX.utils.decode_range(wsMpnDetail['!ref'] ?? 'A1');
-      for (let r = 1; r <= combinedRange.e.r; r++) {
-        const ca = XLSX.utils.encode_cell({ r, c: 11 });
-        if (wsMpnDetail[ca]?.v != null) { wsMpnDetail[ca].t = 'n'; wsMpnDetail[ca].z = '0.00%'; }
+      console.log('[Export] Chip BOM photo URLs:', Array.from(chipBomMap.entries()).map(([k, v]) => ({ chip: k, photoUrl: v.photoUrl || '(none)' })));
+      const wsChipBom = workbook.addWorksheet('Chip BOM');
+      wsChipBom.columns = [{ width: 24 }, { width: 18 }, { width: 14 }, { width: 30 }, { width: 18 }];
+      styleHdr(wsChipBom.addRow(['Chip MPN', 'Manufacturer', 'Chip type', 'Chip description', 'Chip picture']));
+      for (const [chipMpn, e] of chipBomMap.entries()) {
+        const dataRow = wsChipBom.addRow([chipMpn, e.manufacturer, e.chipType, e.description, '']);
+        dataRow.height = 60;
+        if (e.photoUrl) {
+          try {
+            const res = await fetch(e.photoUrl);
+            if (res.ok) {
+              const blob = await res.blob();
+              const base64 = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve((reader.result as string).split(',')[1]);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              const ext = e.photoUrl.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+              const imgId = workbook.addImage({ base64, extension: ext });
+              const r0 = dataRow.number - 1;
+              wsChipBom.addImage(imgId, { tl: { col: 4, row: r0 } as any, br: { col: 5, row: r0 + 1 } as any, editAs: 'oneCell' });
+            }
+          } catch { /* skip failed image — leave cell empty */ }
+        }
       }
-      wsMpnDetail['!cols'] = [
-        { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-        { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 10 }, { wch: 30 },
-        { wch: 12 }, { wch: 38 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 14 },
-      ];
-      XLSX.utils.book_append_sheet(wb, wsMpnDetail, 'MPN Detail');
 
-      const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+      const r3 = (n: number) => Math.round(n * 1000) / 1000;
+
+      // ── Sheet 8: Activity Based Processing Cost (dynamic per MPN) ──
+      const wsActivityCost = workbook.addWorksheet('Activity Based Processing Cost');
+      wsActivityCost.columns = [{ width: 26 }, { width: 14 }, { width: 58 }];
+      const sortedForABC = [...mpnMap.values()].sort((a, b) => b.boardCount - a.boardCount);
+      for (const entry of sortedForABC) {
+        const cutCost = r3(Number(entry.mpn.cutboard_cost ?? 0));
+        const chipTypeCount = entry.chips.length;
+        const chipCutCost = cutCost > 0 && chipTypeCount > 0 ? r3(cutCost / chipTypeCount) : null;
+        const cutDef = chipCutCost != null
+          ? `The cost to cut a single chip by board type (${cutCost}/${chipTypeCount}=${chipCutCost})`
+          : 'The cost to cut a single chip by board type';
+
+        // Board part Number row
+        const bpnRow = wsActivityCost.addRow(['Board part Number:', entry.mpn.name, '']);
+        bpnRow.getCell(1).fill = HDR_FILL; bpnRow.getCell(1).font = HDR_FONT;
+        bpnRow.getCell(2).font = { bold: true };
+
+        // Column sub-headers
+        const subHdr = wsActivityCost.addRow(['Service', 'Cost', 'Definition']);
+        subHdr.eachCell(cell => { cell.fill = HDR_FILL; cell.font = HDR_FONT; });
+
+        // Data rows — track row range for Total formula
+        const dataStartRow = wsActivityCost.lastRow!.number + 1;
+        wsActivityCost.addRow(['Chip Cut Out',        chipCutCost ?? '', cutDef]);
+        wsActivityCost.addRow(['Chip Reball',         '', 'The cost to reball a single chip by chip type']);
+        wsActivityCost.addRow(['Chip Test',           '', 'The cost to test a single chip by chip type']);
+        wsActivityCost.addRow(['Chip Packaging tray', '', 'The cost to pack out a single chip by chip type']);
+        const dataEndRow = wsActivityCost.lastRow!.number;
+
+        // Total row
+        const totalRow = wsActivityCost.addRow(['Total', '', '']);
+        totalRow.getCell(2).value = { formula: `SUM(B${dataStartRow}:B${dataEndRow})` };
+        totalRow.getCell(1).font = { bold: true };
+
+        // Spacer between MPN blocks
+        wsActivityCost.addRow([]);
+      }
+
+      // ── Sheet 9: Service_Cost_Example (all MPNs, chip cost = cutboard_cost / totalChipQty) ──
+      const wsSCE = workbook.addWorksheet('Service_Cost_Example');
+      wsSCE.columns = [{ width: 44 }, { width: 14 }, { width: 10 }, { width: 10 }, { width: 8 }, { width: 8 }, { width: 10 }, { width: 18 }, { width: 22 }];
+      const sceHdr = wsSCE.addRow(['', 'Board Cut Cost', 'Harvest', 'Reball', 'Test', 'Pack', 'Total', 'On Hand Inventory', 'Total Processing Cost']);
+      for (let c = 2; c <= 9; c++) { sceHdr.getCell(c).fill = HDR_FILL; sceHdr.getCell(c).font = HDR_FONT; }
+      // Helper: add a data row and replace Total (col G) and Total Processing Cost (col I) with formulas
+      const addSceRow = (ws: ExcelJS.Worksheet, cols: (string | number)[]) => {
+        const row = ws.addRow(cols);
+        const rn = row.number;
+        row.getCell(7).value = { formula: `SUM(B${rn}:F${rn})` };
+        row.getCell(9).value = { formula: `H${rn}*G${rn}` };
+        return row;
+      };
+      const sortedMpns = [...mpnMap.values()].sort((a, b) => b.boardCount - a.boardCount);
+      for (const entry of sortedMpns) {
+        const cutCost = entry.mpn.cutboard_cost ?? 0;
+        const inv = entry.boardCount;
+        const totalChipQty = entry.chips.reduce((s, c) => s + c.qty, 0);
+        const unitChipCost = r3(cutCost > 0 && totalChipQty > 0 ? cutCost / totalChipQty : 0);
+        wsSCE.addRow([]);
+        const mpnRow = addSceRow(wsSCE, [entry.mpn.name, cutCost, '', '', '', '', 0, inv, 0]);
+        mpnRow.getCell(1).fill = HDR_FILL; mpnRow.getCell(1).font = HDR_FONT;
+        wsSCE.addRow([]);
+        let chipStartRow = 0;
+        let chipEndRow = 0;
+        for (const chip of entry.chips) {
+          const chipRow = addSceRow(wsSCE, [chip.chip_mpn, unitChipCost, '', '', '', '', 0, inv, 0]);
+          if (!chipStartRow) chipStartRow = chipRow.number;
+          chipEndRow = chipRow.number;
+        }
+        wsSCE.addRow([]);
+        const totalRow = wsSCE.addRow([`Total Cost of harvested chips ${entry.mpn.name}`, '', '', '', '', '', '', '']);
+        if (chipStartRow) totalRow.getCell(9).value = { formula: `SUM(I${chipStartRow}:I${chipEndRow})` };
+        totalRow.getCell(1).fill = HDR_FILL; totalRow.getCell(1).font = HDR_FONT;
+      }
+
+      const buf = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buf], { type: 'application/octet-stream' }), `${so.so_number}-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch { toast('Export failed'); }
   };

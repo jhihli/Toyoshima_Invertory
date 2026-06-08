@@ -616,7 +616,7 @@ def dashboard_stats(request):
     from django.db.models import Count, Sum
 
     today = timezone.localdate()
-    today_so_count = SO.objects.filter(date=today).count()
+    today_so_count = SO.objects.filter(inbound_date=today).count()
 
     month_start = today.replace(day=1)
     pallets_this_month = Pallet.objects.filter(
@@ -625,12 +625,12 @@ def dashboard_stats(request):
 
     thirty_days_ago = today - timedelta(days=29)
     daily_counts_qs = (
-        SO.objects.filter(date__gte=thirty_days_ago)
-        .values('date')
+        SO.objects.filter(inbound_date__gte=thirty_days_ago)
+        .values('inbound_date')
         .annotate(count=Count('id'))
-        .order_by('date')
+        .order_by('inbound_date')
     )
-    daily_map = {str(row['date']): row['count'] for row in daily_counts_qs}
+    daily_map = {str(row['inbound_date']): row['count'] for row in daily_counts_qs}
     daily_counts = [
         {'date': str(thirty_days_ago + timedelta(days=i)),
          'count': daily_map.get(str(thirty_days_ago + timedelta(days=i)), 0)}

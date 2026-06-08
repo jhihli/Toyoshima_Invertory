@@ -53,7 +53,7 @@ class ChipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Chip
-        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'cut_fail', 'chip_cost', 'description']
+        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'cut_fail', 'chip_cost', 'description', 'processed_type', 'packaging_type', 'container_uid']
 
     def get_brand_name(self, obj):
         if obj.brand:
@@ -182,7 +182,7 @@ class BoardSerializer(serializers.ModelSerializer):
     def get_chips(self, obj):
         if not obj.mpn_id:
             return []
-        return ChipSerializer(obj.mpn.chips.all(), many=True).data
+        return ChipSerializer(obj.mpn.chips.all(), many=True, context=self.context).data
 
     def get_chip_count(self, obj):
         if not obj.mpn_id:
