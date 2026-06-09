@@ -109,7 +109,17 @@ export interface Chip {
   description: string;
   processed_type: string;
   packaging_type: string;
+}
+
+export interface PalletChipContainer {
+  id: number;
+  pallet: number;
+  chip: number;
   container_uid: string;
+  chip_mpn?: string;
+  processed_type?: string;
+  packaging_type?: string;
+  qty?: number;
 }
 
 export interface MPNReportConfig {

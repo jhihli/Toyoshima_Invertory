@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.conf import settings
-from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail
+from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
 import os
 
 
@@ -53,7 +53,7 @@ class ChipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Chip
-        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'cut_fail', 'chip_cost', 'description', 'processed_type', 'packaging_type', 'container_uid']
+        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'cut_fail', 'chip_cost', 'description', 'processed_type', 'packaging_type']
 
     def get_brand_name(self, obj):
         if obj.brand:
@@ -282,3 +282,20 @@ class MPNReportEmailSerializer(serializers.ModelSerializer):
         model = MPNReportEmail
         fields = ['id', 'sent_at', 'sent_to', 'cc', 'status', 'error', 'triggered_by']
         read_only_fields = ['id', 'sent_at', 'sent_to', 'cc', 'status', 'error', 'triggered_by']
+
+
+class PalletChipContainerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PalletChipContainer
+        fields = ['id', 'pallet', 'chip', 'container_uid']
+
+
+class PalletChipContainerWithChipSerializer(serializers.ModelSerializer):
+    chip_mpn = serializers.CharField(source='chip.chip_mpn', read_only=True)
+    processed_type = serializers.CharField(source='chip.processed_type', read_only=True)
+    packaging_type = serializers.CharField(source='chip.packaging_type', read_only=True)
+    qty = serializers.IntegerField(source='chip.qty', read_only=True)
+
+    class Meta:
+        model = PalletChipContainer
+        fields = ['id', 'pallet', 'chip', 'container_uid', 'chip_mpn', 'processed_type', 'packaging_type', 'qty']

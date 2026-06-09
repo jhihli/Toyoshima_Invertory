@@ -50,4 +50,9 @@ urlpatterns = [
     path('mpn-report/config/',    views.mpn_report_config,    name='mpn-report-config'),
     path('mpn-report/last-send/', views.mpn_report_last_send, name='mpn-report-last-send'),
     path('mpn-report/send-now/',  views.mpn_report_send_now,  name='mpn-report-send-now'),
+
+    # Pallet Chip Containers
+    path('sos/<int:so_pk>/chip-containers/', views.so_chip_containers, name='so-chip-containers'),
+    path('pallets/<int:pallet_pk>/chip-containers/', views.pallet_chip_container_list, name='pallet-chip-container-list'),
+    path('pallets/<int:pallet_pk>/chip-containers/<int:chip_pk>/', views.pallet_chip_container_upsert, name='pallet-chip-container-upsert'),
 ]

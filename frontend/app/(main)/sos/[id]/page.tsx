@@ -382,19 +382,20 @@ export default function SODetailPage() {
       const wsPCB = workbook.addWorksheet('Processing PCB');
       wsPCB.columns = [{ width: 18 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 10 }, { width: 14 }];
       styleHdr(wsPCB.addRow(['Inbound LP No.', 'Date processed', 'Part type', 'MPN', 'Part Qty.', 'Chip Total Qty.']));
-      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chipTotalQtyPerBoard: number }>();
+      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chipTypeCount: number }>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
         const pallet = b.pallet ? palletMap.get(b.pallet) : null;
         const lpNo = pallet?.licence_number || '';
         const key = `${lpNo}||${b.mpn.id}`;
-        const chipTotalQtyPerBoard = (b.chips ?? []).reduce((s, c) => s + c.qty, 0);
-        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: b.scanned_at?.slice(0, 10) || '', partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chipTotalQtyPerBoard });
+        const chipTypeCount = (b.chips ?? []).length;
+        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: b.scanned_at?.slice(0, 10) || '', partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chipTypeCount });
         const entry = pcbMap.get(key)!;
         entry.partQty++;
         if ((b.scanned_at || '') > (entry.date + 'T')) entry.date = b.scanned_at?.slice(0, 10) || '';
       }
-      for (const e of pcbMap.values()) wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.chipTotalQtyPerBoard * e.partQty]);
+      const pcbRows = [...pcbMap.values()].sort((a, b) => a.lpNo.localeCompare(b.lpNo));
+      for (const e of pcbRows) wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.chipTypeCount * e.partQty]);
 
       // ── Sheet 4: Processing chips ─────────────────────────────────
       const wsChipProc = workbook.addWorksheet('Processing chips');
@@ -406,7 +407,7 @@ export default function SODetailPage() {
           const key = chip.chip_mpn || '';
           if (!chipProcMap.has(key)) chipProcMap.set(key, { date: latestDate.slice(0, 10), chipMpn: chip.chip_mpn || '', processed: 0, failed: 0 });
           const entry = chipProcMap.get(key)!;
-          entry.processed += chip.qty * boardCount;
+          entry.processed += chip.qty;
           entry.failed += chip.cut_fail ?? 0;
           if (latestDate.slice(0, 10) > entry.date) entry.date = latestDate.slice(0, 10);
         }
@@ -420,13 +421,9 @@ export default function SODetailPage() {
       const wsInventory = workbook.addWorksheet('Inventory');
       wsInventory.columns = [{ width: 14 }, { width: 24 }, { width: 18 }, { width: 16 }, { width: 8 }];
       styleHdr(wsInventory.addRow(['Container UID', 'Chip MPN', 'Processed type', 'Packaging type', 'Qty.']));
-      let invUid = 1;
-      for (const { chips } of mpnMap.values()) {
-        for (const chip of chips ?? []) {
-          const uid = chip.container_uid || `U${String(invUid).padStart(6, '0')}`;
-          wsInventory.addRow([uid, chip.chip_mpn || '', chip.processed_type || 'harvested', chip.packaging_type || 'tray', chip.qty]);
-          invUid++;
-        }
+      const allContainers = await api.sos.chipContainers(soId);
+      for (const c of allContainers) {
+        wsInventory.addRow([c.container_uid, c.chip_mpn || '', c.processed_type || 'harvested', c.packaging_type || 'tray', c.qty ?? '']);
       }
 
       // ── Sheet 6: Board BOM ────────────────────────────────────────
@@ -556,8 +553,8 @@ export default function SODetailPage() {
       for (const entry of sortedMpns) {
         const cutCost = entry.mpn.cutboard_cost ?? 0;
         const inv = entry.boardCount;
-        const totalChipQty = entry.chips.reduce((s, c) => s + c.qty, 0);
-        const unitChipCost = r3(cutCost > 0 && totalChipQty > 0 ? cutCost / totalChipQty : 0);
+        const chipTypeCount = (entry.chips ?? []).length;
+        const unitChipCost = r3(cutCost > 0 && chipTypeCount > 0 ? cutCost / chipTypeCount : 0);
         wsSCE.addRow([]);
         const mpnRow = addSceRow(wsSCE, [entry.mpn.name, cutCost, '', '', '', '', 0, inv, 0]);
         mpnRow.getCell(1).fill = HDR_FILL; mpnRow.getCell(1).font = HDR_FONT;
@@ -1460,7 +1457,7 @@ function BoardsTab({ boards, pallets, soNumber, dateFrom, dateTo, palletFilter,
               <div key={key} style={{ border: '1px solid var(--hair)', borderRadius: 4, background: 'var(--surface)', overflow: 'hidden' }}>
                 <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button
-                    onClick={() => mpn && router.push(`/sos/${soId}/mpns/${mpn.id}?so=${encodeURIComponent(soNumber)}`)}
+                    onClick={() => mpn && router.push(`/sos/${soId}/mpns/${mpn.id}?so=${encodeURIComponent(soNumber)}${gBoards[0]?.pallet != null ? `&palletId=${gBoards[0].pallet}&palletLabel=${encodeURIComponent(pallet_label ?? '')}` : ''}`)}
                     className="mono"
                     style={{ background: 'none', border: 0, padding: 0, cursor: mpn ? 'pointer' : 'default', fontSize: 13, fontWeight: 500, color: mpn ? 'var(--accent-2)' : 'var(--ink)', textDecoration: mpn ? 'underline' : 'none', textDecorationColor: 'var(--accent)', textUnderlineOffset: 3, fontFamily: 'inherit', flex: 1, textAlign: 'left', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                   >
@@ -1545,7 +1542,7 @@ function BoardsTab({ boards, pallets, soNumber, dateFrom, dateTo, palletFilter,
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ display: 'inline-flex', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .12s', color: 'var(--ink-3)', flexShrink: 0, cursor: 'pointer' }} onClick={e => { e.stopPropagation(); toggleMpn(key); }}><ChevronIcon /></span>
                           {mpn ? (
-                            <button onClick={() => router.push(`/sos/${soId}/mpns/${mpn.id}?so=${encodeURIComponent(soNumber)}`)}
+                            <button onClick={() => router.push(`/sos/${soId}/mpns/${mpn.id}?so=${encodeURIComponent(soNumber)}${gBoards[0]?.pallet != null ? `&palletId=${gBoards[0].pallet}&palletLabel=${encodeURIComponent(pallet_label ?? '')}` : ''}`)}
                               className="mono"
                               style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: 'var(--accent-2)', textDecoration: 'underline', textDecorationColor: 'var(--accent)', textUnderlineOffset: 3, fontFamily: 'ui-monospace, monospace' }}>
                               {mpn.name}

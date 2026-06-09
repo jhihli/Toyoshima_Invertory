@@ -82,6 +82,7 @@ import type {
   Vendor, SO, SODetail, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
+  PalletChipContainer,
 } from '@/interface/IDatatable';
 
 export const api = {
@@ -103,6 +104,7 @@ export const api = {
     create: (d: Partial<SO>) => apiPost<SO>('/sos/', d),
     update: (id: number, d: Partial<SO>) => apiPut<SO>(`/sos/${id}/`, d),
     delete: (id: number) => apiDelete(`/sos/${id}/`),
+    chipContainers: (soId: number) => apiGet<PalletChipContainer[]>(`/sos/${soId}/chip-containers/`),
   },
 
   // Pallets
@@ -111,6 +113,14 @@ export const api = {
     create: (soId: number, d: Partial<Pallet>) => apiPost<Pallet>(`/sos/${soId}/pallets/`, d),
     update: (soId: number, id: number, d: Partial<Pallet>) => apiPut<Pallet>(`/sos/${soId}/pallets/${id}/`, d),
     delete: (soId: number, id: number) => apiDelete(`/sos/${soId}/pallets/${id}/`),
+    chipContainers: {
+      list: (palletId: number, mpnId?: number) => {
+        const qs = mpnId != null ? `?mpn_id=${mpnId}` : '';
+        return apiGet<PalletChipContainer[]>(`/pallets/${palletId}/chip-containers/${qs}`);
+      },
+      upsert: (palletId: number, chipId: number, container_uid: string) =>
+        apiPut<PalletChipContainer>(`/pallets/${palletId}/chip-containers/${chipId}/`, { container_uid }),
+    },
   },
 
   // Photos

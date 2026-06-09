@@ -61,7 +61,6 @@ export default function MPNDetailPage() {
         qty: +data.qty, chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
         cut_fail: data.cutFail !== '' ? +data.cutFail : null,
         processed_type: data.processedType, packaging_type: data.packagingType,
-        container_uid: data.containerUid,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnId, chip.id, data.photoFile);
       setMpn(m => m ? { ...m, chips: [...(m.chips ?? []), chip] } : m);
@@ -77,7 +76,6 @@ export default function MPNDetailPage() {
         qty: +data.qty, chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
         cut_fail: data.cutFail !== '' ? +data.cutFail : null,
         processed_type: data.processedType, packaging_type: data.packagingType,
-        container_uid: data.containerUid,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnId, chipId, data.photoFile);
       else if (data.clearPhoto) { await api.mpns.chips.deletePhoto(mpnId, chipId); chip = { ...chip, chip_photo_url: null }; }
@@ -212,23 +210,21 @@ export default function MPNDetailPage() {
 
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
             <div className="table-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 920 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 820 }}>
               <colgroup>
-                <col style={{ width: 100 }} />
+                <col style={{ width: '15%' }} />
                 <col style={{ width: '13%' }} />
-                <col style={{ width: '12%' }} />
-                <col style={{ width: '10%' }} />
+                <col style={{ width: '11%' }} />
                 <col style={{ width: 60 }} />
                 <col style={{ width: '7%' }} />
                 <col style={{ width: '7%' }} />
-                <col style={{ width: '12%' }} />
-                <col style={{ width: '12%' }} />
+                <col style={{ width: '13%' }} />
+                <col style={{ width: '13%' }} />
                 <col />
                 <col style={{ width: 100 }} />
               </colgroup>
               <thead>
                 <tr>
-                  <th style={thS}>Container UID</th>
                   <th style={thS}>Brand</th>
                   <th style={thS}>Chip MPN</th>
                   <th style={thS}>Type</th>
@@ -243,13 +239,10 @@ export default function MPNDetailPage() {
               </thead>
               <tbody>
                 {chips.length === 0 && (
-                  <tr><td colSpan={11}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
+                  <tr><td colSpan={10}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
                 )}
                 {chips.map(chip => (
                   <tr key={chip.id} className="chip-row" style={{ borderTop: '1px solid var(--hair)' }}>
-                    <td style={{ ...tdS, fontSize: 12 }} className="mono">
-                      {chip.container_uid || <span style={{ color: 'var(--ink-4)' }}>—</span>}
-                    </td>
                     <td style={{ ...tdS, fontSize: 13, fontWeight: 500 }}>
                       {chip.brand_name || <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
@@ -269,8 +262,8 @@ export default function MPNDetailPage() {
                       {chip.cut_fail != null ? chip.cut_fail : 0}
                     </td>
                     <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                      {mpn.cutboard_cost != null && totalChips > 0
-                        ? (Number(mpn.cutboard_cost) / totalChips).toFixed(3)
+                      {mpn.cutboard_cost != null && chips.length > 0
+                        ? (Number(mpn.cutboard_cost) / chips.length).toFixed(3)
                         : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }}>
@@ -460,7 +453,7 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
   );
 }
 
-type ChipFormData = { brandId: string; qty: string; chipMpn: string; chipType: string; description: string; cutFail: string; processedType: string; packagingType: string; containerUid: string; photoFile?: File | null; clearPhoto?: boolean; };
+type ChipFormData = { brandId: string; qty: string; chipMpn: string; chipType: string; description: string; cutFail: string; processedType: string; packagingType: string; photoFile?: File | null; clearPhoto?: boolean; };
 
 function ChipPhotoSquare({ value, onChange }: { value: { src: string; name?: string; file?: File } | null; onChange: (v: { src: string; name: string; file: File } | null) => void; }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -590,7 +583,6 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
   const [cutFail, setCutFail] = useState('');
   const [processedType, setProcessedType] = useState('harvested');
   const [packagingType, setPackagingType] = useState('tray');
-  const [containerUid, setContainerUid] = useState('');
   const [photo, setPhoto] = useState<{ src: string; name?: string; file?: File } | null>(null);
   const initialPhotoUrl = initial?.chip_photo_url ?? null;
 
@@ -603,7 +595,6 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
       setCutFail(initial?.cut_fail != null ? String(initial.cut_fail) : '');
       setProcessedType(initial?.processed_type ?? 'harvested');
       setPackagingType(initial?.packaging_type ?? 'tray');
-      setContainerUid(initial?.container_uid ?? '');
       setPhoto(initial?.chip_photo_url ? { src: initial.chip_photo_url, name: initial.chip_photo_url.split('/').pop() } : null);
     }
   }, [open, initial]);
@@ -611,7 +602,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
   const submit = () => {
     onAdd({
       brandId, qty: String(boardCount), chipMpn, chipType, description, cutFail,
-      processedType, packagingType, containerUid,
+      processedType, packagingType,
       photoFile: photo?.file ?? null,
       clearPhoto: !photo && !!initialPhotoUrl,
     });
@@ -625,10 +616,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
       </>}>
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 180px', gap: 18 }}>
         <div>
-          <Field label="Container UID"><Input value={containerUid} onChange={setContainerUid} placeholder="e.g. U000001" autoFocus={mode === 'add'} /></Field>
-          <div style={{ marginTop: 12 }}>
-            <Field label="Brand"><Select value={brandId} onChange={setBrandId} options={[{ value: '', label: 'No brand' }, ...chipBrands.map(b => ({ value: String(b.id), label: b.name }))]} /></Field>
-          </div>
+          <Field label="Brand"><Select value={brandId} onChange={setBrandId} options={[{ value: '', label: 'No brand' }, ...chipBrands.map(b => ({ value: String(b.id), label: b.name }))]} /></Field>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
             <Field label="Chip MPN"><Input value={chipMpn} onChange={setChipMpn} placeholder="e.g. TPS62130" /></Field>
             <Field label="Type"><Input value={chipType} onChange={setChipType} placeholder="e.g. DC-DC" /></Field>

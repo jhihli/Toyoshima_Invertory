@@ -7,12 +7,13 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.db import transaction
 from django.db.models import ProtectedError
-from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail
+from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
     SOPhotoSerializer, PalletSerializer, BoardSerializer,
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
+    PalletChipContainerSerializer, PalletChipContainerWithChipSerializer,
 )
 
 
@@ -698,3 +699,42 @@ def mpn_report_send_now(request):
     if record is None:
         return Response({'error': 'No recipient configured.'}, status=status.HTTP_400_BAD_REQUEST)
     return Response(MPNReportEmailSerializer(record).data, status=status.HTTP_201_CREATED)
+
+
+# ─────────────────────────────────────────────────── Pallet Chip Containers
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def so_chip_containers(request, so_pk):
+    so = get_object_or_404(SO, pk=so_pk)
+    qs = (
+        PalletChipContainer.objects
+        .filter(pallet__so=so)
+        .exclude(container_uid='')
+        .select_related('chip')
+        .order_by('container_uid')
+    )
+    return Response(PalletChipContainerWithChipSerializer(qs, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pallet_chip_container_list(request, pallet_pk):
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    qs = PalletChipContainer.objects.filter(pallet=pallet).select_related('chip')
+    mpn_id = request.query_params.get('mpn_id')
+    if mpn_id:
+        qs = qs.filter(chip__mpn_id=mpn_id)
+    return Response(PalletChipContainerSerializer(qs, many=True).data)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def pallet_chip_container_upsert(request, pallet_pk, chip_pk):
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    chip = get_object_or_404(Chip, pk=chip_pk)
+    container_uid = request.data.get('container_uid', '')
+    obj, _ = PalletChipContainer.objects.update_or_create(
+        pallet=pallet, chip=chip,
+        defaults={'container_uid': container_uid},
+    )
+    return Response(PalletChipContainerSerializer(obj).data)

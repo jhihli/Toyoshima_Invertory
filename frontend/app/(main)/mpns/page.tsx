@@ -200,9 +200,8 @@ export default function MPNsPage() {
 
       for (const mpn of details) {
         const chips = mpn.chips ?? [];
-        const totalChipQty = chips.reduce((s, c) => s + c.qty, 0);
-        const chipCost = mpn.cutboard_cost != null && totalChipQty > 0
-          ? parseFloat((Number(mpn.cutboard_cost) / totalChipQty).toFixed(4))
+        const chipCost = mpn.cutboard_cost != null && chips.length > 0
+          ? parseFloat((Number(mpn.cutboard_cost) / chips.length).toFixed(4))
           : null;
         const boardCount = mpn.board_count ?? 0;
         const startRow = currentRow;

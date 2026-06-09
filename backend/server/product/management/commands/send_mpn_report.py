@@ -146,10 +146,10 @@ class Command(BaseCommand):
             latest_result = mpn.boards.aggregate(latest=Max('scanned_at'))['latest']
             latest_date = latest_result.strftime('%Y-%m-%d') if latest_result else ''
 
-            total_chip_qty = sum(c.qty for c in chips)
+            chip_type_count = len(chips)
             chip_cost = (
-                round(float(mpn.cutboard_cost) / total_chip_qty, 4)
-                if mpn.cutboard_cost and total_chip_qty > 0
+                round(float(mpn.cutboard_cost) / chip_type_count, 4)
+                if mpn.cutboard_cost and chip_type_count > 0
                 else None
             )
 

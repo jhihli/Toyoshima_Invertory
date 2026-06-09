@@ -197,7 +197,6 @@ class Chip(models.Model):
     description = models.TextField(blank=True)
     processed_type = models.CharField(max_length=50, choices=PROCESSED_TYPE_CHOICES, default='harvested')
     packaging_type = models.CharField(max_length=50, choices=PACKAGING_TYPE_CHOICES, default='tray')
-    container_uid = models.CharField(max_length=50, blank=True)
 
     class Meta:
         db_table = 'chip'
@@ -206,6 +205,20 @@ class Chip(models.Model):
 
     def __str__(self):
         return f"{self.brand} x{self.qty}" if self.brand else f"Chip x{self.qty}"
+
+
+class PalletChipContainer(models.Model):
+    pallet = models.ForeignKey('Pallet', on_delete=models.CASCADE, related_name='chip_containers')
+    chip = models.ForeignKey('Chip', on_delete=models.CASCADE, related_name='pallet_containers')
+    container_uid = models.CharField(max_length=50, blank=True)
+
+    class Meta:
+        db_table = 'pallet_chip_container'
+        unique_together = [('pallet', 'chip')]
+        ordering = ['chip__chip_mpn']
+
+    def __str__(self):
+        return f"{self.pallet} - {self.chip} → {self.container_uid}"
 
 
 class MPNReportConfig(models.Model):
