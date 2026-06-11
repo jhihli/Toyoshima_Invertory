@@ -423,7 +423,7 @@ export default function SODetailPage() {
       styleHdr(wsInventory.addRow(['Container UID', 'Chip MPN', 'Processed type', 'Packaging type', 'Qty.']));
       const allContainers = await api.sos.chipContainers(soId);
       for (const c of allContainers) {
-        wsInventory.addRow([c.container_uid, c.chip_mpn || '', c.processed_type || 'harvested', c.packaging_type || 'tray', c.qty ?? '']);
+        wsInventory.addRow([c.container_uid, c.chip_mpn || '', c.processed_type || 'harvested', c.packaging_type || 'tray', c.inventory_qty ?? c.qty ?? '']);
       }
 
       // ── Sheet 6: Board BOM ────────────────────────────────────────

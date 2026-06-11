@@ -211,6 +211,7 @@ class PalletChipContainer(models.Model):
     pallet = models.ForeignKey('Pallet', on_delete=models.CASCADE, related_name='chip_containers')
     chip = models.ForeignKey('Chip', on_delete=models.CASCADE, related_name='pallet_containers')
     container_uid = models.CharField(max_length=50, blank=True)
+    actual_qty = models.IntegerField(null=True, blank=True)
 
     class Meta:
         db_table = 'pallet_chip_container'

@@ -287,7 +287,7 @@ class MPNReportEmailSerializer(serializers.ModelSerializer):
 class PalletChipContainerSerializer(serializers.ModelSerializer):
     class Meta:
         model = PalletChipContainer
-        fields = ['id', 'pallet', 'chip', 'container_uid']
+        fields = ['id', 'pallet', 'chip', 'container_uid', 'actual_qty']
 
 
 class PalletChipContainerWithChipSerializer(serializers.ModelSerializer):
@@ -295,7 +295,11 @@ class PalletChipContainerWithChipSerializer(serializers.ModelSerializer):
     processed_type = serializers.CharField(source='chip.processed_type', read_only=True)
     packaging_type = serializers.CharField(source='chip.packaging_type', read_only=True)
     qty = serializers.IntegerField(source='chip.qty', read_only=True)
+    inventory_qty = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = PalletChipContainer
-        fields = ['id', 'pallet', 'chip', 'container_uid', 'chip_mpn', 'processed_type', 'packaging_type', 'qty']
+        fields = ['id', 'pallet', 'chip', 'container_uid', 'actual_qty', 'chip_mpn', 'processed_type', 'packaging_type', 'qty', 'inventory_qty']
+
+    def get_inventory_qty(self, obj):
+        return obj.actual_qty if obj.actual_qty is not None else obj.chip.qty

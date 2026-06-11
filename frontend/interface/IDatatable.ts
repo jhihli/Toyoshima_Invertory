@@ -116,10 +116,12 @@ export interface PalletChipContainer {
   pallet: number;
   chip: number;
   container_uid: string;
+  actual_qty?: number | null;
   chip_mpn?: string;
   processed_type?: string;
   packaging_type?: string;
   qty?: number;
+  inventory_qty?: number;
 }
 
 export interface MPNReportConfig {

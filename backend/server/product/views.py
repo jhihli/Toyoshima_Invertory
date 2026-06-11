@@ -733,8 +733,14 @@ def pallet_chip_container_upsert(request, pallet_pk, chip_pk):
     pallet = get_object_or_404(Pallet, pk=pallet_pk)
     chip = get_object_or_404(Chip, pk=chip_pk)
     container_uid = request.data.get('container_uid', '')
+    actual_qty = request.data.get('actual_qty', None)
+    if actual_qty is not None:
+        try:
+            actual_qty = int(actual_qty)
+        except (TypeError, ValueError):
+            actual_qty = None
     obj, _ = PalletChipContainer.objects.update_or_create(
         pallet=pallet, chip=chip,
-        defaults={'container_uid': container_uid},
+        defaults={'container_uid': container_uid, 'actual_qty': actual_qty},
     )
     return Response(PalletChipContainerSerializer(obj).data)

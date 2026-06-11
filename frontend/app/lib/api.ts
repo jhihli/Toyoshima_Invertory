@@ -118,8 +118,8 @@ export const api = {
         const qs = mpnId != null ? `?mpn_id=${mpnId}` : '';
         return apiGet<PalletChipContainer[]>(`/pallets/${palletId}/chip-containers/${qs}`);
       },
-      upsert: (palletId: number, chipId: number, container_uid: string) =>
-        apiPut<PalletChipContainer>(`/pallets/${palletId}/chip-containers/${chipId}/`, { container_uid }),
+      upsert: (palletId: number, chipId: number, container_uid: string, actual_qty?: number | null) =>
+        apiPut<PalletChipContainer>(`/pallets/${palletId}/chip-containers/${chipId}/`, { container_uid, actual_qty }),
     },
   },
 

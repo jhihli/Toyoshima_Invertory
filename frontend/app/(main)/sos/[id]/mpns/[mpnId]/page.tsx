@@ -46,14 +46,17 @@ export default function SOContextMPNDetailPage() {
   }
 
   const chips = mpn.chips ?? [];
-  const totalChips = chips.reduce((s, c) => s + c.qty, 0);
+  const totalActual = chips.reduce((s, c) => {
+    const ctr = containers.get(c.id);
+    return s + (ctr?.actual_qty ?? c.qty);
+  }, 0);
 
-  const handleSaveContainer = async (chipId: number, uid: string) => {
+  const handleSaveContainer = async (chipId: number, uid: string, qty: number | null) => {
     if (palletId == null) return;
     try {
-      const updated = await api.pallets.chipContainers.upsert(palletId, chipId, uid);
+      const updated = await api.pallets.chipContainers.upsert(palletId, chipId, uid, qty);
       setContainers(prev => new Map(prev).set(chipId, updated));
-    } catch { toast('Failed to save container UID'); }
+    } catch { toast('Failed to save'); }
   };
 
   const subtitle = [mpn.part_type || null, palletLabel || soNumber, `Created ${mpn.created_at?.slice(0, 10) || '—'}`].filter(Boolean).join(' · ');
@@ -121,7 +124,7 @@ export default function SOContextMPNDetailPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <span style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-4)', fontWeight: 500 }}>Chips</span>
             <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              {chips.length} type{chips.length !== 1 ? 's' : ''} · {totalChips} total
+              {chips.length} type{chips.length !== 1 ? 's' : ''} · {totalActual} total
             </span>
             {palletId == null && (
               <span style={{ fontSize: 11, color: 'var(--ink-4)', marginLeft: 8 }}>
@@ -135,8 +138,9 @@ export default function SOContextMPNDetailPage() {
             <div className="table-scroll">
               <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 680 }}>
                 <colgroup>
-                  <col style={{ width: '22%' }} />
-                  <col style={{ width: '16%' }} />
+                  <col style={{ width: '20%' }} />
+                  <col style={{ width: 72 }} />
+                  <col style={{ width: '15%' }} />
                   <col style={{ width: '13%' }} />
                   <col style={{ width: '12%' }} />
                   <col style={{ width: 60 }} />
@@ -147,6 +151,7 @@ export default function SOContextMPNDetailPage() {
                 <thead>
                   <tr>
                     <th style={thS}>Container UID {palletLabel && <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--ink-4)' }}>({palletLabel})</span>}</th>
+                    <th style={{ ...thS, textAlign: 'right' }}>Qty</th>
                     <th style={thS}>Brand</th>
                     <th style={thS}>Chip MPN</th>
                     <th style={thS}>Type</th>
@@ -158,7 +163,7 @@ export default function SOContextMPNDetailPage() {
                 </thead>
                 <tbody>
                   {chips.length === 0 && (
-                    <tr><td colSpan={8}><Empty label="No chips defined" sub="Add chips from the MPN page." /></td></tr>
+                    <tr><td colSpan={9}><Empty label="No chips defined" sub="Add chips from the MPN page." /></td></tr>
                   )}
                   {chips.map(chip => {
                     const ctr = containers.get(chip.id);
@@ -168,7 +173,14 @@ export default function SOContextMPNDetailPage() {
                           <ContainerUIDCell
                             value={ctr?.container_uid ?? ''}
                             disabled={palletId == null}
-                            onSave={uid => handleSaveContainer(chip.id, uid)}
+                            onSave={uid => handleSaveContainer(chip.id, uid, ctr?.actual_qty ?? null)}
+                          />
+                        </td>
+                        <td style={{ ...tdS, padding: '6px 12px' }}>
+                          <QtyCell
+                            value={ctr?.actual_qty ?? null}
+                            disabled={palletId == null}
+                            onSave={qty => handleSaveContainer(chip.id, ctr?.container_uid ?? '', qty)}
                           />
                         </td>
                         <td style={{ ...tdS, fontSize: 13, fontWeight: 500 }}>
@@ -277,6 +289,76 @@ function ContainerUIDCell({ value, disabled, onSave }: {
       onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'transparent'; }}
     >
       {saving ? <span style={{ color: 'var(--ink-4)' }}>saving…</span> : (value || <span style={{ color: 'var(--ink-5)' }}>—</span>)}
+    </div>
+  );
+}
+
+// ─── Inline qty cell ─────────────────────────────────────────────────────────
+function QtyCell({ value, disabled, onSave }: {
+  value: number | null; disabled: boolean; onSave: (qty: number | null) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value != null ? String(value) : '');
+  const [saving, setSaving] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft(value != null ? String(value) : ''); }, [value]);
+  useEffect(() => { if (editing) inputRef.current?.focus(); }, [editing]);
+
+  const commit = async () => {
+    setEditing(false);
+    const parsed = draft.trim() === '' ? null : parseInt(draft, 10);
+    if (isNaN(parsed as number) && parsed !== null) { setDraft(value != null ? String(value) : ''); return; }
+    if (parsed === value) return;
+    setSaving(true);
+    try { await onSave(parsed); }
+    finally { setSaving(false); }
+  };
+
+  if (disabled) return <span style={{ color: 'var(--ink-5)', fontSize: 12, display: 'block', textAlign: 'right' }}>—</span>;
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        type="number"
+        min={0}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { setEditing(false); setDraft(value != null ? String(value) : ''); }
+        }}
+        style={{
+          width: '100%', boxSizing: 'border-box',
+          padding: '3px 6px', fontSize: 12, textAlign: 'right',
+          border: '1px solid var(--accent)', borderRadius: 3,
+          background: 'var(--surface)', color: 'var(--ink)', outline: 'none',
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      onClick={() => !saving && setEditing(true)}
+      title="Click to edit"
+      className="num"
+      style={{
+        fontSize: 12, textAlign: 'right',
+        cursor: saving ? 'default' : 'text',
+        padding: '3px 6px', borderRadius: 3,
+        border: '1px solid transparent', minHeight: 26,
+        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+        color: value != null ? 'var(--ink)' : 'var(--ink-5)',
+        background: saving ? 'var(--surface-2)' : 'transparent',
+        transition: 'border-color .1s, background .1s',
+      }}
+      onMouseEnter={e => { if (!saving) (e.currentTarget as HTMLElement).style.borderColor = 'var(--hair-strong)'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = 'transparent'; }}
+    >
+      {saving ? <span style={{ color: 'var(--ink-4)' }}>…</span> : (value != null ? value : <span style={{ color: 'var(--ink-5)' }}>—</span>)}
     </div>
   );
 }
