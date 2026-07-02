@@ -1,7 +1,7 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { signOut, useSession } from 'next-auth/react';
+import { signOut, useSession, getSession } from 'next-auth/react';
 import Image from 'next/image';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -81,11 +81,12 @@ const IconBell: React.FC<{ size?: number }> = ({ size = 15 }) => (
 );
 
 const NAV_ITEMS: NavItem[] = [
-  { key: 'dashboard', label: 'Dashboard',    href: '/dashboard',  icon: IconDashboard },
-  { key: 'sos',       label: 'Sales Orders', href: '/sos',        icon: IconSO },
-  { key: 'mpns',      label: 'MPN',          href: '/mpns',       icon: IconMPN },
-  { key: 'vendors',   label: 'Vendors',      href: '/vendors',    icon: IconVendor },
-  { key: 'chipbrands',label: 'Chip Brands',  href: '/chipbrands', icon: IconChip },
+  { key: 'dashboard',    label: 'Dashboard',    href: '/dashboard',     icon: IconDashboard },
+  { key: 'sos',          label: 'MSFT Order',   href: '/sos',           icon: IconSO },
+  { key: 'sales-orders', label: 'Sales Orders', href: '/sales-orders',  icon: IconSO },
+  { key: 'mpns',         label: 'MPN',          href: '/mpns',          icon: IconMPN },
+  { key: 'vendors',      label: 'Vendors',      href: '/vendors',       icon: IconVendor },
+  { key: 'chipbrands',   label: 'Chip Brands',  href: '/chipbrands',    icon: IconChip },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -269,6 +270,70 @@ interface TopBarProps {
   onToggleMobile?: () => void;
 }
 
+const SEGMENT_LABELS: Record<string, string> = {
+  'dashboard': 'Dashboard',
+  'sales-orders': 'Sales Orders',
+  'sos': 'MSFT Order',
+  'vendors': 'Vendors',
+  'chipbrands': 'Chip Brands',
+  'mpns': 'MPN',
+  'boards': 'Boards',
+  'pallets': 'Pallets',
+};
+
+const API = process.env.NEXT_PUBLIC_Django_API_URL || 'http://localhost:8000';
+
+function TopBreadcrumb() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const segments = pathname.split('/').filter(Boolean);
+
+  // Resolve SO number when on /sales-orders/[id]
+  const [soLabel, setSoLabel] = useState<string | null>(null);
+  const soId = segments[0] === 'sales-orders' && segments[1] && /^\d+$/.test(segments[1]) ? segments[1] : null;
+
+  useEffect(() => {
+    if (!soId) { setSoLabel(null); return; }
+    setSoLabel(null);
+    getSession().then((session: any) => {
+      const token = session?.accessToken;
+      return fetch(`${API}/product/sos/${soId}/`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+    }).then(r => r.ok ? r.json() : null)
+      .then(d => { if (d?.so_number) setSoLabel(d.so_number); })
+      .catch(() => {});
+  }, [soId]);
+
+  const crumbs: { label: string; href: string }[] = [{ label: 'Home', href: '/dashboard' }];
+  let path = '';
+  for (const seg of segments) {
+    path += '/' + seg;
+    let label = SEGMENT_LABELS[seg] ?? seg;
+    if (seg === soId) label = soLabel ?? seg;
+    crumbs.push({ label, href: path });
+  }
+
+  if (crumbs.length <= 1) return null;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
+      {crumbs.map((c, i) => {
+        const isLast = i === crumbs.length - 1;
+        return (
+          <React.Fragment key={i}>
+            {i > 0 && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>}
+            <span onClick={isLast ? undefined : () => router.push(c.href)}
+              style={{ fontSize: 13, fontWeight: isLast ? 700 : 500, color: isLast ? 'var(--ink)' : 'var(--ink-4)', cursor: isLast ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+              {c.label}
+            </span>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
 export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onToggleMobile }) => {
   const { data: session } = useSession();
   const isMobile = useIsMobile();
@@ -290,6 +355,7 @@ export const TopBar: React.FC<TopBarProps> = ({ onToggleSidebar, onToggleMobile 
       onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
       {isMobile ? <IconMenu size={18} /> : <IconPanelLeft size={16} />}
     </button>
+    <TopBreadcrumb />
     <div style={{ flex: 1 }} />
     {username && (
       <div className="mono" style={{ fontSize: 11, color: 'var(--ink-4)', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>

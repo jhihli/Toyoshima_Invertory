@@ -79,7 +79,7 @@ export async function apiDelete(path: string): Promise<void> {
 
 // ─── Typed wrappers ───────────────────────────────────────────────
 import type {
-  Vendor, SO, SODetail, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN,
+  Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
   PalletChipContainer,
@@ -113,6 +113,26 @@ export const api = {
     create: (soId: number, d: Partial<Pallet>) => apiPost<Pallet>(`/sos/${soId}/pallets/`, d),
     update: (soId: number, id: number, d: Partial<Pallet>) => apiPut<Pallet>(`/sos/${soId}/pallets/${id}/`, d),
     delete: (soId: number, id: number) => apiDelete(`/sos/${soId}/pallets/${id}/`),
+    uploadPhoto: async (palletId: number, dataUrl: string): Promise<Pallet> => {
+      const res = await fetch(dataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
+      const form = new FormData();
+      form.append('photo', file);
+      return apiPostForm<Pallet>(`/pallets/${palletId}/photo/`, form);
+    },
+    deletePhoto: (palletId: number) => apiDelete(`/pallets/${palletId}/photo/`),
+    photos: {
+      upload: async (palletId: number, dataUrl: string): Promise<PalletPhoto> => {
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        const file = new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' });
+        const form = new FormData();
+        form.append('image', file);
+        return apiPostForm<PalletPhoto>(`/pallets/${palletId}/photos/`, form);
+      },
+      delete: (palletId: number, photoId: number) => apiDelete(`/pallets/${palletId}/photos/${photoId}/`),
+    },
     chipContainers: {
       list: (palletId: number, mpnId?: number) => {
         const qs = mpnId != null ? `?mpn_id=${mpnId}` : '';

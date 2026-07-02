@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.conf import settings
-from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
+from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
 import os
 
 
@@ -35,16 +35,49 @@ class SOPhotoSerializer(serializers.ModelSerializer):
         return obj.image.url
 
 
+class PalletPhotoSerializer(serializers.ModelSerializer):
+    image_url = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = PalletPhoto
+        fields = ['id', 'image', 'image_url', 'uploaded_at']
+        read_only_fields = ['uploaded_at', 'image_url']
+
+    def get_image_url(self, obj):
+        if not obj.image:
+            return None
+        public_domain = os.getenv('PUBLIC_DOMAIN', '')
+        if public_domain:
+            return f"{public_domain}/media/{obj.image.name}"
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.image.url)
+        return obj.image.url
+
+
 class PalletSerializer(serializers.ModelSerializer):
     board_count = serializers.SerializerMethodField(read_only=True)
+    photo_url = serializers.SerializerMethodField(read_only=True)
+    photos = PalletPhotoSerializer(many=True, read_only=True)
 
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_count', 'created_at']
-        read_only_fields = ['created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_count', 'created_at']
+        read_only_fields = ['created_at', 'photo_url', 'photos']
 
     def get_board_count(self, obj):
         return obj.boards.count()
+
+    def get_photo_url(self, obj):
+        if not obj.photo:
+            return None
+        public_domain = os.getenv('PUBLIC_DOMAIN', '')
+        if public_domain:
+            return f"{public_domain}/media/{obj.photo.name}"
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.photo.url)
+        return obj.photo.url
 
 
 class ChipSerializer(serializers.ModelSerializer):

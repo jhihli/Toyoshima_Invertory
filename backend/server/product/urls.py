@@ -22,6 +22,9 @@ urlpatterns = [
     path('sos/<int:so_pk>/photos/<int:pk>/', views.so_photo_delete, name='so-photo-delete'),
     path('sos/<int:so_pk>/pallets/', views.pallet_list, name='pallet-list'),
     path('sos/<int:so_pk>/pallets/<int:pk>/', views.pallet_detail, name='pallet-detail'),
+    path('pallets/<int:pk>/photo/', views.pallet_photo, name='pallet-photo'),
+    path('pallets/<int:pallet_pk>/photos/', views.pallet_photos_list, name='pallet-photos-list'),
+    path('pallets/<int:pallet_pk>/photos/<int:pk>/', views.pallet_photo_detail, name='pallet-photo-detail'),
     path('sos/<int:so_pk>/boards/', views.board_list_by_so, name='board-list-by-so'),
     path('sos/<int:so_pk>/boards/bulk/', views.board_bulk_create, name='board-bulk-create'),
 
@@ -42,7 +45,8 @@ urlpatterns = [
     path('scanner/sos/<int:so_pk>/pallets/', views.scanner_so_pallets, name='scanner-so-pallets'),
     path('scanner/sos/<int:so_pk>/photos/', views.scanner_so_photo_upload, name='scanner-so-photo-upload'),
     path('scanner/boards/<int:board_pk>/photo/', views.scanner_board_photo, name='scanner-board-photo'),
-
+    path('scanner/pallets/<int:pallet_pk>/photos/', views.scanner_pallet_photo_upload, name='scanner-pallet-photo-upload'),
+    
     # Dashboard
     path('dashboard/', views.dashboard_stats, name='dashboard-stats'),
 

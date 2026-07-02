@@ -7,13 +7,13 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.db import transaction
 from django.db.models import ProtectedError
-from .models import Vendor, SO, SOPhoto, Pallet, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
+from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
-    SOPhotoSerializer, PalletSerializer, BoardSerializer,
+    SOPhotoSerializer, PalletSerializer, PalletPhotoSerializer, BoardSerializer,
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
-    PalletChipContainerSerializer, PalletChipContainerWithChipSerializer,
+    PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer
 )
 
 
@@ -233,6 +233,49 @@ def pallet_detail(request, so_pk, pk):
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     pallet.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def pallet_photo(request, pk):
+    pallet = get_object_or_404(Pallet, pk=pk)
+    if request.method == 'POST':
+        if not request.FILES.get('photo'):
+            return Response({'error': 'No photo provided'}, status=status.HTTP_400_BAD_REQUEST)
+        if pallet.photo:
+            pallet.photo.delete(save=False)
+        pallet.photo = request.FILES['photo']
+        pallet.save()
+        pallet.refresh_from_db()
+        return Response(PalletSerializer(pallet, context={'request': request}).data)
+    if pallet.photo:
+        pallet.photo.delete(save=False)
+        pallet.photo = None
+        pallet.save()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─────────────────────────────────────────────────── Pallet Multi-Photos
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def pallet_photos_list(request, pallet_pk):
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    if request.method == 'GET':
+        photos = pallet.photos.all()
+        return Response(PalletPhotoSerializer(photos, many=True, context={'request': request}).data)
+    if 'image' not in request.FILES:
+        return Response({'error': 'No image provided'}, status=status.HTTP_400_BAD_REQUEST)
+    photo = PalletPhoto.objects.create(pallet=pallet, image=request.FILES['image'])
+    return Response(PalletPhotoSerializer(photo, context={'request': request}).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def pallet_photo_detail(request, pallet_pk, pk):
+    photo = get_object_or_404(PalletPhoto, pk=pk, pallet_id=pallet_pk)
+    photo.image.delete(save=False)
+    photo.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -529,7 +572,7 @@ def _lot_inbound(data):
     )
     so_defaults = {
         'vendor': vendor,
-        'date': date_str or '2000-01-01',
+        'inbound_date': date_str or '2000-01-01',
     }
     if weight_rule in ('per_pallet', 'aggregated'):
         so_defaults['weight_rule'] = weight_rule
@@ -545,6 +588,8 @@ def _lot_inbound(data):
         qty=pallet_qty or 1,
         licence_number=data.get('licence_number', ''),
         gateload_number=data.get('gateload_number', ''),
+        material_type=data.get('material_type', ''),     # ← add
+        location=data.get('location', ''),               # ← add
         board_qty=data.get('board_qty') or None,
     )
     return Response({'success': True, 'data': {
@@ -607,6 +652,17 @@ def _so_search(data):
         for so in sos
     ]
     return Response({'success': True, 'data': results})
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_pallet_photo_upload(request, pallet_pk):
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    serializer = PalletPhotoSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        serializer.save(pallet=pallet)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 # ─────────────────────────────────────────────────── Dashboard
 @api_view(['GET'])

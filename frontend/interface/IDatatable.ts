@@ -38,12 +38,23 @@ export interface SOPhoto {
   uploaded_at: string;
 }
 
+export interface PalletPhoto {
+  id: number;
+  image: string;
+  image_url: string | null;
+  uploaded_at: string;
+}
+
 export interface Pallet {
   id: number;
   so: number;
   pallet_seq: number;
   licence_number: string;
   gateload_number: string;
+  location: string;
+  photo: string | null;
+  photo_url: string | null;
+  photos: PalletPhoto[];
   in_weight_gross: string;
   actual_weight: string | null;
   out_weight_gross: string | null;

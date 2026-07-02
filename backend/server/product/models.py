@@ -93,7 +93,9 @@ class Pallet(models.Model):
     pallet_seq = models.IntegerField()
     licence_number = models.CharField(max_length=50, blank=True)
     gateload_number = models.CharField(max_length=50, blank=True)
-    in_weight_gross = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    location = models.CharField(max_length=20, blank=True)
+    photo = models.ImageField(upload_to='pallet_photos/%Y/%m/', blank=True, null=True)
+    in_weight_gross = models.DecimalField(max_digits=12, decimal_places=4, default=0)
     actual_weight = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     material_type = models.CharField(max_length=100, blank=True)
     qty = models.IntegerField()
@@ -110,6 +112,18 @@ class Pallet(models.Model):
 
     def __str__(self):
         return f"{self.so.so_number} - Pallet #{self.pallet_seq}"
+
+
+class PalletPhoto(models.Model):
+    pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='photos')
+    image = models.ImageField(upload_to='pallet_photos/%Y/%m/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['uploaded_at']
+
+    def __str__(self):
+        return f"Photo for Pallet #{self.pallet_id}"
 
 
 class MPN(models.Model):
