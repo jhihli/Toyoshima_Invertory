@@ -7,6 +7,14 @@ from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from django.db import transaction
 from django.db.models import ProtectedError
+from django.conf import settings
+
+
+def _check_scanner_key(request):
+    key = request.META.get('HTTP_X_API_KEY', '')
+    if not key or key != settings.SCANNER_API_KEY:
+        return Response({'success': False, 'error': 'Unauthorized'}, status=401)
+    return None
 from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
@@ -146,8 +154,8 @@ def so_list(request):
         if date_to:
             qs = qs.filter(inbound_date__lte=date_to)
 
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('page_size', 15))
+        page = max(1, int(request.query_params.get('page', 1)))
+        page_size = min(max(1, int(request.query_params.get('page_size', 15))), 200)
         total = qs.count()
         start = (page - 1) * page_size
         end = start + page_size
@@ -303,8 +311,8 @@ def board_list_by_so(request, so_pk):
         qs = qs.filter(scanned_at__date__lte=date_to)
     if pallet_id:
         qs = qs.filter(pallet_id=pallet_id)
-    page = int(request.query_params.get('page', 1))
-    page_size = int(request.query_params.get('page_size', 8))
+    page = max(1, int(request.query_params.get('page', 1)))
+    page_size = min(max(1, int(request.query_params.get('page_size', 8))), 200)
     total = qs.count()
     start = (page - 1) * page_size
     data = BoardSerializer(qs[start:start + page_size], many=True, context={'request': request}).data
@@ -481,6 +489,9 @@ def chipbrand_detail(request, pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def scanner_so_photo_upload(request, so_pk):
+    err = _check_scanner_key(request)
+    if err:
+        return err
     so = get_object_or_404(SO, pk=so_pk)
     data = request.data.copy()
     data['so'] = so.pk
@@ -494,6 +505,9 @@ def scanner_so_photo_upload(request, so_pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def scanner_board_photo(request, board_pk):
+    err = _check_scanner_key(request)
+    if err:
+        return err
     board = get_object_or_404(Board, pk=board_pk)
     if not request.FILES.get('photo'):
         return Response({'error': 'No photo provided'}, status=status.HTTP_400_BAD_REQUEST)
@@ -507,6 +521,9 @@ def scanner_board_photo(request, board_pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def scanner_so_pallets(request, so_pk):
+    err = _check_scanner_key(request)
+    if err:
+        return err
     so = get_object_or_404(SO, pk=so_pk)
     return Response(PalletSerializer(so.pallets.all(), many=True).data)
 
@@ -514,6 +531,9 @@ def scanner_so_pallets(request, so_pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def scanner_vendor_list(request):
+    err = _check_scanner_key(request)
+    if err:
+        return err
     vendors = Vendor.objects.all()
     return Response(VendorSerializer(vendors, many=True).data)
 
@@ -522,6 +542,9 @@ def scanner_vendor_list(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def scanner_vendor_detail(request, pk):
+    err = _check_scanner_key(request)
+    if err:
+        return err
     vendor = get_object_or_404(Vendor, pk=pk)
     return Response(VendorSerializer(vendor).data)
 
@@ -530,6 +553,9 @@ def scanner_vendor_detail(request, pk):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def scanner_api(request):
+    err = _check_scanner_key(request)
+    if err:
+        return err
     data = request.data
     action = data.get('action', '')
     try:
@@ -646,7 +672,7 @@ def _so_search(data):
             'id': so.id,
             'so_number': so.so_number,
             'vendor_name': so.vendor.name,
-            'date': str(so.date),
+            'date': str(so.inbound_date),
             'effective_weight_rule': so.effective_weight_rule,
         }
         for so in sos
@@ -657,6 +683,9 @@ def _so_search(data):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def scanner_pallet_photo_upload(request, pallet_pk):
+    err = _check_scanner_key(request)
+    if err:
+        return err
     pallet = get_object_or_404(Pallet, pk=pallet_pk)
     serializer = PalletPhotoSerializer(data=request.data, context={'request': request})
     if serializer.is_valid():

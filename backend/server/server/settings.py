@@ -161,6 +161,14 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '60/minute',
+        'user': '600/minute',
+    },
 }
 
 # JWT Configuration
@@ -190,6 +198,22 @@ SIMPLE_JWT = {
 
 # Scanner API Key Authentication
 SCANNER_API_KEY = os.getenv('SCANNER_API_KEY', 'insecure-default-key-change-in-production')
+
+# Admin URL — set ADMIN_URL in .env.production to a non-predictable path
+ADMIN_URL = os.getenv('ADMIN_URL', 'admin/')
+
+# Security headers (safe for both dev and prod; nginx handles HTTPS redirect)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_REFERRER_POLICY = 'same-origin'
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Production-only: apply HTTPS cookie flags and HSTS when not in DEBUG mode
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 
 # ─── Email (SMTP credentials — recipient/CC/toggle managed via MPNReportConfig in DB)
 EMAIL_BACKEND       = 'django.core.mail.backends.smtp.EmailBackend'
