@@ -10,6 +10,7 @@ interface NavItem {
   label: string;
   href: string;
   icon: React.FC<{ size?: number }>;
+  disabled?: boolean;
 }
 
 const IconDashboard: React.FC<{ size?: number }> = ({ size = 15 }) => (
@@ -82,11 +83,11 @@ const IconBell: React.FC<{ size?: number }> = ({ size = 15 }) => (
 
 const NAV_ITEMS: NavItem[] = [
   { key: 'dashboard',    label: 'Dashboard',    href: '/dashboard',     icon: IconDashboard },
-  { key: 'sos',          label: 'MSFT Order',   href: '/sos',           icon: IconSO },
   { key: 'sales-orders', label: 'Sales Orders', href: '/sales-orders',  icon: IconSO },
-  { key: 'mpns',         label: 'MPN',          href: '/mpns',          icon: IconMPN },
   { key: 'vendors',      label: 'Vendors',      href: '/vendors',       icon: IconVendor },
-  { key: 'chipbrands',   label: 'Chip Brands',  href: '/chipbrands',    icon: IconChip },
+  { key: 'sos',          label: 'MSFT Order',   href: '/sos',           icon: IconSO,       disabled: true },
+  { key: 'mpns',         label: 'MPN',          href: '/mpns',          icon: IconMPN,      disabled: true },
+  { key: 'chipbrands',   label: 'Chip Brands',  href: '/chipbrands',    icon: IconChip,     disabled: true },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
@@ -173,22 +174,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, isMobileOpen = fals
           const active = isActive(item);
           const Icon = item.icon;
           const showLabel = mobileMode || !collapsed;
+          const disabled = item.disabled;
           return (
-            <button key={item.key} onClick={() => handleNav(item.href)}
+            <button key={item.key}
+              onClick={disabled ? undefined : () => handleNav(item.href)}
               title={(!mobileMode && collapsed) ? item.label : ''}
+              disabled={disabled}
               style={{
                 display: 'flex', alignItems: 'center', gap: 12,
                 padding: (!mobileMode && collapsed) ? '8px' : '8px 12px',
                 justifyContent: (!mobileMode && collapsed) ? 'center' : 'flex-start',
                 border: 0, background: active ? '#d4a820' : 'transparent',
-                color: active ? '#fff' : 'rgba(255,255,255,0.7)',
-                borderRadius: 6, cursor: 'pointer', fontSize: 12.5,
+                color: disabled ? 'rgba(255,255,255,0.25)' : active ? '#fff' : 'rgba(255,255,255,0.7)',
+                borderRadius: 6, cursor: disabled ? 'not-allowed' : 'pointer', fontSize: 12.5,
                 textAlign: 'left', transition: 'background .1s',
                 fontFamily: 'inherit', fontWeight: active ? 500 : 400,
                 minHeight: mobileMode ? 44 : 'auto',
               }}
-              onMouseEnter={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'; }}
-              onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+              onMouseEnter={e => { if (!active && !disabled) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.07)'; }}
+              onMouseLeave={e => { if (!active && !disabled) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
               <Icon size={mobileMode ? 17 : 15} />
               {showLabel && <span style={{ whiteSpace: 'nowrap' }}>{item.label}</span>}
             </button>

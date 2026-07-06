@@ -163,7 +163,7 @@ export default function DashboardPage() {
             <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-4)', lineHeight: 1.5, whiteSpace: 'nowrap' }}>Recent scans</div>
             <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>Last 10 boards</div>
           </div>
-          <Button size="sm" variant="ghost" onClick={() => router.push('/sos')}>View all →</Button>
+          <Button size="sm" variant="ghost" onClick={() => router.push('/sales-orders')}>View all →</Button>
         </div>
         <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -179,7 +179,7 @@ export default function DashboardPage() {
                 <tr><td colSpan={3}><Empty label="No recent scans" /></td></tr>
               )}
               {stats.recent_boards.map(b => (
-                <RecentRow key={b.id} board={b} onClick={() => router.push(`/sos/${b.so_id}`)} />
+                <RecentRow key={b.id} board={b} onClick={() => router.push(`/sales-orders/${b.so_id}`)} />
               ))}
             </tbody>
           </table>
