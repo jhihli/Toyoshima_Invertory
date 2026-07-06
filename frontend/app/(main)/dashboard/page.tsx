@@ -169,7 +169,7 @@ export default function DashboardPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={thS}>Licence #</th>
+                <th style={thS}>Barcode</th>
                 <th style={thS}>SO</th>
                 <th style={thS}>Vendor</th>
               </tr>
