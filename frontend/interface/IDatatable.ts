@@ -168,10 +168,10 @@ export interface DashboardStats {
   today_so_count: number;
   pallets_this_month: number;
   daily_counts: { date: string; count: number }[];
-  top_vendors: { name: string; board_count: number }[];
-  recent_boards: {
-    id: number; barcode: string; so_number: string; so_id: number;
-    vendor: string; mpn: string; qty: number; scanned_at: string;
+  top_vendors: { name: string; pallet_count: number }[];
+  recent_pallets: {
+    id: number; licence_number: string; pallet_seq: number;
+    so_number: string; so_id: number; vendor: string; created_at: string;
   }[];
 }
 

@@ -40,7 +40,7 @@ export default function DashboardPage() {
   const areaPath = linePath + ` L ${xs(d.length - 1).toFixed(1)} ${H - P.b} L ${xs(0).toFixed(1)} ${H - P.b} Z`;
 
   const topV = stats.top_vendors;
-  const maxV = Math.max(...topV.map(v => v.board_count), 1);
+  const maxV = Math.max(...topV.map(v => v.pallet_count), 1);
   const total = d.reduce((s, x) => s + x.count, 0);
   const avg = d.length ? (total / d.length).toFixed(1) : '0.0';
 
@@ -133,18 +133,18 @@ export default function DashboardPage() {
         <Card pad={0}>
           <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--hair)' }}>
             <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-4)', lineHeight: 1.5, whiteSpace: 'nowrap' }}>Top vendors</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>By board count</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>By pallet count</div>
           </div>
           <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {topV.length === 0 ? (
               <div style={{ color: 'var(--ink-4)', fontSize: 12, textAlign: 'center', padding: '20px 0' }}>No data</div>
             ) : topV.map(v => {
-              const pct = v.board_count / maxV;
+              const pct = v.pallet_count / maxV;
               return (
                 <div key={v.name}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span style={{ fontSize: 12.5 }}>{v.name}</span>
-                    <span className="num" style={{ fontSize: 12, color: 'var(--ink-3)' }}>{v.board_count}</span>
+                    <span className="num" style={{ fontSize: 12, color: 'var(--ink-3)' }}>{v.pallet_count}</span>
                   </div>
                   <div style={{ height: 4, background: 'var(--surface-2)', borderRadius: 2, overflow: 'hidden' }}>
                     <div style={{ width: `${pct * 100}%`, height: '100%', background: 'var(--accent)' }} />
@@ -156,12 +156,12 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Recent scans */}
+      {/* Recent pallets */}
       <Card pad={0}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--hair)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-4)', lineHeight: 1.5, whiteSpace: 'nowrap' }}>Recent scans</div>
-            <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>Last 10 boards</div>
+            <div style={{ fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--ink-4)', lineHeight: 1.5, whiteSpace: 'nowrap' }}>Recent pallets</div>
+            <div style={{ fontSize: 13, color: 'var(--ink-2)', marginTop: 4 }}>Last 10 pallets received</div>
           </div>
           <Button size="sm" variant="ghost" onClick={() => router.push('/sales-orders')}>View all →</Button>
         </div>
@@ -169,17 +169,17 @@ export default function DashboardPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
-                <th style={thS}>Barcode</th>
+                <th style={thS}>Licence #</th>
                 <th style={thS}>SO</th>
                 <th style={thS}>Vendor</th>
               </tr>
             </thead>
             <tbody>
-              {stats.recent_boards.length === 0 && (
-                <tr><td colSpan={3}><Empty label="No recent scans" /></td></tr>
+              {stats.recent_pallets.length === 0 && (
+                <tr><td colSpan={3}><Empty label="No recent pallets" /></td></tr>
               )}
-              {stats.recent_boards.map(b => (
-                <RecentRow key={b.id} board={b} onClick={() => router.push(`/sales-orders/${b.so_id}`)} />
+              {stats.recent_pallets.map(p => (
+                <RecentPalletRow key={p.id} pallet={p} onClick={() => router.push(`/sales-orders/${p.so_id}`)} />
               ))}
             </tbody>
           </table>
@@ -189,15 +189,16 @@ export default function DashboardPage() {
   );
 }
 
-function RecentRow({ board, onClick }: { board: any; onClick: () => void }) {
+function RecentPalletRow({ pallet, onClick }: { pallet: any; onClick: () => void }) {
   const [hover, setHover] = useState(false);
+  const label = pallet.licence_number || `Pallet #${pallet.pallet_seq}`;
   return (
     <tr onClick={onClick}
       style={{ borderBottom: '1px solid var(--hair)', cursor: 'pointer', background: hover ? 'var(--surface-2)' : 'transparent' }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <td style={tdS} className="mono">{board.barcode}</td>
-      <td style={tdS} className="mono">{board.so_number}</td>
-      <td style={tdS}>{board.vendor}</td>
+      <td style={tdS} className="mono">{label}</td>
+      <td style={tdS} className="mono">{pallet.so_number}</td>
+      <td style={tdS}>{pallet.vendor}</td>
     </tr>
   );
 }

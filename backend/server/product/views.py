@@ -724,29 +724,29 @@ def dashboard_stats(request):
     ]
 
     top_vendors = list(
-        Vendor.objects.annotate(board_count=Count('sos__boards'))
-        .order_by('-board_count')[:5]
-        .values('name', 'board_count')
+        Vendor.objects.annotate(pallet_count=Sum('sos__pallets__qty'))
+        .filter(pallet_count__isnull=False)
+        .order_by('-pallet_count')[:5]
+        .values('name', 'pallet_count')
     )
 
-    recent_boards = Board.objects.select_related('so__vendor', 'mpn').order_by('-scanned_at')[:10]
+    recent_pallets = Pallet.objects.select_related('so__vendor').order_by('-created_at')[:10]
     recent_data = [{
-        'id': b.id,
-        'barcode': b.barcode,
-        'so_number': b.so.so_number,
-        'so_id': b.so_id,
-        'vendor': b.so.vendor.name,
-        'mpn': b.mpn.name if b.mpn_id else '',
-        'qty': b.qty,
-        'scanned_at': b.scanned_at.strftime('%Y-%m-%d %H:%M'),
-    } for b in recent_boards]
+        'id': p.id,
+        'licence_number': p.licence_number,
+        'pallet_seq': p.pallet_seq,
+        'so_number': p.so.so_number,
+        'so_id': p.so_id,
+        'vendor': p.so.vendor.name,
+        'created_at': p.created_at.strftime('%Y-%m-%d %H:%M'),
+    } for p in recent_pallets]
 
     return Response({
         'today_so_count': today_so_count,
         'pallets_this_month': pallets_this_month,
         'daily_counts': daily_counts,
         'top_vendors': top_vendors,
-        'recent_boards': recent_data,
+        'recent_pallets': recent_data,
     })
 
 
