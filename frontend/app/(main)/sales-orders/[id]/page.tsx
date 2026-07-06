@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/app/lib/api';
 import type { SODetail, Pallet, PalletPhoto } from '@/interface/IDatatable';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 const IPlus = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>;
@@ -43,7 +44,7 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,30,20,0.45)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', overflow: 'auto' }}
       onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}>{children}</div>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 720 }}>{children}</div>
     </div>
   );
 }
@@ -56,7 +57,7 @@ function ConfirmModal({ open, title, message, onClose, onConfirm }: {
   if (!open) return null;
   return (
     <Overlay onClose={onClose}>
-      <div style={{ width: 400, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
+      <div style={{ width: 400, maxWidth: '94vw', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
         <div style={{ padding: '24px 24px 12px', textAlign: 'center' }}>
           <div style={{ width: 46, height: 46, borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#b0432b', display: 'grid', placeItems: 'center', margin: '0 auto 12px' }}><ITrash /></div>
           <h2 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 700 }}>{title}</h2>
@@ -94,22 +95,22 @@ function LocationPicker({ value, onChange }: { value: string; onChange: (v: stri
       <div style={{ ...FieldLabel, marginBottom: 6 }}>
         Location <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-4)', fontSize: 11 }}>zone · row · column</span>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <select value={parts.z} onChange={e => set({ z: e.target.value })} style={{ ...SelectSty, flex: 1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <select value={parts.z} onChange={e => set({ z: e.target.value })} style={{ ...SelectSty, flex: '1 1 80px', minWidth: 0 }}>
           <option value="">Zone</option>
           {LOC_ZONES.map(z => <option key={z} value={z}>{z}</option>)}
         </select>
-        <span style={{ color: 'var(--ink-4)' }}>-</span>
-        <select value={parts.r} onChange={e => set({ r: e.target.value })} style={{ ...SelectSty, flex: 1 }}>
+        <span style={{ color: 'var(--ink-4)', flexShrink: 0 }}>-</span>
+        <select value={parts.r} onChange={e => set({ r: e.target.value })} style={{ ...SelectSty, flex: '1 1 80px', minWidth: 0 }}>
           <option value="">Row</option>
           {LOC_ROWS.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        <span style={{ color: 'var(--ink-4)' }}>-</span>
-        <select value={parts.c} onChange={e => set({ c: e.target.value })} style={{ ...SelectSty, flex: 1 }}>
+        <span style={{ color: 'var(--ink-4)', flexShrink: 0 }}>-</span>
+        <select value={parts.c} onChange={e => set({ c: e.target.value })} style={{ ...SelectSty, flex: '1 1 80px', minWidth: 0 }}>
           <option value="">Column</option>
           {LOC_COLS.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
-        <div style={{ minWidth: 64, padding: '0 8px', height: 40, display: 'flex', alignItems: 'center', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--hair)', fontSize: 13 }}>
+        <div style={{ minWidth: 64, padding: '0 8px', height: 40, display: 'flex', alignItems: 'center', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--hair)', fontSize: 13, flexShrink: 0 }}>
           {value
             ? <span className="mono" style={{ color: complete ? 'var(--accent-2)' : 'var(--ink-3)', fontWeight: 600 }}>{value}</span>
             : <span style={{ color: 'var(--ink-5)' }}>Not set</span>}
@@ -369,7 +370,7 @@ function PalletModal({ open, mode, initial, onClose, onSubmit }: {
 
   return (
     <Overlay onClose={onClose}>
-      <div style={{ width: 680, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
+      <div style={{ width: 680, maxWidth: '96vw', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--hair)' }}>
           <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>{mode === 'edit' ? 'Edit Pallet' : 'Add Pallet'}</h2>
           <button onClick={onClose} style={{ marginLeft: 'auto', width: 28, height: 28, borderRadius: 7, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><IClose /></button>
@@ -377,7 +378,7 @@ function PalletModal({ open, mode, initial, onClose, onSubmit }: {
         <div style={{ padding: '18px 20px' }}>
           {error && <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#b91c1c', fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
           {/* Row 1: Barcode + Gateload */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
             <div>
               <div style={FieldLabel}>Barcode</div>
               <input className="mono" value={f.barcode} onChange={e => set({ barcode: e.target.value })} autoFocus placeholder="Scan or type…" style={InputSty} />
@@ -388,7 +389,7 @@ function PalletModal({ open, mode, initial, onClose, onSubmit }: {
             </div>
           </div>
           {/* Row 2: Date + Material type */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 12 }}>
             <div>
               <div style={FieldLabel}>Date</div>
               <input type="date" value={f.date} onChange={e => set({ date: e.target.value })} style={InputSty} />
@@ -403,7 +404,7 @@ function PalletModal({ open, mode, initial, onClose, onSubmit }: {
             <LocationPicker value={f.location} onChange={v => set({ location: v })} />
           </div>
           {/* Row 3: In WT Gross + Pallet Qty */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
             <div>
               <div style={FieldLabel}>In WT Gross (lb)</div>
               <input type="number" step="0.0001" value={f.inWtGross} onChange={e => set({ inWtGross: e.target.value })} placeholder="—" style={InputSty} />
@@ -439,6 +440,7 @@ export default function SODetailPage() {
   const { id } = useParams<{ id: string }>();
   const soId = Number(id);
   const router = useRouter();
+  const isMobile = useIsMobile();
 
   const [so, setSo] = useState<SODetail | null>(null);
   const [pallets, setPallets] = useState<Pallet[]>([]);
@@ -509,25 +511,32 @@ export default function SODetailPage() {
     (!v || Number(v) === 0) ? <span style={{ color: 'var(--ink-5)' }}>—</span> : Number(v).toFixed(d);
 
   return (
-    <div style={{ padding: '22px 28px 40px' }}>
+    <div style={{ padding: isMobile ? '12px 12px 40px' : '22px 28px 40px' }}>
 
       {/* Hero card */}
       <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 14, overflow: 'hidden', marginBottom: 20 }}>
         {/* Green accent bar */}
         <div style={{ width: 6, flexShrink: 0, background: 'linear-gradient(180deg, #2f7d50, #256b43)' }} />
         {/* Body */}
-        <div style={{ flex: 1, minWidth: 0, padding: '18px 22px', display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
-          {/* Lead */}
-          <div style={{ minWidth: 0 }}>
-            <h1 className="mono" style={{ margin: 0, fontSize: 26, fontWeight: 700, letterSpacing: '-0.01em' }}>{so.so_number}</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 13.5, color: 'var(--ink-3)' }}>
-              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, display: 'inline-block' }} />
-              Vendor <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{so.vendor_name}</b>
+        <div style={{ flex: 1, minWidth: 0, padding: isMobile ? '14px 14px' : '18px 22px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? 12 : 22, flexWrap: 'wrap' }}>
+          {/* Lead + action buttons row on mobile */}
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ minWidth: 0 }}>
+              <h1 className="mono" style={{ margin: 0, fontSize: isMobile ? 20 : 26, fontWeight: 700, letterSpacing: '-0.01em' }}>{so.so_number}</h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 13.5, color: 'var(--ink-3)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, display: 'inline-block' }} />
+                Vendor <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{so.vendor_name}</b>
+              </div>
+              {so.note && <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--ink-4)', fontStyle: 'italic' }}>{so.note}</div>}
             </div>
-            {so.note && <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--ink-4)', fontStyle: 'italic' }}>{so.note}</div>}
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+              <button onClick={() => router.push('/sales-orders')} style={BtnGhost}><IChevL /> Back</button>
+              <button style={BtnGhost}><IExport /> Export</button>
+            </div>
           </div>
           {/* Facts */}
-          <div style={{ marginLeft: 'auto', display: 'grid', gridTemplateColumns: 'repeat(5, auto)', gap: '5px 22px', textAlign: 'right' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, auto)', gap: isMobile ? '8px 16px' : '5px 22px', textAlign: isMobile ? 'left' : 'right', width: isMobile ? '100%' : undefined }}>
             {([
               ['Inbound', so.inbound_date || '—'],
               ['Outbound', so.outbound_date || '—'],
@@ -540,11 +549,6 @@ export default function SODetailPage() {
                 <div className="mono" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{val}</div>
               </div>
             ))}
-          </div>
-          {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <button onClick={() => router.push('/sales-orders')} style={BtnGhost}><IChevL /> Back</button>
-            <button style={BtnGhost}><IExport /> Export</button>
           </div>
         </div>
       </div>
@@ -567,7 +571,7 @@ export default function SODetailPage() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Table or Mobile Cards */}
         {pallets.length === 0 ? (
           <div style={{ padding: '48px 20px', textAlign: 'center' }}>
             <div style={{ width: 54, height: 54, borderRadius: 15, background: 'var(--surface-2)', border: '1px solid var(--hair)', display: 'grid', placeItems: 'center', color: 'var(--ink-4)', margin: '0 auto 14px' }}><IBox /></div>
@@ -580,7 +584,58 @@ export default function SODetailPage() {
             <h3 style={{ margin: '0 0 6px', fontSize: 15, fontWeight: 700 }}>Nothing matches</h3>
             <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-3)' }}>Try a different barcode, location, or material.</p>
           </div>
+        ) : isMobile ? (
+          /* Mobile: card view */
+          <div>
+            {filteredPallets.map(p => {
+              const imgs = (p.photos || []).map(ph => ({ src: ph.image_url || ph.image, label: p.licence_number || `Pallet #${p.pallet_seq}` }));
+              return (
+                <div key={p.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--hair)' }}>
+                  {/* Row 1: barcode + date */}
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4, gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {imgs.length > 0 && (
+                        <div style={{ position: 'relative', flexShrink: 0, cursor: 'zoom-in' }} onClick={() => setLightbox({ images: imgs, index: 0 })}>
+                          <img src={imgs[0].src} alt="" style={{ width: 40, height: 40, borderRadius: 7, objectFit: 'cover', display: 'block' }} />
+                          {imgs.length > 1 && <span style={{ position: 'absolute', bottom: 1, right: 1, background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 8, fontWeight: 700, borderRadius: 3, padding: '1px 3px', lineHeight: 1.5 }}>+{imgs.length - 1}</span>}
+                        </div>
+                      )}
+                      <span className="mono" style={{ fontWeight: 700, fontSize: 14 }}>{p.licence_number || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>No barcode</span>}</span>
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>
+                      {p.created_at ? new Date(p.created_at).toLocaleDateString('en-CA') : '—'}
+                    </span>
+                  </div>
+                  {/* Row 2: details */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', marginBottom: 10, paddingLeft: imgs.length > 0 ? 48 : 0 }}>
+                    {p.location && <span className="mono" style={{ fontSize: 12, color: 'var(--accent-2)', fontWeight: 600 }}>{p.location}</span>}
+                    {p.gateload_number && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Gate: {p.gateload_number}</span>}
+                    {p.material_type && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{p.material_type}</span>}
+                    {Number(p.in_weight_gross) > 0 && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{Number(p.in_weight_gross).toFixed(4)} lb</span>}
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Qty: {p.qty}</span>
+                  </div>
+                  {/* Row 3: action buttons */}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={() => setPalletModal({ mode: 'edit', item: p })}
+                      style={{ height: 40, padding: '0 14px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <IEdit /> Edit
+                    </button>
+                    <button onClick={() => setDeleteConfirm(p)}
+                      style={{ height: 40, padding: '0 14px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <ITrash /> Delete
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            {/* Mobile totals */}
+            <div style={{ padding: '10px 16px', background: 'var(--surface-2)', borderTop: '1px solid var(--hair-strong)', display: 'flex', gap: 16, fontSize: 13, fontWeight: 600 }}>
+              <span>Total WT: <span className="mono">{totalInWt ? totalInWt.toFixed(4) : '—'} lb</span></span>
+              <span>Qty: <span className="mono">{totalQty}</span></span>
+            </div>
+          </div>
         ) : (
+          /* Desktop: table view */
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>

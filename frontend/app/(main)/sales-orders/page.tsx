@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/app/lib/api';
 import { Pagination } from '@/app/ui/components';
 import type { SO, Vendor } from '@/interface/IDatatable';
+import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 // ── Note popover ────────────────────────────────────────────────────────────────
 const INoteIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>;
@@ -89,7 +90,7 @@ function Overlay({ children, onClose }: { children: React.ReactNode; onClose: ()
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,30,20,0.45)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', overflow: 'auto' }}
       onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}>{children}</div>
+      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 600 }}>{children}</div>
     </div>
   );
 }
@@ -100,7 +101,7 @@ function ModalShell({ title, width = 560, children, footer, onClose }: {
   footer: React.ReactNode; onClose: () => void;
 }) {
   return (
-    <div style={{ width, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
+    <div style={{ width, maxWidth: '96vw', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', padding: '17px 20px', borderBottom: '1px solid var(--hair)' }}>
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>{title}</h2>
         <button onClick={onClose} style={{ marginLeft: 'auto', width: 30, height: 30, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>×</button>
@@ -121,7 +122,7 @@ function ConfirmModal({ open, title, message, confirmLabel, tone = 'danger', onC
   if (!open) return null;
   return (
     <Overlay onClose={onClose}>
-      <div style={{ width: 420, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
+      <div style={{ width: 420, maxWidth: '96vw', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
         <div style={{ padding: '24px 24px 12px', textAlign: 'center' }}>
           <div style={{ width: 50, height: 50, borderRadius: 14, background: tone === 'danger' ? '#fef2f2' : 'var(--accent-light)', border: `1px solid ${tone === 'danger' ? '#fecaca' : '#cfe2d6'}`, color: tone === 'danger' ? '#b0432b' : 'var(--accent)', display: 'grid', placeItems: 'center', margin: '0 auto 14px' }}>
             {tone === 'danger' ? <ITrash /> : <IRevert />}
@@ -185,7 +186,7 @@ function SOModal({ open, mode, initial, vendors, onClose, onSubmit }: {
           </button>
         </>}>
         {error && <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#b91c1c', fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>
           <div><div style={FieldLabel}>SO Number</div><input className="mono" value={soNumber} onChange={e => setSoNumber(e.target.value)} placeholder="e.g. SO162655" autoFocus style={InputSty} /></div>
           <div><div style={FieldLabel}>Vendor</div>
             <select value={vendorId} onChange={e => setVendorId(e.target.value)} style={InputSty}>
@@ -247,6 +248,7 @@ function ShipModal({ open, order, onClose, onConfirm }: {
 // ── Main Page ───────────────────────────────────────────────────────────────────
 export default function SalesOrdersPage() {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const [orders, setOrders] = useState<SO[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -309,123 +311,213 @@ export default function SalesOrdersPage() {
   const hasFilter = q || vendorFilter || dateFrom || dateTo;
 
   return (
-    <div style={{ padding: '22px 28px 40px' }}>
+    <div style={{ padding: isMobile ? '12px 12px 40px' : '22px 28px 40px' }}>
 
-      {/* Filter bar (with inline Inbound/Outbound toggle + New SO) */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* All / Inbound / Outbound toggle pills */}
-        <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, overflow: 'hidden', height: 42, flexShrink: 0 }}>
-          {(['all', 'inbound', 'outbound'] as const).map((v, i) => (
-            <button key={v} onClick={() => { setTab(v); setPage(1); }}
-              style={{ height: '100%', padding: '0 16px', border: 'none', borderLeft: i > 0 ? '1px solid var(--hair-strong)' : 'none', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: tab === v ? 'var(--accent)' : 'transparent', color: tab === v ? '#fff' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>
-              {v === 'all' ? 'All' : v === 'inbound' ? '入庫 Inbound' : '出庫 Outbound'}
-            </button>
-          ))}
+      {/* Filter bar */}
+      {isMobile ? (
+        /* Mobile: stacked layout */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+          {/* Row 1: Tab toggle */}
+          <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, overflow: 'hidden', height: 42 }}>
+            {(['all', 'inbound', 'outbound'] as const).map((v, i) => (
+              <button key={v} onClick={() => { setTab(v); setPage(1); }}
+                style={{ flex: 1, height: '100%', border: 'none', borderLeft: i > 0 ? '1px solid var(--hair-strong)' : 'none', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: tab === v ? 'var(--accent)' : 'transparent', color: tab === v ? '#fff' : 'var(--ink-3)' }}>
+                {v === 'all' ? 'All' : v === 'inbound' ? '入庫' : '出庫'}
+              </button>
+            ))}
+          </div>
+          {/* Row 2: Search */}
+          <div style={{ height: 42, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, padding: '0 13px', color: 'var(--ink-4)' }}>
+            <ISearch />
+            <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Filter by SO number…"
+              style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)' }} />
+          </div>
+          {/* Row 3: Vendor + New SO */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
+              style={{ flex: 1, height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
+              <option value="">All vendors</option>
+              {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+            </select>
+            <button style={BtnPrimary} onClick={() => setSoModal({ mode: 'add' })}><IPlus /> New SO</button>
+          </div>
+          {/* Row 4: Date range */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-4)' }}>
+            <ICalendar />
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)', flex: 1, minWidth: 0 }} />
+            <span style={{ color: 'var(--ink-5)', fontSize: 12, flexShrink: 0 }}>→</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)', flex: 1, minWidth: 0 }} />
+          </div>
+          {hasFilter && <button onClick={() => { setQ(''); setVendorFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }} style={{ ...BtnGhost, width: '100%', justifyContent: 'center' }}>Clear filters</button>}
         </div>
-        <div style={{ flex: 1, minWidth: 200, maxWidth: 340, height: 42, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, padding: '0 13px', color: 'var(--ink-4)' }}>
-          <ISearch />
-          <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Filter by SO number…"
-            style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)' }} />
+      ) : (
+        /* Desktop: existing single-row layout */
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* All / Inbound / Outbound toggle pills */}
+          <div style={{ display: 'flex', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, overflow: 'hidden', height: 42, flexShrink: 0 }}>
+            {(['all', 'inbound', 'outbound'] as const).map((v, i) => (
+              <button key={v} onClick={() => { setTab(v); setPage(1); }}
+                style={{ height: '100%', padding: '0 16px', border: 'none', borderLeft: i > 0 ? '1px solid var(--hair-strong)' : 'none', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', background: tab === v ? 'var(--accent)' : 'transparent', color: tab === v ? '#fff' : 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+                {v === 'all' ? 'All' : v === 'inbound' ? '入庫 Inbound' : '出庫 Outbound'}
+              </button>
+            ))}
+          </div>
+          <div style={{ flex: 1, minWidth: 200, maxWidth: 340, height: 42, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, padding: '0 13px', color: 'var(--ink-4)' }}>
+            <ISearch />
+            <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Filter by SO number…"
+              style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)' }} />
+          </div>
+          <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
+            style={{ height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
+            <option value="">All vendors</option>
+            {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-4)' }}>
+            <ICalendar />
+            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)' }} />
+            <span style={{ color: 'var(--ink-5)', fontSize: 12 }}>→</span>
+            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)' }} />
+          </div>
+          {hasFilter && <button onClick={() => { setQ(''); setVendorFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }} style={BtnGhost}>Clear</button>}
+          <div style={{ marginLeft: 'auto' }}>
+            <button style={BtnPrimary} onClick={() => setSoModal({ mode: 'add' })}><IPlus /> New SO</button>
+          </div>
         </div>
-        <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
-          style={{ height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
-          <option value="">All vendors</option>
-          {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-        </select>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-4)' }}>
-          <ICalendar />
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)' }} />
-          <span style={{ color: 'var(--ink-5)', fontSize: 12 }}>→</span>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)' }} />
-        </div>
-        {hasFilter && <button onClick={() => { setQ(''); setVendorFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }} style={BtnGhost}>Clear</button>}
-        <div style={{ marginLeft: 'auto' }}>
-          <button style={BtnPrimary} onClick={() => setSoModal({ mode: 'add' })}><IPlus /> New SO</button>
-        </div>
-      </div>
+      )}
 
-      {/* Table */}
+      {/* Table or Mobile Cards */}
       <div style={Card}>
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: tab !== 'inbound' ? 900 : 800 }}>
-            <thead>
-              <tr>
-                <th style={Th}>SO Number</th>
-                <th style={Th}>Vendor</th>
-                <th style={Th}>Inbound Date</th>
-                {tab !== 'inbound' && <th style={Th}>Outbound Date</th>}
-                <th style={ThR}>Pallets</th>
-                <th style={ThR}>Total WT Gross</th>
-                <th style={ThR}>Note</th>
-                <th style={ThR}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && (
-                <tr><td colSpan={tab !== 'inbound' ? 8 : 7} style={{ ...Td, textAlign: 'center', color: 'var(--ink-4)' }}>Loading…</td></tr>
-              )}
-              {!loading && pageRows.length === 0 && (
-                <tr><td colSpan={tab !== 'inbound' ? 8 : 7}>
-                  <div style={{ padding: '52px 20px', textAlign: 'center' }}>
-                    <div style={{ width: 56, height: 56, borderRadius: 15, background: 'var(--surface-2)', border: '1px solid var(--hair)', display: 'grid', placeItems: 'center', color: 'var(--ink-4)', margin: '0 auto 14px' }}><IBox /></div>
-                    <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>No orders found</h3>
-                    <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-3)' }}>{hasFilter ? 'Nothing matches your filter.' : 'Create a sales order to get started.'}</p>
+        {isMobile ? (
+          <div>
+            {loading && <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--ink-4)', fontSize: 13 }}>Loading…</div>}
+            {!loading && pageRows.length === 0 && (
+              <div style={{ padding: '52px 20px', textAlign: 'center' }}>
+                <div style={{ width: 56, height: 56, borderRadius: 15, background: 'var(--surface-2)', border: '1px solid var(--hair)', display: 'grid', placeItems: 'center', color: 'var(--ink-4)', margin: '0 auto 14px' }}><IBox /></div>
+                <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>No orders found</h3>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-3)' }}>{hasFilter ? 'Nothing matches your filter.' : 'Create a sales order to get started.'}</p>
+              </div>
+            )}
+            {pageRows.map(o => {
+              const totWt = Number(o.total_pallet_weight || 0);
+              return (
+                <div key={o.id} onClick={() => router.push(`/sales-orders/${o.id}`)}
+                  style={{ padding: '14px 16px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span className="mono" style={{ fontWeight: 700, fontSize: 15 }}>{o.so_number}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>{o.inbound_date}</span>
                   </div>
-                </td></tr>
-              )}
-              {pageRows.map(o => {
-                const totWt = Number(o.total_pallet_weight || 0);
-                return (
-                  <tr key={o.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => router.push(`/sales-orders/${o.id}`)}
-                    onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = '#eef5f0'}
-                    onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'}>
-                    <td style={Td}><span className="mono" style={{ fontWeight: 600 }}>{o.so_number}</span></td>
-                    <td style={{ ...Td, color: 'var(--ink-2)' }}>{o.vendor_name}</td>
-                    <td style={{ ...Td, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{o.inbound_date}</td>
-                    {tab !== 'inbound' && (
-                      <td style={{ ...Td, fontVariantNumeric: 'tabular-nums', color: 'var(--accent-2)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                        {o.outbound_date || <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                    <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{o.vendor_name}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>·</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{o.pallet_record_count ?? 0} pallets</span>
+                    {totWt > 0 && <><span style={{ fontSize: 12, color: 'var(--ink-4)' }}>·</span><span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{totWt.toFixed(2)} kg</span></>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+                    {o.outbound_date
+                      ? <button onClick={() => setConfirm({ kind: 'revert', item: o })}
+                          style={{ height: 40, padding: '0 12px', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink-2)', border: '1px solid var(--hair-strong)', fontSize: 12.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          <IRevert /> Revert
+                        </button>
+                      : <button onClick={() => setShipModal(o)}
+                          style={{ height: 40, padding: '0 12px', borderRadius: 8, background: 'var(--accent-light)', color: 'var(--accent-2)', border: '1px solid #cfe2d6', fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          <IShip /> 出庫
+                        </button>
+                    }
+                    <button onClick={() => setSoModal({ mode: 'edit', item: o })}
+                      style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                      <IEdit />
+                    </button>
+                    <button onClick={() => setConfirm({ kind: 'delete', item: o })}
+                      style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                      <ITrash />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: tab !== 'inbound' ? 900 : 800 }}>
+              <thead>
+                <tr>
+                  <th style={Th}>SO Number</th>
+                  <th style={Th}>Vendor</th>
+                  <th style={Th}>Inbound Date</th>
+                  {tab !== 'inbound' && <th style={Th}>Outbound Date</th>}
+                  <th style={ThR}>Pallets</th>
+                  <th style={ThR}>Total WT Gross</th>
+                  <th style={ThR}>Note</th>
+                  <th style={ThR}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr><td colSpan={tab !== 'inbound' ? 8 : 7} style={{ ...Td, textAlign: 'center', color: 'var(--ink-4)' }}>Loading…</td></tr>
+                )}
+                {!loading && pageRows.length === 0 && (
+                  <tr><td colSpan={tab !== 'inbound' ? 8 : 7}>
+                    <div style={{ padding: '52px 20px', textAlign: 'center' }}>
+                      <div style={{ width: 56, height: 56, borderRadius: 15, background: 'var(--surface-2)', border: '1px solid var(--hair)', display: 'grid', placeItems: 'center', color: 'var(--ink-4)', margin: '0 auto 14px' }}><IBox /></div>
+                      <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>No orders found</h3>
+                      <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-3)' }}>{hasFilter ? 'Nothing matches your filter.' : 'Create a sales order to get started.'}</p>
+                    </div>
+                  </td></tr>
+                )}
+                {pageRows.map(o => {
+                  const totWt = Number(o.total_pallet_weight || 0);
+                  return (
+                    <tr key={o.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => router.push(`/sales-orders/${o.id}`)}
+                      onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = '#eef5f0'}
+                      onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'}>
+                      <td style={Td}><span className="mono" style={{ fontWeight: 600 }}>{o.so_number}</span></td>
+                      <td style={{ ...Td, color: 'var(--ink-2)' }}>{o.vendor_name}</td>
+                      <td style={{ ...Td, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{o.inbound_date}</td>
+                      {tab !== 'inbound' && (
+                        <td style={{ ...Td, fontVariantNumeric: 'tabular-nums', color: 'var(--accent-2)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          {o.outbound_date || <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                        </td>
+                      )}
+                      <td style={{ ...Td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{o.pallet_record_count ?? 0}</td>
+                      <td style={{ ...Td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                        {totWt ? totWt.toFixed(2) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                       </td>
-                    )}
-                    <td style={{ ...Td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{o.pallet_record_count ?? 0}</td>
-                    <td style={{ ...Td, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                      {totWt ? totWt.toFixed(2) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
-                    </td>
-                    <td style={{ ...Td, textAlign: 'right', maxWidth: 220 }} onClick={e => e.stopPropagation()}>
-                      {o.note ? <NoteCell note={o.note} /> : <span style={{ color: 'var(--ink-5)' }}>—</span>}
-                    </td>
-                    <td style={{ ...Td, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
-                        {o.outbound_date
-                          ? <button title="Revert to 入庫" onClick={() => setConfirm({ kind: 'revert', item: o })}
-                              style={{ height: 32, padding: '0 11px', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink-2)', border: '1px solid var(--hair-strong)', fontSize: 12.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              <IRevert /> Revert
-                            </button>
-                          : <button title="Ship out" onClick={() => setShipModal(o)}
-                              style={{ height: 32, padding: '0 11px', borderRadius: 8, background: 'var(--accent-light)', color: 'var(--accent-2)', border: '1px solid #cfe2d6', fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: 'inherit' }}>
-                              <IShip /> 出庫
-                            </button>
-                        }
-                        <button title="Edit" onClick={() => setSoModal({ mode: 'edit', item: o })}
-                          style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-                          <IEdit />
-                        </button>
-                        <button title="Delete" onClick={() => setConfirm({ kind: 'delete', item: o })}
-                          style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
-                          onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.color = '#b0432b'; el.style.background = '#fef2f2'; el.style.borderColor = '#fecaca'; }}
-                          onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.color = 'var(--ink-3)'; el.style.background = 'var(--surface-2)'; el.style.borderColor = 'var(--hair)'; }}>
-                          <ITrash />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      <td style={{ ...Td, textAlign: 'right', maxWidth: 220 }} onClick={e => e.stopPropagation()}>
+                        {o.note ? <NoteCell note={o.note} /> : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                      </td>
+                      <td style={{ ...Td, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                          {o.outbound_date
+                            ? <button title="Revert to 入庫" onClick={() => setConfirm({ kind: 'revert', item: o })}
+                                style={{ height: 32, padding: '0 11px', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink-2)', border: '1px solid var(--hair-strong)', fontSize: 12.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                <IRevert /> Revert
+                              </button>
+                            : <button title="Ship out" onClick={() => setShipModal(o)}
+                                style={{ height: 32, padding: '0 11px', borderRadius: 8, background: 'var(--accent-light)', color: 'var(--accent-2)', border: '1px solid #cfe2d6', fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: 'inherit' }}>
+                                <IShip /> 出庫
+                              </button>
+                          }
+                          <button title="Edit" onClick={() => setSoModal({ mode: 'edit', item: o })}
+                            style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                            <IEdit />
+                          </button>
+                          <button title="Delete" onClick={() => setConfirm({ kind: 'delete', item: o })}
+                            style={{ width: 32, height: 32, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
+                            onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.color = '#b0432b'; el.style.background = '#fef2f2'; el.style.borderColor = '#fecaca'; }}
+                            onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.color = 'var(--ink-3)'; el.style.background = 'var(--surface-2)'; el.style.borderColor = 'var(--hair)'; }}>
+                            <ITrash />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {filtered.length > 0 && (
           <Pagination page={page} pageCount={pageCount} onChange={setPage} total={filtered.length} pageSize={PAGE_SIZE} />
