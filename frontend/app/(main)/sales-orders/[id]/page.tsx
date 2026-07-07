@@ -42,9 +42,9 @@ function Toast({ msg, type, onDone }: { msg: string; type: 'ok' | 'err'; onDone:
 // ── Overlay ─────────────────────────────────────────────────────────────────────
 function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,30,20,0.45)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 20px', overflow: 'auto' }}
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(20,30,20,0.45)', zIndex: 200, overflowY: 'auto' }}
       onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: '100%', maxWidth: 720 }}>{children}</div>
+      <div onClick={e => e.stopPropagation()} style={{ margin: '60px auto 40px', width: 'calc(100% - 40px)', maxWidth: 720 }}>{children}</div>
     </div>
   );
 }
