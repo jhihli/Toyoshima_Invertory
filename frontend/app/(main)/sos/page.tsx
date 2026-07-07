@@ -36,6 +36,7 @@ export default function SOListPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [vendorDefaultReady, setVendorDefaultReady] = useState(false);
 
   const [q, setQ] = useState('');
   const [vendorFilter, setVendorFilter] = useState('');
@@ -60,8 +61,18 @@ export default function SOListPage() {
     }
   }, [q, vendorFilter, dateFrom, dateTo, page]);
 
-  useEffect(() => { api.vendors.list().then(setVendors).catch(() => {}); }, []);
-  useEffect(() => { fetchData(); }, [fetchData]);
+  // Load vendors and pre-select MSFT before first data fetch
+  useEffect(() => {
+    api.vendors.list().then(v => {
+      setVendors(v);
+      const msft = v.find((vnd: Vendor) => vnd.name.toUpperCase().includes('MSFT'));
+      if (msft) setVendorFilter(String(msft.id));
+      setVendorDefaultReady(true);
+    }).catch(() => { setVendorDefaultReady(true); });
+  }, []);
+
+  // Only fetch data after vendor default is resolved (avoids flash of all vendors)
+  useEffect(() => { if (vendorDefaultReady) fetchData(); }, [fetchData, vendorDefaultReady]);
 
   const toggleSort = (key: SortKey) => {
     setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
@@ -158,10 +169,10 @@ export default function SOListPage() {
   return (
     <>
     <div className="fade-in page-pad">
-      <Breadcrumbs items={[{ label: 'Home', onClick: () => router.push('/dashboard') }, { label: 'Sales Orders' }]} />
+      <Breadcrumbs items={[{ label: 'Home', onClick: () => router.push('/dashboard') }, { label: 'MSFT Order' }]} />
 
       <div style={{ margin: '14px 0 16px' }}>
-        <h1 style={{ margin: '0 0 16px', fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>Sales Orders</h1>
+        <h1 style={{ margin: '0 0 16px', fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>MSFT Order</h1>
 
         {/* Filter bar */}
         {isMobile ? (
