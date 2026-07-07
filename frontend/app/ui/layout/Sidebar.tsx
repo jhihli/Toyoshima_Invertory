@@ -85,9 +85,9 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'dashboard',    label: 'Dashboard',    href: '/dashboard',     icon: IconDashboard },
   { key: 'sales-orders', label: 'Sales Orders', href: '/sales-orders',  icon: IconSO },
   { key: 'vendors',      label: 'Vendors',      href: '/vendors',       icon: IconVendor },
-  { key: 'sos',          label: 'MSFT Order',   href: '/sos',           icon: IconSO,       disabled: true },
-  { key: 'mpns',         label: 'MPN',          href: '/mpns',          icon: IconMPN,      disabled: true },
-  { key: 'chipbrands',   label: 'Chip Brands',  href: '/chipbrands',    icon: IconChip,     disabled: true },
+  { key: 'sos',          label: 'MSFT Order',   href: '/sos',           icon: IconSO },
+  { key: 'mpns',         label: 'MPN',          href: '/mpns',          icon: IconMPN },
+  { key: 'chipbrands',   label: 'Chip Brands',  href: '/chipbrands',    icon: IconChip },
 ];
 
 const ROLE_LABELS: Record<string, string> = {
