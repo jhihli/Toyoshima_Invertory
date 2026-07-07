@@ -589,39 +589,66 @@ export default function SODetailPage() {
           <div>
             {filteredPallets.map(p => {
               const imgs = (p.photos || []).map(ph => ({ src: ph.image_url || ph.image, label: p.licence_number || `Pallet #${p.pallet_seq}` }));
+              const labelSty: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', whiteSpace: 'nowrap' };
+              const valSty: React.CSSProperties = { fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' };
               return (
-                <div key={p.id} style={{ padding: '12px 16px', borderBottom: '1px solid var(--hair)' }}>
-                  {/* Row 1: barcode + date */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 4, gap: 8 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {imgs.length > 0 && (
-                        <div style={{ position: 'relative', flexShrink: 0, cursor: 'zoom-in' }} onClick={() => setLightbox({ images: imgs, index: 0 })}>
-                          <img src={imgs[0].src} alt="" style={{ width: 40, height: 40, borderRadius: 7, objectFit: 'cover', display: 'block' }} />
-                          {imgs.length > 1 && <span style={{ position: 'absolute', bottom: 1, right: 1, background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 8, fontWeight: 700, borderRadius: 3, padding: '1px 3px', lineHeight: 1.5 }}>+{imgs.length - 1}</span>}
-                        </div>
-                      )}
-                      <span className="mono" style={{ fontWeight: 700, fontSize: 14 }}>{p.licence_number || <span style={{ color: 'var(--ink-4)', fontWeight: 400 }}>No barcode</span>}</span>
-                    </div>
-                    <span style={{ fontSize: 12, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>
+                <div key={p.id} style={{ padding: '14px 16px', borderBottom: '1px solid var(--hair)' }}>
+                  {/* Header: barcode + date */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, gap: 8 }}>
+                    <span className="mono" style={{ fontWeight: 700, fontSize: 15 }}>
+                      {p.licence_number || <span style={{ color: 'var(--ink-4)', fontWeight: 400, fontSize: 13 }}>No barcode</span>}
+                    </span>
+                    <span style={{ fontSize: 11.5, color: 'var(--ink-4)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                       {p.created_at ? new Date(p.created_at).toLocaleDateString('en-CA') : '—'}
                     </span>
                   </div>
-                  {/* Row 2: details */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', marginBottom: 10, paddingLeft: imgs.length > 0 ? 48 : 0 }}>
-                    {p.location && <span className="mono" style={{ fontSize: 12, color: 'var(--accent-2)', fontWeight: 600 }}>{p.location}</span>}
-                    {p.gateload_number && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Gate: {p.gateload_number}</span>}
-                    {p.material_type && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{p.material_type}</span>}
-                    {Number(p.in_weight_gross) > 0 && <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{Number(p.in_weight_gross).toFixed(4)} lb</span>}
-                    <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>Qty: {p.qty}</span>
+
+                  {/* Body: photo + metadata grid */}
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
+                    {/* Photo thumbnail */}
+                    {imgs.length > 0 && (
+                      <div style={{ position: 'relative', flexShrink: 0, cursor: 'zoom-in', alignSelf: 'flex-start' }}
+                        onClick={() => setLightbox({ images: imgs, index: 0 })}>
+                        <img src={imgs[0].src} alt="" style={{ width: 54, height: 54, borderRadius: 9, objectFit: 'cover', display: 'block', border: '1px solid var(--hair)' }} />
+                        {imgs.length > 1 && (
+                          <span style={{ position: 'absolute', bottom: 3, right: 3, background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 4, padding: '1px 4px', lineHeight: 1.5 }}>
+                            +{imgs.length - 1}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Label / value grid */}
+                    <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 10px', alignItems: 'baseline' }}>
+                      {p.location && <>
+                        <span style={labelSty}>Location</span>
+                        <span className="mono" style={{ ...valSty, color: 'var(--accent-2)', fontWeight: 600 }}>{p.location}</span>
+                      </>}
+                      {p.gateload_number && <>
+                        <span style={labelSty}>Gate</span>
+                        <span style={valSty}>{p.gateload_number}</span>
+                      </>}
+                      {p.material_type && <>
+                        <span style={labelSty}>Material</span>
+                        <span style={valSty}>{p.material_type}</span>
+                      </>}
+                      <span style={labelSty}>Weight</span>
+                      <span className="mono" style={valSty}>
+                        {Number(p.in_weight_gross) > 0 ? `${Number(p.in_weight_gross).toFixed(2)} lb` : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                      </span>
+                      <span style={labelSty}>Qty</span>
+                      <span className="mono" style={valSty}>{p.qty}</span>
+                    </div>
                   </div>
-                  {/* Row 3: action buttons */}
+
+                  {/* Actions: equal-width buttons */}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button onClick={() => setPalletModal({ mode: 'edit', item: p })}
-                      style={{ height: 40, padding: '0 14px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ flex: 1, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
                       <IEdit /> Edit
                     </button>
                     <button onClick={() => setDeleteConfirm(p)}
-                      style={{ height: 40, padding: '0 14px', borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ flex: 1, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
                       <ITrash /> Delete
                     </button>
                   </div>
