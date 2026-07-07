@@ -446,6 +446,7 @@ export default function SODetailPage() {
   const [pallets, setPallets] = useState<Pallet[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterQ, setFilterQ] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
 
   const [palletModal, setPalletModal] = useState<{ mode: 'add' | 'edit'; item?: Pallet } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Pallet | null>(null);
@@ -557,19 +558,49 @@ export default function SODetailPage() {
       <div style={{ background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden' }}>
 
         {/* Card header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--hair)', flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Pallets</h3>
-          <span style={{ fontSize: 12.5, color: 'var(--ink-4)' }}>{pallets.length} records</span>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ height: 34, background: 'var(--surface-2)', border: '1px solid var(--hair)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 7, padding: '0 11px', color: 'var(--ink-4)' }}>
-              <ISearch />
-              <input value={filterQ} onChange={e => setFilterQ(e.target.value)} placeholder="Filter pallets…"
-                style={{ border: 0, background: 'transparent', outline: 'none', width: 150, fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)' }} />
-              {filterQ && <button onClick={() => setFilterQ('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', display: 'flex', padding: 0 }}><IClose /></button>}
+        {isMobile ? (
+          /* Mobile: single compact row + collapsible search */
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: showSearch || filterQ ? 'none' : '1px solid var(--hair)' }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>Pallets</h3>
+              <span style={{ fontSize: 11, color: 'var(--ink-4)', background: 'var(--surface-2)', border: '1px solid var(--hair)', borderRadius: 99, padding: '1px 7px', fontVariantNumeric: 'tabular-nums' }}>{pallets.length}</span>
+              <div style={{ flex: 1 }} />
+              <button
+                onClick={() => { setShowSearch(s => { if (s) setFilterQ(''); return !s; }); }}
+                style={{ width: 34, height: 34, borderRadius: 8, background: showSearch || filterQ ? 'var(--accent)' : 'var(--surface-2)', border: '1px solid var(--hair)', color: showSearch || filterQ ? '#fff' : 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                <ISearch />
+              </button>
+              <button style={{ ...BtnPrimary, height: 34, padding: '0 11px', fontSize: 13 }} onClick={() => setPalletModal({ mode: 'add' })}>
+                <IPlus /> Add
+              </button>
             </div>
-            <button style={BtnPrimary} onClick={() => setPalletModal({ mode: 'add' })}><IPlus /> Add pallet</button>
+            {(showSearch || filterQ) && (
+              <div style={{ padding: '8px 14px', borderBottom: '1px solid var(--hair)', background: 'var(--surface-2)' }}>
+                <div style={{ height: 36, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 7, padding: '0 11px', color: 'var(--ink-4)' }}>
+                  <ISearch />
+                  <input autoFocus value={filterQ} onChange={e => setFilterQ(e.target.value)} placeholder="Filter pallets…"
+                    style={{ flex: 1, border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)' }} />
+                  {filterQ && <button onClick={() => setFilterQ('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', display: 'flex', padding: 0 }}><IClose /></button>}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
+        ) : (
+          /* Desktop: full header row */
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--hair)', flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0, fontSize: 14.5, fontWeight: 700 }}>Pallets</h3>
+            <span style={{ fontSize: 12.5, color: 'var(--ink-4)' }}>{pallets.length} records</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ height: 34, background: 'var(--surface-2)', border: '1px solid var(--hair)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 7, padding: '0 11px', color: 'var(--ink-4)' }}>
+                <ISearch />
+                <input value={filterQ} onChange={e => setFilterQ(e.target.value)} placeholder="Filter pallets…"
+                  style={{ border: 0, background: 'transparent', outline: 'none', width: 150, fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)' }} />
+                {filterQ && <button onClick={() => setFilterQ('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', display: 'flex', padding: 0 }}><IClose /></button>}
+              </div>
+              <button style={BtnPrimary} onClick={() => setPalletModal({ mode: 'add' })}><IPlus /> Add pallet</button>
+            </div>
+          </div>
+        )}
 
         {/* Table or Mobile Cards */}
         {pallets.length === 0 ? (
