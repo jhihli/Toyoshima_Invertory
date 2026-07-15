@@ -73,7 +73,6 @@ export default function MPNDetailPage() {
         qty: data.qty !== '' ? +data.qty : null,
         slot_group: data.slotGroup, item_group: data.itemGroup,
         chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
-        cut_fail: data.cutFail !== '' ? +data.cutFail : null,
         processed_type: data.processedType, packaging_type: data.packagingType,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnId, chip.id, data.photoFile);
@@ -90,7 +89,6 @@ export default function MPNDetailPage() {
         qty: data.qty !== '' ? +data.qty : null,
         slot_group: data.slotGroup, item_group: data.itemGroup,
         chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
-        cut_fail: data.cutFail !== '' ? +data.cutFail : null,
         processed_type: data.processedType, packaging_type: data.packagingType,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnId, chipId, data.photoFile);
@@ -243,7 +241,6 @@ export default function MPNDetailPage() {
                 <col style={{ width: 80 }} />{/* Slot */}
                 <col style={{ width: 64 }} />{/* Photo */}
                 <col style={{ width: 96 }} />{/* Qty/Board */}
-                <col style={{ width: 84 }} />{/* Cut Fail */}
                 <col style={{ width: 92 }} />{/* Chip Cost */}
                 <col style={{ width: 124 }} />{/* Processed Type */}
                 <col style={{ width: 124 }} />{/* Packaging Type */}
@@ -258,7 +255,6 @@ export default function MPNDetailPage() {
                   <th style={chipThS}>Slot</th>
                   <th style={chipThS}>Photo</th>
                   <th style={{ ...chipThS, textAlign: 'right' }}>Qty/Board</th>
-                  <th style={{ ...chipThS, textAlign: 'right' }}>Cut Fail</th>
                   <th style={{ ...chipThS, textAlign: 'right' }}>Chip Cost</th>
                   <th style={chipThS}>Processed Type</th>
                   <th style={chipThS}>Packaging Type</th>
@@ -302,9 +298,6 @@ export default function MPNDetailPage() {
                     </td>
                     <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
                       {chip.qty != null ? chip.qty : <span style={{ color: 'var(--ink-4)' }}>—</span>}
-                    </td>
-                    <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
-                      {chip.cut_fail != null ? chip.cut_fail : 0}
                     </td>
                     <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
                       {mpn.cutboard_cost != null && nSlots > 0
@@ -503,7 +496,7 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
   );
 }
 
-type ChipFormData = { brandId: string; qty: string; slotGroup: string; itemGroup: string; chipMpn: string; chipType: string; description: string; cutFail: string; processedType: string; packagingType: string; photoFile?: File | null; clearPhoto?: boolean; };
+type ChipFormData = { brandId: string; qty: string; slotGroup: string; itemGroup: string; chipMpn: string; chipType: string; description: string; processedType: string; packagingType: string; photoFile?: File | null; clearPhoto?: boolean; };
 
 function ChipPhotoSquare({ value, onChange }: { value: { src: string; name?: string; file?: File } | null; onChange: (v: { src: string; name: string; file: File } | null) => void; }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -634,7 +627,6 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd 
   const [qty, setQty] = useState('');
   const [slotGroup, setSlotGroup] = useState('');
   const [itemGroup, setItemGroup] = useState('');
-  const [cutFail, setCutFail] = useState('');
   const [processedType, setProcessedType] = useState('harvested');
   const [packagingType, setPackagingType] = useState('tray');
   // Slot Group lives in a collapsed "Advanced" section — most chips have their own slot
@@ -655,7 +647,6 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd 
       setSlotGroup(initial?.slot_group ?? '');
       setItemGroup(initial?.item_group ?? '');
       setAdvancedOpen((initial?.slot_group ?? '').trim() !== '');
-      setCutFail(initial?.cut_fail != null ? String(initial.cut_fail) : '');
       setProcessedType(initial?.processed_type ?? 'harvested');
       setPackagingType(initial?.packaging_type ?? 'tray');
       setPhoto(initial?.chip_photo_url ? { src: initial.chip_photo_url, name: initial.chip_photo_url.split('/').pop() } : null);
@@ -673,7 +664,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd 
 
   const submit = () => {
     onAdd({
-      brandId, qty, slotGroup: slotGroup.trim(), itemGroup, chipMpn, chipType, description, cutFail,
+      brandId, qty, slotGroup: slotGroup.trim(), itemGroup, chipMpn, chipType, description,
       processedType, packagingType,
       photoFile: photo?.file ?? null,
       clearPhoto: !photo && !!initialPhotoUrl,
@@ -696,8 +687,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd 
             <Field label="Processed Type"><Select value={processedType} onChange={setProcessedType} options={PROCESSED_TYPE_OPTIONS} /></Field>
             <Field label="Packaging Type"><Select value={packagingType} onChange={setPackagingType} options={PACKAGING_TYPE_OPTIONS} /></Field>
             <Field label="Qty / Board"><Input value={qty} onChange={setQty} type="number" placeholder="1" /></Field>
-            <Field label="Cut Fail"><Input value={cutFail} onChange={setCutFail} type="number" placeholder="—" /></Field>
-            <Field label="Description" span={2}><Input value={description} onChange={setDescription} placeholder="Optional" /></Field>
+            <Field label="Description"><Input value={description} onChange={setDescription} placeholder="Optional" /></Field>
           </div>
           <div style={{ fontSize: 11, marginTop: 8, color: 'var(--ink-4)', lineHeight: 1.55 }}>
             <b style={{ color: 'var(--ink-3)' }}>Item Group</b> classifies the chip for the customer&apos;s bid sheet — picking <b style={{ color: 'var(--ink-3)' }}>Memory</b> pre-fills the slot below.

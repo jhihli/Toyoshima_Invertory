@@ -104,8 +104,7 @@ class Command(BaseCommand):
     def _build_excel(self) -> bytes:
         """
         Mirrors the frontend handleExport columns exactly:
-          MPN | Date Processed | Chip MPN | Chips Failed |
-          Failure Rate | BOARDS (Scanned) | CUTBOARD COST | CHIP COST
+          MPN | Date Processed | Chip MPN | BOARDS (Scanned) | CUTBOARD COST | CHIP COST
         """
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -115,13 +114,11 @@ class Command(BaseCommand):
             'MPN',
             'Date Processed',
             'Chip MPN',
-            'Chips Failed',
-            'Failure Rate (BOARDS Scanned / Chips Failed)',
             'BOARDS (Scanned)',
             'CUTBOARD COST',
             'CHIP COST',
         ]
-        col_widths = [22, 15, 24, 13, 44, 17, 15, 13]
+        col_widths = [22, 15, 24, 17, 15, 13]
 
         header_fill = PatternFill('solid', fgColor='D9E1F2')
         header_font = Font(bold=True, size=11)
@@ -155,8 +152,7 @@ class Command(BaseCommand):
 
             if not chips:
                 row_data = [
-                    mpn.name, latest_date, '', '',
-                    None,
+                    mpn.name, latest_date, '',
                     board_count,
                     float(mpn.cutboard_cost) if mpn.cutboard_cost is not None else '',
                     '',
@@ -167,17 +163,10 @@ class Command(BaseCommand):
                 row_num += 1
             else:
                 for chip in chips:
-                    failure_rate = (
-                        chip.cut_fail / board_count
-                        if chip.cut_fail is not None and chip.cut_fail > 0 and board_count > 0
-                        else 0
-                    )
                     row_data = [
                         mpn.name,
                         latest_date,
                         chip.chip_mpn or '',
-                        chip.cut_fail if chip.cut_fail is not None else 0,
-                        failure_rate,
                         board_count,
                         float(mpn.cutboard_cost) if mpn.cutboard_cost is not None else '',
                         chip_cost if chip_cost is not None else '',
@@ -185,8 +174,6 @@ class Command(BaseCommand):
                     for c_idx, val in enumerate(row_data, start=1):
                         cell = ws.cell(row=row_num, column=c_idx, value=val)
                         cell.alignment = left
-                        if c_idx == 5 and val is not None:
-                            cell.number_format = '0.00%'
                     row_num += 1
 
         buf = io.BytesIO()

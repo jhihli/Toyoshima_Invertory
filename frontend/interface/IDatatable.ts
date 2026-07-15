@@ -124,7 +124,6 @@ export interface Chip {
   /** Chips sharing a slot_group are interchangeable alternates in one board slot. */
   slot_group: string;
   item_group: string;
-  cut_fail: number | null;
   chip_cost: number | null;
   description: string;
   processed_type: string;

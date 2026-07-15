@@ -188,8 +188,7 @@ export default function MPNsPage() {
       const details = await Promise.all(mpns.map(m => api.mpns.get(m.id)));
 
       const aoa: any[][] = [[
-        'MPN', 'Date Processed', 'Chip MPN', 'Chips Failed',
-        'Failure Rate (BOARDS Scanned / Chips Failed)',
+        'MPN', 'Date Processed', 'Chip MPN',
         'BOARDS (Scanned)', 'CUTBOARD COST', 'CHIP COST',
       ]];
 
@@ -207,19 +206,14 @@ export default function MPNsPage() {
         const startRow = currentRow;
 
         if (chips.length === 0) {
-          aoa.push([mpn.name, mpn.latest_board_date ?? '', '', '', null, boardCount, mpn.cutboard_cost ?? '', '']);
+          aoa.push([mpn.name, mpn.latest_board_date ?? '', '', boardCount, mpn.cutboard_cost ?? '', '']);
           currentRow++;
         } else {
           for (const chip of chips) {
-            const failureRate = (chip.cut_fail != null && chip.cut_fail > 0 && boardCount > 0)
-              ? chip.cut_fail / boardCount
-              : 0;
             aoa.push([
               mpn.name,
               mpn.latest_board_date ?? '',
               chip.chip_mpn || '',
-              chip.cut_fail ?? 0,
-              failureRate,
               boardCount,
               mpn.cutboard_cost ?? '',
               chipCost ?? '',
@@ -231,7 +225,7 @@ export default function MPNsPage() {
         const endRow = currentRow - 1;
         if (endRow > startRow) {
           merges.push({ s: { r: startRow, c: 0 }, e: { r: endRow, c: 0 } }); // MPN
-          merges.push({ s: { r: startRow, c: 6 }, e: { r: endRow, c: 6 } }); // CUTBOARD COST
+          merges.push({ s: { r: startRow, c: 4 }, e: { r: endRow, c: 4 } }); // CUTBOARD COST
         }
       }
 
@@ -245,13 +239,9 @@ export default function MPNsPage() {
           if (!ws[cellAddr]) continue;
           const cell = ws[cellAddr];
           cell.s = { ...(cell.s ?? {}), alignment: { horizontal: 'left', vertical: 'center' } };
-          if (c === 4 && r > 0 && cell.v != null) {
-            cell.t = 'n';
-            cell.z = '0.00%';
-          }
         }
       }
-      ws['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 12 }, { wch: 38 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
+      ws['!cols'] = [{ wch: 20 }, { wch: 14 }, { wch: 22 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'MPN Export');

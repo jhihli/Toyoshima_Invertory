@@ -158,14 +158,13 @@ export default function SOContextMPNDetailPage() {
                     <th style={thS}>Chip MPN</th>
                     <th style={thS}>Type</th>
                     <th style={thS}>Photo</th>
-                    <th style={{ ...thS, textAlign: 'right' }}>Cut Fail</th>
                     <th style={{ ...thS, textAlign: 'right' }}>Chip Cost</th>
                     <th style={thS}>Description</th>
                   </tr>
                 </thead>
                 <tbody>
                   {chips.length === 0 && (
-                    <tr><td colSpan={9}><Empty label="No chips defined" sub="Add chips from the MPN page." /></td></tr>
+                    <tr><td colSpan={8}><Empty label="No chips defined" sub="Add chips from the MPN page." /></td></tr>
                   )}
                   {chips.map(chip => {
                     const ctr = containers.get(chip.id);
@@ -199,9 +198,6 @@ export default function SOContextMPNDetailPage() {
                             src={chip.chip_photo_url}
                             onView={() => chip.chip_photo_url && setLightbox({ src: chip.chip_photo_url, title: [chip.brand_name, chip.chip_mpn].filter(Boolean).join(' · ') || 'Chip Photo' })}
                           />
-                        </td>
-                        <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                          {chip.cut_fail != null ? chip.cut_fail : 0}
                         </td>
                         <td style={{ ...tdS, textAlign: 'right' }} className="num">
                           {mpn.cutboard_cost != null && nSlots > 0

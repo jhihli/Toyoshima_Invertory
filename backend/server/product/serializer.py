@@ -86,7 +86,7 @@ class ChipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Chip
-        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'slot_group', 'item_group', 'cut_fail', 'chip_cost', 'description', 'processed_type', 'packaging_type']
+        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'slot_group', 'item_group', 'chip_cost', 'description', 'processed_type', 'packaging_type']
 
     def get_brand_name(self, obj):
         if obj.brand:

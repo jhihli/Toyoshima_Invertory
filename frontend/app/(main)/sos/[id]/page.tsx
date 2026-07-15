@@ -498,6 +498,8 @@ export default function SODetailPage() {
       ]);
       for (let c = 5; c <= 8; c++) { abcHdr.getCell(c).fill = HDR_FILL; abcHdr.getCell(c).font = HDR_FONT; }
 
+      // Light blue ("Blue, Accent 1, Lighter 80%") across the MPN roll-up row, cols B–H.
+      const ABC_MPN_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDCE6F1' } };
       const sortedForABC = [...mpnMap.values()].sort((a, b) => b.boardCount - a.boardCount);
       const abcHCells: string[] = [];   // H-cell of each block, for the grand total SUM
       let abcLastTotalRow: ExcelJS.Row | null = null;
@@ -515,6 +517,8 @@ export default function SODetailPage() {
         const bpnRow = wsActivityCost.addRow(['Board part Number:', entry.mpn.name, '']);
         bpnRow.getCell(1).fill = HDR_FILL; bpnRow.getCell(1).font = HDR_FONT;
         bpnRow.getCell(2).font = { bold: true };
+        // MPN name + the E–H roll-up cells sit on a light blue band (col A stays dark teal).
+        for (let c = 2; c <= 8; c++) bpnRow.getCell(c).fill = ABC_MPN_FILL;
         const bpnNum = bpnRow.number;
         bpnRow.getCell(5).value = entry.boardCount;             // Qty of Boards Processed (= On Hand Inventory)
         bpnRow.getCell(6).value = bomTotalQty(entry.chips);     // # chips per board (chips harvested per board)
@@ -581,11 +585,19 @@ export default function SODetailPage() {
       const wsChipBom = workbook.addWorksheet('Chip BOM');
       wsChipBom.columns = [{ width: 24 }, { width: 18 }, { width: 14 }, { width: 30 }, { width: 18 }, { width: 12 }];
       styleHdr(wsChipBom.addRow(['Chip MPN', 'Manufacturer', 'Chip type', 'Chip description', 'Chip picture', 'Quantity']));
+      // Each chip is one bordered row; a single blank row separates consecutive chips and the
+      // Total row follows the last chip directly — matching the reference workbook's frame.
+      const thinSide: Partial<ExcelJS.Border> = { style: 'thin', color: { argb: 'FF000000' } };
+      const boxBorder: Partial<ExcelJS.Borders> = { top: thinSide, bottom: thinSide, left: thinSide, right: thinSide };
       let chipBomFirstDataRow = 0;
       let chipBomLastDataRow = 0;
+      let chipBomFirst = true;
       for (const e of chipBomMap.values()) {
+        if (!chipBomFirst) wsChipBom.addRow([]); // one blank spacer row between chips
+        chipBomFirst = false;
         const dataRow = wsChipBom.addRow([e.chipMpn, e.manufacturer, e.chipType, e.description, '', 0]);
-        dataRow.height = 60;
+        dataRow.height = 48;
+        for (let c = 1; c <= 6; c++) dataRow.getCell(c).border = boxBorder;
         // Same live formula as Bid_Template_Chip: sum Inventory Qty where Chip MPN (col A) matches.
         dataRow.getCell(6).value = { formula: `SUMIF(${INV_MPN_COL},$A${dataRow.number},${INV_QTY_COL})` };
         if (!chipBomFirstDataRow) chipBomFirstDataRow = dataRow.number;
@@ -608,12 +620,13 @@ export default function SODetailPage() {
             }
           } catch { /* skip failed image — leave cell empty */ }
         }
-        wsChipBom.addRow([]); // spacer so the photo has room to sit
       }
-      // Quantity total. Spacer rows in the range are empty and contribute 0.
+      // Quantity total. Blank spacer rows in the range are empty and contribute 0.
       if (chipBomFirstDataRow) {
         const totalRow = wsChipBom.addRow(['', '', '', '', 'Total', 0]);
         totalRow.getCell(5).font = { bold: true };
+        totalRow.getCell(5).border = boxBorder;
+        totalRow.getCell(6).border = boxBorder;
         totalRow.getCell(6).value = { formula: `SUM(F${chipBomFirstDataRow}:F${chipBomLastDataRow})` };
       }
 
