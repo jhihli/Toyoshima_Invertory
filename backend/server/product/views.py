@@ -18,7 +18,7 @@ def _check_scanner_key(request):
 from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
-    SOPhotoSerializer, PalletSerializer, PalletPhotoSerializer, BoardSerializer,
+    SOPhotoSerializer, PalletSerializer, PalletPhotoSerializer, BoardSerializer, BoardListSerializer,
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
     PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer
@@ -301,7 +301,16 @@ def board_list_by_so(request, so_pk):
             board = Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand').get(pk=serializer.data['id'])
             return Response(BoardSerializer(board, context={'request': request}).data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    qs = so.boards.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand')
+    # The boards tab only needs barcode / mpn / pallet, so it gets the lightweight
+    # BoardListSerializer. Callers that need the chip BOM (the Excel export) pass
+    # ?include_chips=1 to get the full BoardSerializer with nested chips.
+    include_chips = request.query_params.get('include_chips', '').strip() in ('1', 'true', 'yes')
+    if include_chips:
+        qs = so.boards.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand')
+        serializer_cls = BoardSerializer
+    else:
+        qs = so.boards.select_related('pallet', 'mpn').prefetch_related('mpn__chips')
+        serializer_cls = BoardListSerializer
     date_from = request.query_params.get('date_from', '').strip()
     date_to = request.query_params.get('date_to', '').strip()
     pallet_id = request.query_params.get('pallet', '').strip()
@@ -312,10 +321,10 @@ def board_list_by_so(request, so_pk):
     if pallet_id:
         qs = qs.filter(pallet_id=pallet_id)
     page = max(1, int(request.query_params.get('page', 1)))
-    page_size = min(max(1, int(request.query_params.get('page_size', 8))), 200)
+    page_size = min(max(1, int(request.query_params.get('page_size', 8))), 10000)
     total = qs.count()
     start = (page - 1) * page_size
-    data = BoardSerializer(qs[start:start + page_size], many=True, context={'request': request}).data
+    data = serializer_cls(qs[start:start + page_size], many=True, context={'request': request}).data
     return Response({'total': total, 'page': page, 'page_size': page_size, 'results': data})
 
 
@@ -791,12 +800,14 @@ def mpn_report_send_now(request):
 @permission_classes([IsAuthenticated])
 def so_chip_containers(request, so_pk):
     so = get_object_or_404(SO, pk=so_pk)
+    # Blank-UID containers are returned too: their actual_qty still counts toward the
+    # per-chip harvested totals in the export. Callers that render an inventory listing
+    # filter them out themselves.
     qs = (
         PalletChipContainer.objects
         .filter(pallet__so=so)
-        .exclude(container_uid='')
-        .select_related('chip')
-        .order_by('container_uid')
+        .select_related('chip', 'chip__brand', 'pallet')
+        .order_by('pallet__pallet_seq', 'id')
     )
     return Response(PalletChipContainerWithChipSerializer(qs, many=True).data)
 

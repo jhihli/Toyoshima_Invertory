@@ -145,6 +145,34 @@ class MPN(models.Model):
     def __str__(self):
         return self.name
 
+    def _slots(self):
+        """Group chips into physical board slots.
+
+        Chips sharing a non-empty slot_group are interchangeable alternates for the SAME
+        slot (e.g. 5 DRAM part numbers that can each fill one socket) and count once. A
+        blank slot_group means the chip has a slot to itself.
+
+        Returns {slot_key: qty_per_board}. Alternates take the max, not the sum — only one
+        of them is physically present on any given board.
+        """
+        slots = {}
+        for c in self.chips.all():
+            group = (c.slot_group or '').strip()
+            key = f'g:{group}' if group else f'c:{c.id}'
+            qty = c.qty if c.qty is not None else 1
+            slots[key] = max(slots.get(key, 0), qty)
+        return slots
+
+    @property
+    def slot_count(self):
+        """Physical chip slots on one board. The chip-cut cost divisor."""
+        return len(self._slots())
+
+    @property
+    def chips_per_board(self):
+        """Chips harvested from ONE board — the sum of each slot's per-board qty."""
+        return sum(self._slots().values())
+
 
 class Board(models.Model):
     so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='boards')
@@ -196,6 +224,13 @@ class Chip(models.Model):
     PACKAGING_TYPE_CHOICES = [
         ('tray', 'Tray'),
         ('reel', 'Reel'),
+        ('bag', 'Bag'),
+    ]
+    ITEM_GROUP_CHOICES = [
+        ('Controller', 'Controller'),
+        ('Memory', 'Memory'),
+        ('FPGA', 'FPGA'),
+        ('Capacitor', 'Capacitor'),
     ]
 
     mpn = models.ForeignKey(MPN, on_delete=models.CASCADE, null=True, blank=True, related_name='chips')
@@ -205,7 +240,19 @@ class Chip(models.Model):
     chip_mpn = models.CharField(max_length=100, blank=True)
     chip_type = models.CharField(max_length=100, blank=True)
     chip_photo = models.ImageField(upload_to='chip_photos/%Y/%m/', blank=True, null=True)
-    qty = models.IntegerField(default=1)
+    qty = models.IntegerField(
+        null=True, blank=True, default=1,
+        help_text="Quantity of this chip on ONE board (BOM qty, normally 1). "
+                  "Blank = not yet known. Harvested totals are always derived, never stored here."
+    )
+    slot_group = models.CharField(
+        max_length=50, blank=True,
+        help_text="Chips sharing a slot_group occupy the SAME physical board slot and are "
+                  "interchangeable alternates (e.g. 'MEM' for a DRAM slot any of 5 part "
+                  "numbers can fill). Blank = the chip is its own slot. Reuse the same "
+                  "string across MPNs — exports union a group SO-wide."
+    )
+    item_group = models.CharField(max_length=20, choices=ITEM_GROUP_CHOICES, blank=True)
     cut_fail = models.IntegerField(null=True, blank=True)
     chip_cost = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     description = models.TextField(blank=True)
@@ -215,7 +262,8 @@ class Chip(models.Model):
     class Meta:
         db_table = 'chip'
         indexes = [models.Index(fields=['mpn', 'brand'])]
-        ordering = ['brand__name']
+        # Insertion order, not brand order: slash-join order within a slot follows it.
+        ordering = ['mpn', 'id']
 
     def __str__(self):
         return f"{self.brand} x{self.qty}" if self.brand else f"Chip x{self.qty}"

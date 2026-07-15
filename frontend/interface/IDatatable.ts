@@ -73,7 +73,12 @@ export interface MPN {
   part_type: string;
   beforecut_weight: number | null;
   aftercut_weight: number | null;
+  /** @deprecated Hand-maintained and redundant — use the derived slot_count / chips_per_board. */
   chip_qty: number | null;
+  /** Physical chip slots on one board (interchangeable alternates count once). */
+  slot_count?: number;
+  /** Chips harvested from ONE board — sum of each slot's per-board qty. */
+  chips_per_board?: number;
   cutboard_cost: number | null;
   beforecut_photo_url?: string | null;
   aftercut_photo_url?: string | null;
@@ -114,7 +119,11 @@ export interface Chip {
   chip_type: string;
   chip_photo: string | null;
   chip_photo_url: string | null;
-  qty: number;
+  /** BOM qty: how many of this chip sit on ONE board. null = not yet known. */
+  qty: number | null;
+  /** Chips sharing a slot_group are interchangeable alternates in one board slot. */
+  slot_group: string;
+  item_group: string;
   cut_fail: number | null;
   chip_cost: number | null;
   description: string;
@@ -133,6 +142,12 @@ export interface PalletChipContainer {
   packaging_type?: string;
   qty?: number;
   inventory_qty?: number;
+  pallet_seq?: number;
+  chip_brand?: string;
+  chip_type?: string;
+  chip_description?: string;
+  chip_item_group?: string;
+  chip_slot_group?: string;
 }
 
 export interface MPNReportConfig {

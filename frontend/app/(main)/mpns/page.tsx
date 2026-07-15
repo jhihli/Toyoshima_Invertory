@@ -7,6 +7,7 @@ import {
   Field, useToast, thS, tdS, ghostBtn,
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
+import { slotCount } from '@/app/lib/chipSlots';
 import type { MPN, MPNReportConfig, MPNReportStatus } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -33,7 +34,6 @@ export default function MPNsPage() {
   const [partType, setPartType] = useState('');
   const [beforecutQty, setBeforecutQty] = useState('');
   const [aftercutQty, setAftercutQty] = useState('');
-  const [chipQty, setChipQty] = useState('');
   const [cutboardCost, setCutboardCost] = useState('');
   const [note, setNote] = useState('');
 
@@ -67,7 +67,7 @@ export default function MPNsPage() {
 
   const openNew = () => {
     setModalMpn(null);
-    setName(''); setPartType(''); setBeforecutQty(''); setAftercutQty(''); setChipQty(''); setCutboardCost(''); setNote('');
+    setName(''); setPartType(''); setBeforecutQty(''); setAftercutQty(''); setCutboardCost(''); setNote('');
     setBeforecutFile(null); setAftercutFile(null);
     setBeforecutPreview(null); setAftercutPreview(null);
     setModalOpen(true);
@@ -79,7 +79,6 @@ export default function MPNsPage() {
     setPartType(m.part_type ?? '');
     setBeforecutQty(m.beforecut_weight != null ? String(m.beforecut_weight) : '');
     setAftercutQty(m.aftercut_weight != null ? String(m.aftercut_weight) : '');
-    setChipQty(m.chip_qty != null ? String(m.chip_qty) : '');
     setCutboardCost(m.cutboard_cost != null ? String(m.cutboard_cost) : '');
     setNote(m.note ?? '');
     setBeforecutFile(null); setAftercutFile(null);
@@ -118,7 +117,6 @@ export default function MPNsPage() {
       name, part_type: partType,
       beforecut_weight: beforecutQty !== '' ? +beforecutQty : null,
       aftercut_weight: aftercutQty !== '' ? +aftercutQty : null,
-      chip_qty: chipQty !== '' ? +chipQty : null,
       cutboard_cost: cutboardCost !== '' ? +cutboardCost : null,
       note,
     };
@@ -200,8 +198,10 @@ export default function MPNsPage() {
 
       for (const mpn of details) {
         const chips = mpn.chips ?? [];
-        const chipCost = mpn.cutboard_cost != null && chips.length > 0
-          ? parseFloat((Number(mpn.cutboard_cost) / chips.length).toFixed(4))
+        // Cut cost divides across SLOTS, not chip rows: interchangeable alternates share one.
+        const nSlots = slotCount(chips);
+        const chipCost = mpn.cutboard_cost != null && nSlots > 0
+          ? parseFloat((Number(mpn.cutboard_cost) / nSlots).toFixed(4))
           : null;
         const boardCount = mpn.board_count ?? 0;
         const startRow = currentRow;
@@ -396,7 +396,7 @@ export default function MPNsPage() {
                   </div>
                   <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: 'var(--ink-3)' }}>
                     <span><span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-4)' }}>BF/AF</span> <span className="num">{m.beforecut_weight ?? '—'} / {m.aftercut_weight ?? '—'}</span></span>
-                    <span><span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-4)' }}>Chips</span> <span className="num">{m.chip_qty ?? '—'}</span></span>
+                    <span><span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-4)' }}>Chips</span> <span className="num">{m.chips_per_board ?? '—'}</span></span>
                     <span className="num" style={{
                       padding: '1px 7px', fontSize: 11,
                       background: bc > 0 ? '#e6f4ea' : 'var(--surface-2)',
@@ -470,7 +470,7 @@ export default function MPNsPage() {
                       <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{m.part_type || '—'}</td>
                       <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.beforecut_weight ?? '—'}</td>
                       <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.aftercut_weight ?? '—'}</td>
-                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.chip_qty ?? '—'}</td>
+                      <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.chips_per_board ?? '—'}</td>
                       <td style={{ ...tdS, textAlign: 'right' }}>
                         <span className="num" style={{
                           display: 'inline-block', padding: '2px 8px', fontSize: 12,
@@ -534,9 +534,6 @@ export default function MPNsPage() {
           </Field>
           <Field label="After Cut Wt">
             <Input value={aftercutQty} onChange={setAftercutQty} type="number" placeholder="—" />
-          </Field>
-          <Field label="Chip Qty">
-            <Input value={chipQty} onChange={setChipQty} type="number" placeholder="—" />
           </Field>
           <Field label="Cutboard Cost">
             <Input value={cutboardCost} onChange={setCutboardCost} type="number" placeholder="—" />

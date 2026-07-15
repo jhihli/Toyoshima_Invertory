@@ -3,10 +3,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useParams } from 'next/navigation';
 import {
-  Button, Breadcrumbs, Field, Input, Select, Modal,
+  Button, Breadcrumbs, Field, Input, Select, Modal, Badge,
   useToast, thS, tdS, ghostBtn, Empty,
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
+import { buildSlots, bomTotalQty, ITEM_GROUP_OPTIONS, MEMORY_SLOT_GROUP } from '@/app/lib/chipSlots';
 import type { MPN, Chip, ChipBrand } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -42,7 +43,18 @@ export default function MPNDetailPage() {
   }
 
   const chips = mpn.chips ?? [];
-  const totalChips = chips.reduce((s, c) => s + c.qty, 0);
+  // Slots, not chip rows: interchangeable alternates (5 DRAMs that can fill one socket)
+  // are ONE slot. Every derived number — cut cost, chips per board — divides by slots.
+  const slots = buildSlots(chips);
+  const nSlots = slots.length;
+  const chipsPerBoard = bomTotalQty(chips);
+  // Slot A / B / C — the same letters the Board BOM sheet uses as its column headers, so a
+  // chip's position here lines up with where it lands in the export.
+  const slotOf = new Map<number, { letter: string; shared: boolean }>();
+  slots.forEach((slot, i) => {
+    const letter = String.fromCharCode(65 + i);
+    for (const c of slot.chips) slotOf.set(c.id, { letter, shared: slot.chips.length > 1 });
+  });
 
   const handleUpdateMPN = async (patch: Partial<MPN>) => {
     try {
@@ -58,7 +70,9 @@ export default function MPNDetailPage() {
     try {
       let chip = await api.mpns.chips.create(mpnId, {
         brand: data.brandId ? +data.brandId : null,
-        qty: +data.qty, chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
+        qty: data.qty !== '' ? +data.qty : null,
+        slot_group: data.slotGroup, item_group: data.itemGroup,
+        chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
         cut_fail: data.cutFail !== '' ? +data.cutFail : null,
         processed_type: data.processedType, packaging_type: data.packagingType,
       } as any);
@@ -73,7 +87,9 @@ export default function MPNDetailPage() {
     try {
       let chip = await api.mpns.chips.update(mpnId, chipId, {
         brand: data.brandId ? +data.brandId : null,
-        qty: +data.qty, chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
+        qty: data.qty !== '' ? +data.qty : null,
+        slot_group: data.slotGroup, item_group: data.itemGroup,
+        chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
         cut_fail: data.cutFail !== '' ? +data.cutFail : null,
         processed_type: data.processedType, packaging_type: data.packagingType,
       } as any);
@@ -150,7 +166,8 @@ export default function MPNDetailPage() {
                 {[
                   { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', mono: false },
                   { label: 'After Cut Wt', value: mpn.aftercut_weight ?? '—', mono: false },
-                  { label: 'Chip Qty', value: mpn.chip_qty ?? '—', mono: false },
+                  { label: 'Slots', value: nSlots, mono: false },
+                  { label: 'Chips / Board', value: chipsPerBoard, mono: false },
                   { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false },
                   { label: 'Boards (Scanned)', value: mpn.board_count ?? 0, mono: false },
                   { label: 'Part Type', value: mpn.part_type || '—', mono: true },
@@ -177,7 +194,8 @@ export default function MPNDetailPage() {
                 {[
                   { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', mono: false, flex: '0 0 112px' },
                   { label: 'After Cut Wt', value: mpn.aftercut_weight ?? '—', mono: false, flex: '0 0 112px' },
-                  { label: 'Chip Qty', value: mpn.chip_qty ?? '—', mono: false, flex: '0 0 90px' },
+                  { label: 'Slots', value: nSlots, mono: false, flex: '0 0 70px' },
+                  { label: 'Chips / Board', value: chipsPerBoard, mono: false, flex: '0 0 96px' },
                   { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false, flex: '0 0 110px' },
                   { label: 'Boards (Scanned)', value: mpn.board_count ?? 0, mono: false, flex: '0 0 120px' },
                   { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false, flex: '0 0 100px' },
@@ -201,7 +219,12 @@ export default function MPNDetailPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <span style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-4)', fontWeight: 500 }}>Chips</span>
             <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              {chips.length} brand{chips.length !== 1 ? 's' : ''} · {totalChips} chip{totalChips !== 1 ? 's' : ''}
+              {chips.length} part{chips.length !== 1 ? 's' : ''} in {nSlots} slot{nSlots !== 1 ? 's' : ''}
+              {chips.length > nSlots && (
+                <span style={{ color: 'var(--ink-4)' }}>
+                  {' '}({slots.filter(s => s.chips.length > 1).map(s => `${s.chips.length} alternates share slot ${String.fromCharCode(65 + slots.indexOf(s))}`).join(', ')})
+                </span>
+              )}
               {' · '}{chips.filter(c => c.chip_photo_url).length}/{chips.length} with photo
             </span>
             <div style={{ flex: 1 }} />
@@ -210,70 +233,94 @@ export default function MPNDetailPage() {
 
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
             <div className="table-scroll">
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 820 }}>
+            {/* Fixed layout: the px widths below must stay <= minWidth, or the last
+                auto-width column collapses and its text spills over its neighbour. */}
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1280 }}>
               <colgroup>
-                <col style={{ width: '15%' }} />
-                <col style={{ width: '13%' }} />
-                <col style={{ width: '11%' }} />
-                <col style={{ width: 60 }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '7%' }} />
-                <col style={{ width: '13%' }} />
-                <col style={{ width: '13%' }} />
-                <col />
-                <col style={{ width: 100 }} />
+                <col style={{ width: 120 }} />{/* Brand */}
+                <col style={{ width: 150 }} />{/* Chip MPN */}
+                <col style={{ width: 90 }} />{/* Type */}
+                <col style={{ width: 80 }} />{/* Slot */}
+                <col style={{ width: 64 }} />{/* Photo */}
+                <col style={{ width: 96 }} />{/* Qty/Board */}
+                <col style={{ width: 84 }} />{/* Cut Fail */}
+                <col style={{ width: 92 }} />{/* Chip Cost */}
+                <col style={{ width: 124 }} />{/* Processed Type */}
+                <col style={{ width: 124 }} />{/* Packaging Type */}
+                <col />{/* Description — takes the remainder */}
+                <col style={{ width: 96 }} />{/* actions */}
               </colgroup>
               <thead>
                 <tr>
-                  <th style={thS}>Brand</th>
-                  <th style={thS}>Chip MPN</th>
-                  <th style={thS}>Type</th>
-                  <th style={thS}>Photo</th>
-                  <th style={{ ...thS, textAlign: 'right' }}>Cut Fail</th>
-                  <th style={{ ...thS, textAlign: 'right' }}>Chip Cost</th>
-                  <th style={thS}>Processed Type</th>
-                  <th style={thS}>Packaging Type</th>
-                  <th style={thS}>Description</th>
-                  <th style={{ ...thS, textAlign: 'right' }}></th>
+                  <th style={chipThS}>Brand</th>
+                  <th style={chipThS}>Chip MPN</th>
+                  <th style={chipThS}>Type</th>
+                  <th style={chipThS}>Slot</th>
+                  <th style={chipThS}>Photo</th>
+                  <th style={{ ...chipThS, textAlign: 'right' }}>Qty/Board</th>
+                  <th style={{ ...chipThS, textAlign: 'right' }}>Cut Fail</th>
+                  <th style={{ ...chipThS, textAlign: 'right' }}>Chip Cost</th>
+                  <th style={chipThS}>Processed Type</th>
+                  <th style={chipThS}>Packaging Type</th>
+                  <th style={chipThS}>Description</th>
+                  <th style={{ ...chipThS, textAlign: 'right' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {chips.length === 0 && (
-                  <tr><td colSpan={10}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
+                  <tr><td colSpan={12}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
                 )}
                 {chips.map(chip => (
                   <tr key={chip.id} className="chip-row" style={{ borderTop: '1px solid var(--hair)' }}>
-                    <td style={{ ...tdS, fontSize: 13, fontWeight: 500 }}>
+                    <td style={{ ...chipTdS, fontSize: 13, fontWeight: 500 }}>
                       {chip.brand_name || <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
-                    <td style={{ ...tdS, fontSize: 12 }} className="mono">
+                    <td style={{ ...chipTdS, fontSize: 12 }} className="mono">
                       {chip.chip_mpn || <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }}>
+                    <td style={{ ...chipTdS, fontSize: 12, color: 'var(--ink-2)' }}>
                       {chip.chip_type || <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
-                    <td style={{ ...tdS, padding: '8px 12px' }}>
+                    <td style={{ ...chipTdS, fontSize: 12 }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
+                        <Badge>{slotOf.get(chip.id)?.letter ?? '—'}</Badge>
+                        {slotOf.get(chip.id)?.shared && (
+                          <span
+                            title={`Shares slot ${slotOf.get(chip.id)!.letter} with the other "${chip.slot_group}" chips — only one is on any given board`}
+                            style={{ fontSize: 10.5, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}
+                          >
+                            {chip.slot_group}
+                          </span>
+                        )}
+                      </span>
+                    </td>
+                    <td style={{ ...chipTdS, padding: '8px 10px' }}>
                       <ChipPhotoCell
                         src={chip.chip_photo_url}
                         onView={() => chip.chip_photo_url && setLightbox({ src: chip.chip_photo_url, title: [chip.brand_name, chip.chip_mpn].filter(Boolean).join(' · ') || 'Chip Photo' })}
                       />
                     </td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">
+                    <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
+                      {chip.qty != null ? chip.qty : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                    </td>
+                    <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
                       {chip.cut_fail != null ? chip.cut_fail : 0}
                     </td>
-                    <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                      {mpn.cutboard_cost != null && chips.length > 0
-                        ? (Number(mpn.cutboard_cost) / chips.length).toFixed(3)
+                    <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
+                      {mpn.cutboard_cost != null && nSlots > 0
+                        ? (Number(mpn.cutboard_cost) / nSlots).toFixed(3)
                         : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }}>
+                    <td style={{ ...chipTdS, fontSize: 12, color: 'var(--ink-2)' }}>
                       {chip.processed_type || 'harvested'}
                     </td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-2)' }}>
+                    <td style={{ ...chipTdS, fontSize: 12, color: 'var(--ink-2)' }}>
                       {chip.packaging_type || 'tray'}
                     </td>
-                    <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{chip.description || <span style={{ color: 'var(--ink-4)' }}>—</span>}</td>
-                    <td style={{ ...tdS, textAlign: 'right' }}>
+                    <td style={{ ...chipTdS, fontSize: 12, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={chip.description || undefined}>
+                      {chip.description || <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                    </td>
+                    <td style={{ ...chipTdS, textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: 6 }}>
                         <button onClick={e => { e.stopPropagation(); setEditingChip(chip); }} style={chipIconBtn} title="Edit"><EditIcon /></button>
                         <button onClick={e => { e.stopPropagation(); setDeleteChipId(chip.id); }} style={{ ...chipIconBtn, color: 'var(--err)' }} title="Delete"><TrashIcon /></button>
@@ -298,10 +345,8 @@ export default function MPNDetailPage() {
         <p style={{ margin: 0, fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.6 }}>Are you sure you want to delete this chip? This action cannot be undone.</p>
       </Modal>
       <EditMPNModal open={editOpen} mpn={mpn} onClose={() => setEditOpen(false)} onSave={handleUpdateMPN} />
-      <AddChipModal open={addChipOpen} chipBrands={chipBrands} onClose={() => setAddChipOpen(false)} onAdd={handleAddChip}
-        boardCount={mpn.board_count ?? 0} />
-      {editingChip && <AddChipModal open={true} mode="edit" initial={editingChip} chipBrands={chipBrands} onClose={() => setEditingChip(null)} onAdd={data => handleUpdateChip(editingChip.id, data)}
-        boardCount={mpn.board_count ?? 0} />}
+      <AddChipModal open={addChipOpen} chipBrands={chipBrands} onClose={() => setAddChipOpen(false)} onAdd={handleAddChip} />
+      {editingChip && <AddChipModal open={true} mode="edit" initial={editingChip} chipBrands={chipBrands} onClose={() => setEditingChip(null)} onAdd={data => handleUpdateChip(editingChip.id, data)} />}
       <Lightbox src={lightbox?.src ?? null} title={lightbox?.title} onClose={() => setLightbox(null)} />
     </div>
   );
@@ -374,6 +419,15 @@ function PhotoCard({ label, photoUrl, onView, onUpload, onDelete }: {
   );
 }
 
+// Tighter padding than the shared thS (12 columns to fit), and nowrap so a header can
+// never overflow its column and land on top of the next one.
+const chipThS: React.CSSProperties = {
+  ...thS, padding: '10px 10px', whiteSpace: 'nowrap',
+};
+// Body padding must match chipThS horizontally, or right-aligned numbers stagger
+// against their headers.
+const chipTdS: React.CSSProperties = { ...tdS, padding: '6px 10px' };
+
 const chipIconBtn: React.CSSProperties = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
   width: 32, height: 32, background: 'transparent', border: '1px solid var(--hair)',
@@ -409,7 +463,6 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
   const [partType, setPartType] = useState(mpn.part_type);
   const [beforecutQty, setBeforecutQty] = useState(mpn.beforecut_weight != null ? String(mpn.beforecut_weight) : '');
   const [aftercutQty, setAftercutQty] = useState(mpn.aftercut_weight != null ? String(mpn.aftercut_weight) : '');
-  const [chipQty, setChipQty] = useState(mpn.chip_qty != null ? String(mpn.chip_qty) : '');
   const [cutboardCost, setCutboardCost] = useState(mpn.cutboard_cost != null ? String(mpn.cutboard_cost) : '');
   const [note, setNote] = useState(mpn.note ?? '');
 
@@ -418,7 +471,6 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
       setName(mpn.name); setPartType(mpn.part_type);
       setBeforecutQty(mpn.beforecut_weight != null ? String(mpn.beforecut_weight) : '');
       setAftercutQty(mpn.aftercut_weight != null ? String(mpn.aftercut_weight) : '');
-      setChipQty(mpn.chip_qty != null ? String(mpn.chip_qty) : '');
       setCutboardCost(mpn.cutboard_cost != null ? String(mpn.cutboard_cost) : '');
       setNote(mpn.note ?? '');
     }
@@ -432,7 +484,6 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
           name, part_type: partType,
           beforecut_weight: beforecutQty !== '' ? +beforecutQty : null,
           aftercut_weight: aftercutQty !== '' ? +aftercutQty : null,
-          chip_qty: chipQty !== '' ? +chipQty : null,
           cutboard_cost: cutboardCost !== '' ? +cutboardCost : null,
           note,
         })}>Save</Button>
@@ -442,7 +493,6 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
         <Field label="Part Type" span={2}><Input value={partType} onChange={setPartType} placeholder="e.g. IC" /></Field>
         <Field label="Before Cut Wt"><Input value={beforecutQty} onChange={setBeforecutQty} type="number" placeholder="—" /></Field>
         <Field label="After Cut Wt"><Input value={aftercutQty} onChange={setAftercutQty} type="number" placeholder="—" /></Field>
-        <Field label="Chip Qty"><Input value={chipQty} onChange={setChipQty} type="number" placeholder="—" /></Field>
         <Field label="Cutboard Cost"><Input value={cutboardCost} onChange={setCutboardCost} type="number" placeholder="—" /></Field>
         <Field label="Note" span={2}>
           <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Optional notes…" rows={3}
@@ -453,7 +503,7 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
   );
 }
 
-type ChipFormData = { brandId: string; qty: string; chipMpn: string; chipType: string; description: string; cutFail: string; processedType: string; packagingType: string; photoFile?: File | null; clearPhoto?: boolean; };
+type ChipFormData = { brandId: string; qty: string; slotGroup: string; itemGroup: string; chipMpn: string; chipType: string; description: string; cutFail: string; processedType: string; packagingType: string; photoFile?: File | null; clearPhoto?: boolean; };
 
 function ChipPhotoSquare({ value, onChange }: { value: { src: string; name?: string; file?: File } | null; onChange: (v: { src: string; name: string; file: File } | null) => void; }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -570,19 +620,26 @@ const PROCESSED_TYPE_OPTIONS = [
 const PACKAGING_TYPE_OPTIONS = [
   { value: 'tray', label: 'Tray' },
   { value: 'reel', label: 'Reel' },
+  { value: 'bag', label: 'Bag' },
 ];
 
-function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd, boardCount }: {
-  open: boolean; mode?: 'add' | 'edit'; initial?: Chip | null; chipBrands: ChipBrand[]; onClose: () => void; onAdd: (data: ChipFormData) => void; boardCount: number;
+function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd }: {
+  open: boolean; mode?: 'add' | 'edit'; initial?: Chip | null; chipBrands: ChipBrand[]; onClose: () => void; onAdd: (data: ChipFormData) => void;
 }) {
   const isMobile = useIsMobile();
   const [brandId, setBrandId] = useState('');
   const [chipMpn, setChipMpn] = useState('');
   const [chipType, setChipType] = useState('');
   const [description, setDescription] = useState('');
+  const [qty, setQty] = useState('');
+  const [slotGroup, setSlotGroup] = useState('');
+  const [itemGroup, setItemGroup] = useState('');
   const [cutFail, setCutFail] = useState('');
   const [processedType, setProcessedType] = useState('harvested');
   const [packagingType, setPackagingType] = useState('tray');
+  // Slot Group lives in a collapsed "Advanced" section — most chips have their own slot
+  // and never touch it. Open it automatically when a slot group is actually set.
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [photo, setPhoto] = useState<{ src: string; name?: string; file?: File } | null>(null);
   const initialPhotoUrl = initial?.chip_photo_url ?? null;
 
@@ -592,16 +649,31 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
       setChipMpn(initial?.chip_mpn ?? '');
       setChipType(initial?.chip_type ?? '');
       setDescription(initial?.description ?? '');
+      // A new chip really defaults to 1 per board — don't leave it blank and let a grey
+      // placeholder masquerade as a value. On edit, show whatever is actually stored.
+      setQty(initial?.qty != null ? String(initial.qty) : (mode === 'add' ? '1' : ''));
+      setSlotGroup(initial?.slot_group ?? '');
+      setItemGroup(initial?.item_group ?? '');
+      setAdvancedOpen((initial?.slot_group ?? '').trim() !== '');
       setCutFail(initial?.cut_fail != null ? String(initial.cut_fail) : '');
       setProcessedType(initial?.processed_type ?? 'harvested');
       setPackagingType(initial?.packaging_type ?? 'tray');
       setPhoto(initial?.chip_photo_url ? { src: initial.chip_photo_url, name: initial.chip_photo_url.split('/').pop() } : null);
     }
-  }, [open, initial]);
+  }, [open, initial, mode]);
+
+  // Memory chips are the interchangeable ones on these boards, so tagging a chip Memory
+  // pre-fills its slot group. Written into the visible field rather than applied as a
+  // hidden rule, so a board with two distinct Memory sockets can still split them.
+  const changeItemGroup = (next: string) => {
+    setItemGroup(next);
+    if (next === 'Memory' && slotGroup.trim() === '') setSlotGroup(MEMORY_SLOT_GROUP);
+    else if (next !== 'Memory' && slotGroup.trim() === MEMORY_SLOT_GROUP) setSlotGroup('');
+  };
 
   const submit = () => {
     onAdd({
-      brandId, qty: String(boardCount), chipMpn, chipType, description, cutFail,
+      brandId, qty, slotGroup: slotGroup.trim(), itemGroup, chipMpn, chipType, description, cutFail,
       processedType, packagingType,
       photoFile: photo?.file ?? null,
       clearPhoto: !photo && !!initialPhotoUrl,
@@ -609,35 +681,71 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={mode === 'edit' ? 'Edit Chip' : 'Add Chip'} width={560}
+    <Modal open={open} onClose={onClose} title={mode === 'edit' ? 'Edit Chip' : 'Add Chip'} width={580}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit}>{mode === 'edit' ? 'Save' : 'Add'}</Button>
       </>}>
-      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 180px', gap: 18 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 180px', gap: 20 }}>
         <div>
-          <Field label="Brand"><Select value={brandId} onChange={setBrandId} options={[{ value: '', label: 'No brand' }, ...chipBrands.map(b => ({ value: String(b.id), label: b.name }))]} /></Field>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <Field label="Chip MPN"><Input value={chipMpn} onChange={setChipMpn} placeholder="e.g. TPS62130" /></Field>
             <Field label="Type"><Input value={chipType} onChange={setChipType} placeholder="e.g. DC-DC" /></Field>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
-            <Field label="Processed Type">
-              <Select value={processedType} onChange={setProcessedType} options={PROCESSED_TYPE_OPTIONS} />
-            </Field>
-            <Field label="Packaging Type">
-              <Select value={packagingType} onChange={setPackagingType} options={PACKAGING_TYPE_OPTIONS} />
-            </Field>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '110px 110px', gap: 10, marginTop: 12 }}>
-            <Field label="Qty">
-              <Input value={String(boardCount)} onChange={() => {}} type="number" disabled />
-              <div style={{ fontSize: 11, marginTop: 3, color: 'var(--ink-4)' }}>From boards scanned</div>
-            </Field>
+            <Field label="Brand"><Select value={brandId} onChange={setBrandId} options={[{ value: '', label: 'No brand' }, ...chipBrands.map(b => ({ value: String(b.id), label: b.name }))]} /></Field>
+            <Field label="Item Group"><Select value={itemGroup} onChange={changeItemGroup} options={ITEM_GROUP_OPTIONS} /></Field>
+            <Field label="Processed Type"><Select value={processedType} onChange={setProcessedType} options={PROCESSED_TYPE_OPTIONS} /></Field>
+            <Field label="Packaging Type"><Select value={packagingType} onChange={setPackagingType} options={PACKAGING_TYPE_OPTIONS} /></Field>
+            <Field label="Qty / Board"><Input value={qty} onChange={setQty} type="number" placeholder="1" /></Field>
             <Field label="Cut Fail"><Input value={cutFail} onChange={setCutFail} type="number" placeholder="—" /></Field>
+            <Field label="Description" span={2}><Input value={description} onChange={setDescription} placeholder="Optional" /></Field>
           </div>
-          <div style={{ marginTop: 12 }}>
-            <Field label="Description"><Input value={description} onChange={setDescription} placeholder="Optional" /></Field>
+          <div style={{ fontSize: 11, marginTop: 8, color: 'var(--ink-4)', lineHeight: 1.55 }}>
+            <b style={{ color: 'var(--ink-3)' }}>Item Group</b> classifies the chip for the customer&apos;s bid sheet — picking <b style={{ color: 'var(--ink-3)' }}>Memory</b> pre-fills the slot below.
+            {' '}<b style={{ color: 'var(--ink-3)' }}>Qty / Board</b> is per single board, almost always 1.
+          </div>
+
+          <div style={{ marginTop: 16, borderTop: '1px solid var(--hair)', paddingTop: 12 }}>
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen(o => !o)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                background: 'none', border: 0, padding: 0, cursor: 'pointer',
+                color: 'var(--ink-2)', fontSize: 12, fontWeight: 600, textAlign: 'left', letterSpacing: '0.02em',
+              }}
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                style={{ flexShrink: 0, transition: 'transform 0.15s', transform: advancedOpen ? 'rotate(90deg)' : 'none' }}>
+                <polyline points="9 6 15 12 9 18" />
+              </svg>
+              <span>Advanced</span>
+              {!advancedOpen && slotGroup.trim() && (
+                <span style={{
+                  marginLeft: 'auto', fontSize: 10.5, fontWeight: 500, color: 'var(--ink-3)',
+                  background: 'var(--surface-2)', border: '1px solid var(--hair-strong)',
+                  borderRadius: 999, padding: '2px 9px', letterSpacing: 0,
+                }}>
+                  slot {slotGroup.trim()}
+                </span>
+              )}
+            </button>
+            {advancedOpen && (
+              <div style={{
+                marginTop: 12, padding: 14, background: 'var(--surface-2)',
+                border: '1px solid var(--hair)', borderRadius: 3,
+              }}>
+                <Field label="Slot Group">
+                  <Input value={slotGroup} onChange={setSlotGroup} placeholder="blank = its own slot" />
+                </Field>
+                <div style={{ fontSize: 11, marginTop: 8, color: 'var(--ink-4)', lineHeight: 1.55 }}>
+                  <b style={{ color: 'var(--ink-3)' }}>Where</b> this chip sits on the board. Chips with the
+                  <b style={{ color: 'var(--ink-3)' }}> same slot name</b> are interchangeable in one socket and count as
+                  <b style={{ color: 'var(--ink-3)' }}> one slot</b> — only one is on any given board. This drives the cut
+                  cost and chips-per-board. Leave blank if the chip has a slot to itself.
+                </div>
+              </div>
+            )}
           </div>
         </div>
         <div>

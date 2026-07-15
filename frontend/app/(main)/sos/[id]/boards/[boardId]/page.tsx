@@ -54,7 +54,7 @@ export default function BoardDetailPage() {
     return <div className="page-pad" style={{ color: 'var(--ink-3)', fontSize: 13 }}>Loading…</div>;
   }
 
-  const totalChips = board.chips.reduce((s, c) => s + c.qty, 0);
+  const totalChips = board.chips.reduce((s, c) => s + (c.qty ?? 0), 0);
 
   const handleUpdateChip = async (chipId: number, patch: Partial<Chip>) => {
     try {

@@ -86,7 +86,7 @@ class ChipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Chip
-        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'cut_fail', 'chip_cost', 'description', 'processed_type', 'packaging_type']
+        fields = ['id', 'mpn', 'brand', 'brand_name', 'chip_mpn', 'chip_type', 'chip_photo', 'chip_photo_url', 'qty', 'slot_group', 'item_group', 'cut_fail', 'chip_cost', 'description', 'processed_type', 'packaging_type']
 
     def get_brand_name(self, obj):
         if obj.brand:
@@ -111,10 +111,12 @@ class MPNSerializer(serializers.ModelSerializer):
     board_count = serializers.SerializerMethodField(read_only=True)
     chip_brands = serializers.SerializerMethodField(read_only=True)
     latest_board_date = serializers.SerializerMethodField(read_only=True)
+    slot_count = serializers.IntegerField(read_only=True)
+    chips_per_board = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = MPN
-        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'cutboard_cost', 'note', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count', 'chip_brands', 'latest_board_date']
+        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'cutboard_cost', 'note', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count', 'chip_brands', 'latest_board_date', 'slot_count', 'chips_per_board']
         read_only_fields = ['created_at']
 
     def get_board_count(self, obj):
@@ -220,7 +222,7 @@ class BoardSerializer(serializers.ModelSerializer):
     def get_chip_count(self, obj):
         if not obj.mpn_id:
             return 0
-        return sum(c.qty for c in obj.mpn.chips.all())
+        return sum(c.qty or 0 for c in obj.mpn.chips.all())
 
     def get_pallet_label(self, obj):
         if not obj.pallet_id:
@@ -239,6 +241,46 @@ class BoardSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.photo.url)
         return obj.photo.url
+
+
+class MPNLiteSerializer(serializers.ModelSerializer):
+    """Trimmed MPN payload for the boards-list grouping UI.
+
+    Deliberately omits MPNSerializer's SerializerMethodFields (board_count, chip_brands,
+    latest_board_date) — each fires its own COUNT/aggregate query, so including them means
+    one extra query per board (hundreds per page). `chips_per_board` is a model property
+    served off the prefetched chips, so it costs no extra query. The boards tab only needs
+    these fields.
+    """
+    chips_per_board = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = MPN
+        fields = ['id', 'name', 'part_type', 'created_at', 'chips_per_board']
+
+
+class BoardListSerializer(serializers.ModelSerializer):
+    """Lightweight board row for the SO boards tab.
+
+    Drops the per-board `chips`/`chip_count` payload — it is unused by the list UI and is
+    identical for every board of the same MPN — and swaps the full MPN object for
+    MPNLiteSerializer. Use the full BoardSerializer (via ?include_chips=1) when the chip BOM
+    is actually needed, e.g. the Excel export.
+    """
+    mpn = MPNLiteSerializer(read_only=True)
+    pallet_label = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Board
+        fields = ['id', 'so', 'pallet', 'pallet_label', 'barcode', 'mpn', 'qty', 'scanned_at']
+        read_only_fields = ['scanned_at']
+
+    def get_pallet_label(self, obj):
+        if not obj.pallet_id:
+            return None
+        p = obj.pallet
+        parts = [x for x in [p.licence_number, p.gateload_number] if x]
+        return '-'.join(parts) if parts else f'#{p.pallet_seq:02d}'
 
 
 class SOSerializer(serializers.ModelSerializer):
@@ -329,10 +371,21 @@ class PalletChipContainerWithChipSerializer(serializers.ModelSerializer):
     packaging_type = serializers.CharField(source='chip.packaging_type', read_only=True)
     qty = serializers.IntegerField(source='chip.qty', read_only=True)
     inventory_qty = serializers.SerializerMethodField(read_only=True)
+    pallet_seq = serializers.IntegerField(source='pallet.pallet_seq', read_only=True)
+    chip_brand = serializers.CharField(source='chip.brand.name', read_only=True, default='')
+    chip_type = serializers.CharField(source='chip.chip_type', read_only=True)
+    chip_description = serializers.CharField(source='chip.description', read_only=True)
+    chip_item_group = serializers.CharField(source='chip.item_group', read_only=True)
+    chip_slot_group = serializers.CharField(source='chip.slot_group', read_only=True)
 
     class Meta:
         model = PalletChipContainer
-        fields = ['id', 'pallet', 'chip', 'container_uid', 'actual_qty', 'chip_mpn', 'processed_type', 'packaging_type', 'qty', 'inventory_qty']
+        fields = [
+            'id', 'pallet', 'chip', 'container_uid', 'actual_qty',
+            'chip_mpn', 'processed_type', 'packaging_type', 'qty', 'inventory_qty',
+            'pallet_seq', 'chip_brand', 'chip_type', 'chip_description',
+            'chip_item_group', 'chip_slot_group',
+        ]
 
     def get_inventory_qty(self, obj):
-        return obj.actual_qty if obj.actual_qty is not None else obj.chip.qty
+        return obj.actual_qty if obj.actual_qty is not None else (obj.chip.qty or 0)

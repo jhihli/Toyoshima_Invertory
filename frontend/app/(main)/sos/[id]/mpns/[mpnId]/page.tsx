@@ -6,6 +6,7 @@ import {
   Button, Breadcrumbs, useToast, thS, tdS, Empty,
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
+import { slotCount } from '@/app/lib/chipSlots';
 import type { MPN, Chip, PalletChipContainer } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -46,9 +47,10 @@ export default function SOContextMPNDetailPage() {
   }
 
   const chips = mpn.chips ?? [];
+  const nSlots = slotCount(chips);
   const totalActual = chips.reduce((s, c) => {
     const ctr = containers.get(c.id);
-    return s + (ctr?.actual_qty ?? c.qty);
+    return s + (ctr?.actual_qty ?? c.qty ?? 0);
   }, 0);
 
   const handleSaveContainer = async (chipId: number, uid: string, qty: number | null) => {
@@ -101,7 +103,7 @@ export default function SOContextMPNDetailPage() {
               {[
                 { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', flex: '0 0 112px' },
                 { label: 'After Cut Wt',  value: mpn.aftercut_weight ?? '—',  flex: '0 0 112px' },
-                { label: 'Chip Qty',       value: mpn.chip_qty ?? '—',          flex: '0 0 90px'  },
+                { label: 'Slots',          value: nSlots,                       flex: '0 0 70px'  },
                 { label: 'Cutboard Cost',  value: mpn.cutboard_cost ?? '—',     flex: '0 0 110px' },
                 { label: 'Boards (Scanned)', value: mpn.board_count ?? 0,       flex: '0 0 120px' },
                 { label: 'Part Type',      value: mpn.part_type || '—',         flex: '0 0 120px' },
@@ -202,8 +204,8 @@ export default function SOContextMPNDetailPage() {
                           {chip.cut_fail != null ? chip.cut_fail : 0}
                         </td>
                         <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                          {mpn.cutboard_cost != null && chips.length > 0
-                            ? (Number(mpn.cutboard_cost) / chips.length).toFixed(3)
+                          {mpn.cutboard_cost != null && nSlots > 0
+                            ? (Number(mpn.cutboard_cost) / nSlots).toFixed(3)
                             : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                         </td>
                         <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>

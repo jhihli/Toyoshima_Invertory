@@ -11,6 +11,11 @@ import {
   thS, tdS, ghostBtn,
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
+import {
+  buildSlots, buildGlobalSlots, slotCount, bomTotalQty, normalizeChipMpn,
+  CIRCULAR_CENTER, HARVEST_STATE, NG_UID,
+  type MpnEntry,
+} from '@/app/lib/chipSlots';
 import { WeightRuleField } from '../WeightRuleField';
 import type { SODetail, Pallet, Board, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
@@ -328,8 +333,9 @@ export default function SODetailPage() {
   const handleExport = async () => {
     toast('Preparing export…');
     try {
-      const allBoards = await api.boards.listBySO(soId, { page: 1, page_size: 9999 });
+      const allBoards = await api.boards.listBySO(soId, { page: 1, page_size: 9999, include_chips: 1 });
       const allBoardData = allBoards.results;
+      const allContainers = await api.sos.chipContainers(soId);
       const workbook = new ExcelJS.Workbook();
       const palletMap = new Map(so.pallets.map(p => [p.id, p]));
 
@@ -338,7 +344,6 @@ export default function SODetailPage() {
       const styleHdr = (row: ExcelJS.Row) => row.eachCell(cell => { cell.fill = HDR_FILL; cell.font = HDR_FONT; });
 
       // Build MPN map once (reused across sheets)
-      type MpnEntry = { mpn: NonNullable<Board['mpn']>; chips: Board['chips']; boardCount: number; latestDate: string };
       const mpnMap = new Map<number, MpnEntry>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
@@ -346,6 +351,16 @@ export default function SODetailPage() {
         const entry = mpnMap.get(b.mpn.id)!;
         entry.boardCount++;
         if (b.scanned_at > entry.latestDate) entry.latestDate = b.scanned_at;
+      }
+
+      // Chips that failed the cut land in a container whose UID is the literal string "NG".
+      // (Sellable quantities are NOT summed here: Bid_Template_Chip reads them straight off
+      // the Inventory sheet with a SUMIF, so the workbook updates itself after a paste.)
+      const ngQtyByChipId = new Map<number, number>();
+      for (const c of allContainers) {
+        if (c.container_uid === NG_UID) {
+          ngQtyByChipId.set(c.chip, (ngQtyByChipId.get(c.chip) ?? 0) + (c.actual_qty ?? 0));
+        }
       }
 
       // ── Sheet 1: Worksheet Descriptions (static) ─────────────────
@@ -380,62 +395,70 @@ export default function SODetailPage() {
 
       // ── Sheet 3: Processing PCB ───────────────────────────────────
       const wsPCB = workbook.addWorksheet('Processing PCB');
-      wsPCB.columns = [{ width: 18 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 10 }, { width: 14 }];
-      styleHdr(wsPCB.addRow(['Inbound LP No.', 'Date processed', 'Part type', 'MPN', 'Part Qty.', 'Chip Total Qty.']));
-      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chipTypeCount: number }>();
+      wsPCB.columns = [{ width: 18 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 10 }, { width: 14 }, { width: 16 }];
+      styleHdr(wsPCB.addRow(['Inbound LP No.', 'Date processed', 'Part type', 'MPN', 'Part Qty.', 'Chip Total Qty.', 'Chips per board']));
+      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chips: Chip[] }>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
         const pallet = b.pallet ? palletMap.get(b.pallet) : null;
         const lpNo = pallet?.licence_number || '';
         const key = `${lpNo}||${b.mpn.id}`;
-        const chipTypeCount = (b.chips ?? []).length;
-        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: b.scanned_at?.slice(0, 10) || '', partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chipTypeCount });
+        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: b.scanned_at?.slice(0, 10) || '', partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chips: b.chips ?? [] });
         const entry = pcbMap.get(key)!;
         entry.partQty++;
         if ((b.scanned_at || '') > (entry.date + 'T')) entry.date = b.scanned_at?.slice(0, 10) || '';
       }
       const pcbRows = [...pcbMap.values()].sort((a, b) => a.lpNo.localeCompare(b.lpNo));
-      for (const e of pcbRows) wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.chipTypeCount * e.partQty]);
+      let pcbFirstDataRow = 0;
+      let pcbLastDataRow = 0;
+      for (const e of pcbRows) {
+        // Chips harvested = boards x chips per board. Interchangeable alternates share one
+        // slot, so a 5-alternate DRAM slot still yields 1 chip per board, not 5.
+        const row = wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.partQty * bomTotalQty(e.chips)]);
+        // Chips on this board MPN = Chip Total Qty / Part Qty.
+        row.getCell(7).value = { formula: `F${row.number}/E${row.number}` };
+        if (!pcbFirstDataRow) pcbFirstDataRow = row.number;
+        pcbLastDataRow = row.number;
+      }
+      // Totals: Part Qty and Chip Total Qty summed; Chips per board = fleet-wide ratio F/E.
+      if (pcbFirstDataRow) {
+        const totalRow = wsPCB.addRow([]);
+        totalRow.getCell(5).value = { formula: `SUM(E${pcbFirstDataRow}:E${pcbLastDataRow})` };
+        totalRow.getCell(6).value = { formula: `SUM(F${pcbFirstDataRow}:F${pcbLastDataRow})` };
+        totalRow.getCell(7).value = { formula: `F${totalRow.number}/E${totalRow.number}` };
+      }
 
       // ── Sheet 4: Processing chips ─────────────────────────────────
+      // One row per slot, unioned across every MPN in the SO: the DRAM slot has 3
+      // alternates on one board type and 5 on another, but bills as a single line.
       const wsChipProc = workbook.addWorksheet('Processing chips');
       wsChipProc.columns = [{ width: 14 }, { width: 20 }, { width: 24 }, { width: 20 }, { width: 14 }, { width: 14 }];
       styleHdr(wsChipProc.addRow(['Date processed', 'process type', 'Chip MPN', 'Chips processed qty.', 'Chips failed', 'Failure rate']));
-      const chipProcMap = new Map<string, { date: string; chipMpn: string; processed: number; failed: number }>();
-      for (const [, { chips, boardCount, latestDate }] of mpnMap) {
-        for (const chip of chips ?? []) {
-          const key = chip.chip_mpn || '';
-          if (!chipProcMap.has(key)) chipProcMap.set(key, { date: latestDate.slice(0, 10), chipMpn: chip.chip_mpn || '', processed: 0, failed: 0 });
-          const entry = chipProcMap.get(key)!;
-          entry.processed += chip.qty;
-          entry.failed += chip.cut_fail ?? 0;
-          if (latestDate.slice(0, 10) > entry.date) entry.date = latestDate.slice(0, 10);
-        }
-      }
-      for (const e of chipProcMap.values()) {
-        const row = wsChipProc.addRow([e.date, 'Chip Harvest', e.chipMpn, e.processed, e.failed, e.processed > 0 ? e.failed / e.processed : 0]);
+      for (const gs of buildGlobalSlots([...mpnMap.values()], ngQtyByChipId)) {
+        const rate = gs.processedQty > 0 ? gs.failedQty / gs.processedQty : 0;
+        const row = wsChipProc.addRow([gs.date.slice(0, 10), 'Chip Harvest', gs.label, gs.processedQty, gs.failedQty, rate]);
         row.getCell(6).numFmt = '0.00%';
       }
 
       // ── Sheet 5: Inventory ───────────────────────────────────────
+      // Headers only, by design: the user pastes their own packing checklist in here.
+      // Do NOT emit container rows — they would be overwritten anyway, and pre-filled rows
+      // left below a shorter paste would silently double-count.
       const wsInventory = workbook.addWorksheet('Inventory');
-      wsInventory.columns = [{ width: 14 }, { width: 24 }, { width: 18 }, { width: 16 }, { width: 8 }];
-      styleHdr(wsInventory.addRow(['Container UID', 'Chip MPN', 'Processed type', 'Packaging type', 'Qty.']));
-      const allContainers = await api.sos.chipContainers(soId);
-      for (const c of allContainers) {
-        wsInventory.addRow([c.container_uid, c.chip_mpn || '', c.processed_type || 'harvested', c.packaging_type || 'tray', c.inventory_qty ?? c.qty ?? '']);
-      }
+      wsInventory.columns = [{ width: 10 }, { width: 14 }, { width: 24 }, { width: 18 }, { width: 16 }, { width: 8 }];
+      styleHdr(wsInventory.addRow(['Pallet', 'Container UID', 'Chip MPN', 'Processed type', 'Packaging type', 'Qty.']));
 
       // ── Sheet 6: Board BOM ────────────────────────────────────────
+      // One column pair per SLOT, not per chip. A slot's alternates are slash-joined.
       const mpnBomEntries = [...mpnMap.values()].map(({ mpn, chips }) => ({
         partType: mpn.part_type || '',
         mpnName: mpn.name,
-        chips: (chips ?? []).map(c => ({ chipMpn: c.chip_mpn || '', qty: c.qty })),
+        slots: buildSlots(chips),
       }));
-      const maxChips = Math.max(0, ...mpnBomEntries.map(e => e.chips.length));
+      const maxSlots = Math.max(0, ...mpnBomEntries.map(e => e.slots.length));
       const bomHeader: string[] = ['Part type', 'MPN'];
       const bomCols: { width: number }[] = [{ width: 14 }, { width: 20 }];
-      for (let i = 1; i <= maxChips; i++) {
+      for (let i = 1; i <= maxSlots; i++) {
         bomHeader.push(`Chip ${String.fromCharCode(64 + i)} MPN`, `Chip ${String.fromCharCode(64 + i)} Qty.`);
         bomCols.push({ width: 24 }, { width: 10 });
       }
@@ -444,38 +467,129 @@ export default function SODetailPage() {
       const wsBoardBom = workbook.addWorksheet('Board BOM');
       wsBoardBom.columns = bomCols;
       styleHdr(wsBoardBom.addRow(bomHeader));
-      for (const { partType, mpnName, chips } of mpnBomEntries) {
+      for (const { partType, mpnName, slots } of mpnBomEntries) {
         const row: (string | number)[] = [partType, mpnName];
         let total = 0;
-        for (let i = 0; i < maxChips; i++) {
-          const chip = chips[i];
-          row.push(chip?.chipMpn ?? '', chip ? chip.qty : '');
-          if (chip) total += chip.qty;
+        for (let i = 0; i < maxSlots; i++) {
+          const slot = slots[i];
+          row.push(slot?.label ?? '', slot ? slot.qtyPerBoard : '');
+          if (slot) total += slot.qtyPerBoard;
         }
         row.push(total || '');
         wsBoardBom.addRow(row);
       }
 
-      // ── Sheet 7: Chip BOM (with embedded photos) ──────────────────
-      const chipBomMap = new Map<string, { manufacturer: string; chipType: string; description: string; photoUrl: string }>();
+      const r3 = (n: number) => Math.round(n * 1000) / 1000;
+      // Excel Accounting format: "$" hugs the left edge, number right-aligned, 2 decimals.
+      const ACCOUNTING_FMT = '_("$"* #,##0.00_);_("$"* (#,##0.00);_("$"* "-"??_);_(@_)';
+
+      // ── Sheet 7: Activity Based Processing Cost (dynamic per MPN) ──
+      const wsActivityCost = workbook.addWorksheet('Activity Based Processing Cost');
+      wsActivityCost.columns = [
+        { width: 26 }, { width: 14 }, { width: 58 }, { width: 4 },
+        { width: 22 }, { width: 16 }, { width: 20 }, { width: 30 },
+      ];
+      // Header row (row 1) for the per-board-type roll-up columns E–H. Each MPN block below
+      // carries its own totals on the "Board part Number:" row (E–H), mirroring the template.
+      const abcHdr = wsActivityCost.addRow([
+        '', '', '', '',
+        'Qty of Boards Processed', '# chips per board', 'Total Chips Harvested',
+        'Total cost to process by board type',
+      ]);
+      for (let c = 5; c <= 8; c++) { abcHdr.getCell(c).fill = HDR_FILL; abcHdr.getCell(c).font = HDR_FONT; }
+
+      const sortedForABC = [...mpnMap.values()].sort((a, b) => b.boardCount - a.boardCount);
+      const abcHCells: string[] = [];   // H-cell of each block, for the grand total SUM
+      let abcLastTotalRow: ExcelJS.Row | null = null;
+      for (const entry of sortedForABC) {
+        const cutCost = r3(Number(entry.mpn.cutboard_cost ?? 0));
+        // Divide the board's cut cost across its SLOTS. Five interchangeable DRAMs are
+        // one slot, so a 3-slot board bills 0.7/3, not 0.7/5.
+        const nSlots = slotCount(entry.chips);
+        const chipCutCost = cutCost > 0 && nSlots > 0 ? r3(cutCost / nSlots) : null;
+        const cutDef = chipCutCost != null
+          ? `The cost to cut a single chip by board type (${cutCost}/${nSlots}=${chipCutCost})`
+          : 'The cost to cut a single chip by board type';
+
+        // Board part Number row — also carries the roll-up columns E–H.
+        const bpnRow = wsActivityCost.addRow(['Board part Number:', entry.mpn.name, '']);
+        bpnRow.getCell(1).fill = HDR_FILL; bpnRow.getCell(1).font = HDR_FONT;
+        bpnRow.getCell(2).font = { bold: true };
+        const bpnNum = bpnRow.number;
+        bpnRow.getCell(5).value = entry.boardCount;             // Qty of Boards Processed (= On Hand Inventory)
+        bpnRow.getCell(6).value = bomTotalQty(entry.chips);     // # chips per board (chips harvested per board)
+        bpnRow.getCell(7).value = { formula: `E${bpnNum}*F${bpnNum}` };       // Total Chips Harvested
+        // Total cost = harvested chips × per-chip total service cost (this block's Total row, col B).
+        bpnRow.getCell(8).value = { formula: `G${bpnNum}*B${bpnNum + 6}` };
+        bpnRow.getCell(8).numFmt = ACCOUNTING_FMT;   // "$" at the left of the value
+        abcHCells.push(`H${bpnNum}`);
+
+        // Column sub-headers
+        const subHdr = wsActivityCost.addRow(['Service', 'Cost', 'Definition']);
+        subHdr.eachCell(cell => { cell.fill = HDR_FILL; cell.font = HDR_FONT; });
+
+        // Data rows — track row range for Total formula
+        const dataStartRow = wsActivityCost.lastRow!.number + 1;
+        wsActivityCost.addRow(['Chip Cut Out',        chipCutCost ?? '', cutDef]);
+        wsActivityCost.addRow(['Chip Reball',         '', 'The cost to reball a single chip by chip type']);
+        wsActivityCost.addRow(['Chip Test',           '', 'The cost to test a single chip by chip type']);
+        wsActivityCost.addRow(['Chip Packaging tray', '', 'The cost to pack out a single chip by chip type']);
+        const dataEndRow = wsActivityCost.lastRow!.number;
+
+        // Total row
+        const totalRow = wsActivityCost.addRow(['Total', '', '']);
+        totalRow.getCell(2).value = { formula: `SUM(B${dataStartRow}:B${dataEndRow})` };
+        totalRow.getCell(1).font = { bold: true };
+        abcLastTotalRow = totalRow;
+
+        // Spacer between MPN blocks
+        wsActivityCost.addRow([]);
+      }
+      // Grand total of processing cost across all board types, on the last block's Total row.
+      if (abcLastTotalRow && abcHCells.length) {
+        abcLastTotalRow.getCell(7).value = 'Total';
+        abcLastTotalRow.getCell(7).font = { bold: true };
+        abcLastTotalRow.getCell(8).value = { formula: `SUM(${abcHCells.join(',')})` };
+        abcLastTotalRow.getCell(8).numFmt = ACCOUNTING_FMT;
+      }
+
+      // Chip BOM's Quantity and Bid_Template_Chip's Quantity are the SAME live formula: they
+      // sum the Inventory sheet's Qty column for every row whose Chip MPN matches. The user
+      // pastes their packing checklist into Inventory and these totals fill themselves in.
+      // Inventory layout: A=Pallet, B=Container UID, C=Chip MPN, D=Processed, E=Packaging, F=Qty.
+      const INV_MPN_COL = 'Inventory!$C:$C';
+      const INV_QTY_COL = 'Inventory!$F:$F';
+
+      // ── Sheet 8: Chip BOM (with embedded photos) ──────────────────
+      // Individual chips here, NOT slot groups — this is the catalogue of every distinct
+      // part, which is also what the Bid template enumerates.
+      const chipBomMap = new Map<string, { chipMpn: string; manufacturer: string; chipType: string; description: string; itemGroup: string; photoUrl: string }>();
       for (const b of allBoardData) {
         for (const chip of b.chips ?? []) {
-          if (!chip.chip_mpn || chipBomMap.has(chip.chip_mpn)) continue;
-          chipBomMap.set(chip.chip_mpn, {
+          const key = normalizeChipMpn(chip.chip_mpn);
+          if (!key || chipBomMap.has(key)) continue;
+          chipBomMap.set(key, {
+            chipMpn: chip.chip_mpn.trim(),
             manufacturer: chip.brand_name || '',
             chipType: chip.chip_type || '',
             description: chip.description || '',
+            itemGroup: chip.item_group || '',
             photoUrl: chip.chip_photo_url || '',
           });
         }
       }
-      console.log('[Export] Chip BOM photo URLs:', Array.from(chipBomMap.entries()).map(([k, v]) => ({ chip: k, photoUrl: v.photoUrl || '(none)' })));
       const wsChipBom = workbook.addWorksheet('Chip BOM');
-      wsChipBom.columns = [{ width: 24 }, { width: 18 }, { width: 14 }, { width: 30 }, { width: 18 }];
-      styleHdr(wsChipBom.addRow(['Chip MPN', 'Manufacturer', 'Chip type', 'Chip description', 'Chip picture']));
-      for (const [chipMpn, e] of chipBomMap.entries()) {
-        const dataRow = wsChipBom.addRow([chipMpn, e.manufacturer, e.chipType, e.description, '']);
+      wsChipBom.columns = [{ width: 24 }, { width: 18 }, { width: 14 }, { width: 30 }, { width: 18 }, { width: 12 }];
+      styleHdr(wsChipBom.addRow(['Chip MPN', 'Manufacturer', 'Chip type', 'Chip description', 'Chip picture', 'Quantity']));
+      let chipBomFirstDataRow = 0;
+      let chipBomLastDataRow = 0;
+      for (const e of chipBomMap.values()) {
+        const dataRow = wsChipBom.addRow([e.chipMpn, e.manufacturer, e.chipType, e.description, '', 0]);
         dataRow.height = 60;
+        // Same live formula as Bid_Template_Chip: sum Inventory Qty where Chip MPN (col A) matches.
+        dataRow.getCell(6).value = { formula: `SUMIF(${INV_MPN_COL},$A${dataRow.number},${INV_QTY_COL})` };
+        if (!chipBomFirstDataRow) chipBomFirstDataRow = dataRow.number;
+        chipBomLastDataRow = dataRow.number;
         if (e.photoUrl) {
           try {
             const res = await fetch(e.photoUrl);
@@ -494,49 +608,16 @@ export default function SODetailPage() {
             }
           } catch { /* skip failed image — leave cell empty */ }
         }
+        wsChipBom.addRow([]); // spacer so the photo has room to sit
+      }
+      // Quantity total. Spacer rows in the range are empty and contribute 0.
+      if (chipBomFirstDataRow) {
+        const totalRow = wsChipBom.addRow(['', '', '', '', 'Total', 0]);
+        totalRow.getCell(5).font = { bold: true };
+        totalRow.getCell(6).value = { formula: `SUM(F${chipBomFirstDataRow}:F${chipBomLastDataRow})` };
       }
 
-      const r3 = (n: number) => Math.round(n * 1000) / 1000;
-
-      // ── Sheet 8: Activity Based Processing Cost (dynamic per MPN) ──
-      const wsActivityCost = workbook.addWorksheet('Activity Based Processing Cost');
-      wsActivityCost.columns = [{ width: 26 }, { width: 14 }, { width: 58 }];
-      const sortedForABC = [...mpnMap.values()].sort((a, b) => b.boardCount - a.boardCount);
-      for (const entry of sortedForABC) {
-        const cutCost = r3(Number(entry.mpn.cutboard_cost ?? 0));
-        const chipTypeCount = entry.chips.length;
-        const chipCutCost = cutCost > 0 && chipTypeCount > 0 ? r3(cutCost / chipTypeCount) : null;
-        const cutDef = chipCutCost != null
-          ? `The cost to cut a single chip by board type (${cutCost}/${chipTypeCount}=${chipCutCost})`
-          : 'The cost to cut a single chip by board type';
-
-        // Board part Number row
-        const bpnRow = wsActivityCost.addRow(['Board part Number:', entry.mpn.name, '']);
-        bpnRow.getCell(1).fill = HDR_FILL; bpnRow.getCell(1).font = HDR_FONT;
-        bpnRow.getCell(2).font = { bold: true };
-
-        // Column sub-headers
-        const subHdr = wsActivityCost.addRow(['Service', 'Cost', 'Definition']);
-        subHdr.eachCell(cell => { cell.fill = HDR_FILL; cell.font = HDR_FONT; });
-
-        // Data rows — track row range for Total formula
-        const dataStartRow = wsActivityCost.lastRow!.number + 1;
-        wsActivityCost.addRow(['Chip Cut Out',        chipCutCost ?? '', cutDef]);
-        wsActivityCost.addRow(['Chip Reball',         '', 'The cost to reball a single chip by chip type']);
-        wsActivityCost.addRow(['Chip Test',           '', 'The cost to test a single chip by chip type']);
-        wsActivityCost.addRow(['Chip Packaging tray', '', 'The cost to pack out a single chip by chip type']);
-        const dataEndRow = wsActivityCost.lastRow!.number;
-
-        // Total row
-        const totalRow = wsActivityCost.addRow(['Total', '', '']);
-        totalRow.getCell(2).value = { formula: `SUM(B${dataStartRow}:B${dataEndRow})` };
-        totalRow.getCell(1).font = { bold: true };
-
-        // Spacer between MPN blocks
-        wsActivityCost.addRow([]);
-      }
-
-      // ── Sheet 9: Service_Cost_Example (all MPNs, chip cost = cutboard_cost / totalChipQty) ──
+      // ── Sheet 9: Service_Cost_Example ─────────────────────────────
       const wsSCE = workbook.addWorksheet('Service_Cost_Example');
       wsSCE.columns = [{ width: 44 }, { width: 14 }, { width: 10 }, { width: 10 }, { width: 8 }, { width: 8 }, { width: 10 }, { width: 18 }, { width: 22 }];
       const sceHdr = wsSCE.addRow(['', 'Board Cut Cost', 'Harvest', 'Reball', 'Test', 'Pack', 'Total', 'On Hand Inventory', 'Total Processing Cost']);
@@ -553,16 +634,16 @@ export default function SODetailPage() {
       for (const entry of sortedMpns) {
         const cutCost = entry.mpn.cutboard_cost ?? 0;
         const inv = entry.boardCount;
-        const chipTypeCount = (entry.chips ?? []).length;
-        const unitChipCost = r3(cutCost > 0 && chipTypeCount > 0 ? cutCost / chipTypeCount : 0);
+        const slots = buildSlots(entry.chips);
+        const unitChipCost = r3(cutCost > 0 && slots.length > 0 ? Number(cutCost) / slots.length : 0);
         wsSCE.addRow([]);
         const mpnRow = addSceRow(wsSCE, [entry.mpn.name, cutCost, '', '', '', '', 0, inv, 0]);
         mpnRow.getCell(1).fill = HDR_FILL; mpnRow.getCell(1).font = HDR_FONT;
         wsSCE.addRow([]);
         let chipStartRow = 0;
         let chipEndRow = 0;
-        for (const chip of entry.chips) {
-          const chipRow = addSceRow(wsSCE, [chip.chip_mpn, unitChipCost, '', '', '', '', 0, inv, 0]);
+        for (const slot of slots) {
+          const chipRow = addSceRow(wsSCE, [slot.label, unitChipCost, '', '', '', '', 0, inv, 0]);
           if (!chipStartRow) chipStartRow = chipRow.number;
           chipEndRow = chipRow.number;
         }
@@ -571,6 +652,38 @@ export default function SODetailPage() {
         if (chipStartRow) totalRow.getCell(9).value = { formula: `SUM(I${chipStartRow}:I${chipEndRow})` };
         totalRow.getCell(1).fill = HDR_FILL; totalRow.getCell(1).font = HDR_FONT;
       }
+
+      const BID_HEADER = ['Item Number', 'Standard Description', 'Manufacturer', 'Circular Center', 'Item Group', 'Line Number', 'Quantity', 'Harvest State'];
+      const BID_COLS = [{ width: 20 }, { width: 26 }, { width: 16 }, { width: 14 }, { width: 12 }, { width: 12 }, { width: 10 }, { width: 26 }];
+      const titleWords = (s: string) => s.toLowerCase().replace(/\b\w/g, ch => ch.toUpperCase());
+
+      // ── Sheet 10: Bid_Template_Chip ───────────────────────────────
+      // Quantity is a LIVE formula (see INV_MPN_COL/INV_QTY_COL above) — same as Chip BOM.
+      const wsBidChip = workbook.addWorksheet('Bid_Template_Chip');
+      wsBidChip.columns = BID_COLS;
+      styleHdr(wsBidChip.addRow(BID_HEADER));
+      const bidChips = [...chipBomMap.values()].sort((a, b) => a.chipMpn.localeCompare(b.chipMpn));
+      bidChips.forEach((c, i) => {
+        const row = wsBidChip.addRow([
+          c.chipMpn, c.description, titleWords(c.manufacturer), CIRCULAR_CENTER,
+          c.itemGroup, i + 1, 0, HARVEST_STATE,
+        ]);
+        row.getCell(7).value = { formula: `SUMIF(${INV_MPN_COL},$A${row.number},${INV_QTY_COL})` };
+      });
+      const bidChipTotal = wsBidChip.addRow(['', '', '', '', '', '', '', '']);
+      bidChipTotal.getCell(6).value = 'Total';   // to the left of the Quantity total
+      bidChipTotal.getCell(6).font = { bold: true };
+      if (bidChips.length) bidChipTotal.getCell(7).value = { formula: `SUM(G2:G${1 + bidChips.length})` };
+
+      // ── Sheet 11: Bid_Template_Tantalum ───────────────────────────
+      const wsBidTa = workbook.addWorksheet('Bid_Template_Tantalum');
+      wsBidTa.columns = BID_COLS;
+      styleHdr(wsBidTa.addRow(BID_HEADER));
+      const tantalumTotal = so.pallets.reduce((n, p) => n + (p.tantalum_wt ? Number(p.tantalum_wt) : 0), 0);
+      wsBidTa.addRow(['No part number', 'Grams of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, tantalumTotal, HARVEST_STATE]);
+      const bidTaTotal = wsBidTa.addRow(['', '', '', '', '', '', '', '']);
+      bidTaTotal.getCell(6).value = 'Total (grams)';
+      bidTaTotal.getCell(7).value = { formula: 'SUM(G2)' };
 
       const buf = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buf], { type: 'application/octet-stream' }), `${so.so_number}-${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -1476,7 +1589,7 @@ function BoardsTab({ boards, pallets, soNumber, dateFrom, dateTo, palletFilter,
                 </div>
                 <div style={{ padding: '6px 12px 8px', borderTop: '1px solid var(--hair)', display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11.5, color: 'var(--ink-3)' }}>
                   {pallet_label && <span>Pallet <span className="mono" style={{ color: 'var(--ink-2)' }}>{pallet_label}</span></span>}
-                  {mpn?.chip_qty != null && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span>Chips <span className="num" style={{ color: 'var(--ink-2)' }}>{mpn.chip_qty}</span></span></>}
+                  {mpn?.chips_per_board != null && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span>Chips <span className="num" style={{ color: 'var(--ink-2)' }}>{mpn.chips_per_board}</span></span></>}
                   {mpn?.part_type && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span className="mono" style={{ color: 'var(--ink-2)' }}>{mpn.part_type}</span></>}
                 </div>
                 {open && (
@@ -1570,10 +1683,10 @@ function BoardsTab({ boards, pallets, soNumber, dateFrom, dateTo, palletFilter,
                         </button>
                       </td>
                       <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                        {mpn?.chip_qty != null ? mpn.chip_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                        {mpn?.chips_per_board != null ? mpn.chips_per_board : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                       </td>
                       <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                        {mpn?.chip_qty != null ? mpn.chip_qty * gBoards.length : <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                        {mpn?.chips_per_board != null ? mpn.chips_per_board * gBoards.length : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                       </td>
                       <td style={{ ...tdS, fontSize: 12 }} className="mono">
                         {mpn?.part_type || <span style={{ color: 'var(--ink-5)' }}>—</span>}
@@ -1975,7 +2088,7 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
   onAdd: (d: { barcode: string; mpn: string; qty: string; pallet: string }) => void;
   onAddBulk: (rows: { barcode: string }[], shared: { mpn: string; pallet: string }) => Promise<void>;
 }) {
-  const [mode, setMode] = useState<'single' | 'bulk'>('single');
+  const [mode, setMode] = useState<'single' | 'bulk'>('bulk');
   // single
   const [barcode, setBarcode] = useState('');
   const [mpn, setMpn] = useState('');
@@ -2030,7 +2143,7 @@ function AddBoardModal({ open, pallets, mpns, existingBoards, onClose, onAdd, on
 
   useEffect(() => {
     if (open) {
-      setMode('single');
+      setMode('bulk');
       setBarcode(''); setMpn(''); setQty('1'); setPallet('');
       setBulkBarcode(''); setBulkRows([]); setBMpn(''); setBPallet(''); setSelectedBulkIdx(null); setBulkPage(1);
       setDbDupBarcodes(new Set());
