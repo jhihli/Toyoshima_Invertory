@@ -707,9 +707,16 @@ export default function SODetailPage() {
       // Tantalum is logged there under the Chip MPN "Tantalum" with a TEXT qty like "73g", so a
       // plain SUMIF (which only adds numbers) returns 0 — strip the "g" and sum with SUMPRODUCT.
       // IFERROR(VALUE(...),0) turns each blank/non-numeric cell into 0. Rows bounded generously.
+      // MUST be an array formula: SUBSTITUTE/VALUE are scalar, so a regular formula makes modern
+      // Excel insert implicit-intersection "@" on the range (collapsing it to one cell → wrong
+      // total). Writing it as t="array" forces whole-range evaluation, no "@".
       const TA_MPN = 'Inventory!$C$2:$C$10000', TA_QTY = 'Inventory!$F$2:$F$10000';
       const taRow = wsBidTa.addRow(['No part number', 'Grams of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, 0, HARVEST_STATE]);
-      taRow.getCell(7).value = { formula: `SUMPRODUCT((${TA_MPN}="Tantalum")*IFERROR(VALUE(SUBSTITUTE(${TA_QTY},"g","")),0))` };
+      taRow.getCell(7).value = {
+        formula: `SUMPRODUCT((${TA_MPN}="Tantalum")*IFERROR(VALUE(SUBSTITUTE(${TA_QTY},"g","")),0))`,
+        ref: `G${taRow.number}`,
+        shareType: 'array',
+      } as any;
       const bidTaTotal = wsBidTa.addRow(['', '', '', '', '', '', '', '']);
       bidTaTotal.getCell(6).value = 'Total (grams)';
       bidTaTotal.getCell(7).value = { formula: `SUM(G${taRow.number})` };
