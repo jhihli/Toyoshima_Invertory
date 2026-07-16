@@ -592,16 +592,21 @@ export default function SODetailPage() {
       let chipBomFirstDataRow = 0;
       let chipBomLastDataRow = 0;
       let chipBomFirst = true;
+      let chipBomPrevPhoto = false;
       for (const e of chipBomMap.values()) {
-        if (!chipBomFirst) wsChipBom.addRow([]); // one blank spacer row between chips
+        // A photo's two-cell anchor (below) already reserves the row under its data row, and that
+        // reserved row is the blank spacer to the next chip. A chip WITHOUT a photo reserves
+        // nothing, so add the spacer explicitly. Either way: exactly one blank row between chips.
+        if (!chipBomFirst && !chipBomPrevPhoto) wsChipBom.addRow([]);
         chipBomFirst = false;
         const dataRow = wsChipBom.addRow([e.chipMpn, e.manufacturer, e.chipType, e.description, '', 0]);
-        dataRow.height = 48;
+        dataRow.height = 72;
         for (let c = 1; c <= 6; c++) dataRow.getCell(c).border = boxBorder;
         // Same live formula as Bid_Template_Chip: sum Inventory Qty where Chip MPN (col A) matches.
         dataRow.getCell(6).value = { formula: `SUMIF(${INV_MPN_COL},$A${dataRow.number},${INV_QTY_COL})` };
         if (!chipBomFirstDataRow) chipBomFirstDataRow = dataRow.number;
         chipBomLastDataRow = dataRow.number;
+        let chipBomPhotoAdded = false;
         if (e.photoUrl) {
           try {
             const res = await fetch(e.photoUrl);
@@ -616,13 +621,16 @@ export default function SODetailPage() {
               const imgExt = e.photoUrl.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
               const imgId = workbook.addImage({ base64, extension: imgExt });
               const r0 = dataRow.number - 1;
-              // Fixed-size one-cell anchor. A two-cell (br) anchor reserves the row below the
-              // data row, which then doubled up with the explicit spacer — two blank rows per
-              // chip instead of one. Sizing by ext keeps the photo inside its own row.
-              wsChipBom.addImage(imgId, { tl: { col: 4, row: r0 } as any, ext: { width: 115, height: 60 } });
+              // Two-cell anchor spanning the data row: the photo is bounded to the row's height,
+              // so a taller row makes a bigger photo and it can never overflow into the next row
+              // (a fixed-size ext anchor ignored the height and overflowed). This anchor also
+              // reserves the row below as the spacer — see the spacer logic at the top of the loop.
+              wsChipBom.addImage(imgId, { tl: { col: 4, row: r0 } as any, br: { col: 5, row: r0 + 1 } as any, editAs: 'oneCell' });
+              chipBomPhotoAdded = true;
             }
           } catch { /* skip failed image — leave cell empty */ }
         }
+        chipBomPrevPhoto = chipBomPhotoAdded;
       }
       // Quantity total. Blank spacer rows in the range are empty and contribute 0.
       if (chipBomFirstDataRow) {
@@ -695,11 +703,16 @@ export default function SODetailPage() {
       const wsBidTa = workbook.addWorksheet('Bid_Template_Tantalum');
       wsBidTa.columns = BID_COLS;
       styleHdr(wsBidTa.addRow(BID_HEADER));
-      const tantalumTotal = so.pallets.reduce((n, p) => n + (p.tantalum_wt ? Number(p.tantalum_wt) : 0), 0);
-      wsBidTa.addRow(['No part number', 'Grams of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, tantalumTotal, HARVEST_STATE]);
+      // Quantity is a LIVE total off the Inventory sheet, filling itself once the user pastes.
+      // Tantalum is logged there under the Chip MPN "Tantalum" with a TEXT qty like "73g", so a
+      // plain SUMIF (which only adds numbers) returns 0 — strip the "g" and sum with SUMPRODUCT.
+      // IFERROR(VALUE(...),0) turns each blank/non-numeric cell into 0. Rows bounded generously.
+      const TA_MPN = 'Inventory!$C$2:$C$10000', TA_QTY = 'Inventory!$F$2:$F$10000';
+      const taRow = wsBidTa.addRow(['No part number', 'Grams of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, 0, HARVEST_STATE]);
+      taRow.getCell(7).value = { formula: `SUMPRODUCT((${TA_MPN}="Tantalum")*IFERROR(VALUE(SUBSTITUTE(${TA_QTY},"g","")),0))` };
       const bidTaTotal = wsBidTa.addRow(['', '', '', '', '', '', '', '']);
       bidTaTotal.getCell(6).value = 'Total (grams)';
-      bidTaTotal.getCell(7).value = { formula: 'SUM(G2)' };
+      bidTaTotal.getCell(7).value = { formula: `SUM(G${taRow.number})` };
 
       const buf = await workbook.xlsx.writeBuffer();
       saveAs(new Blob([buf], { type: 'application/octet-stream' }), `${so.so_number}-${new Date().toISOString().slice(0, 10)}.xlsx`);
