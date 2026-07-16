@@ -6,7 +6,7 @@ import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
 import {
-  Button, Input, Select, Modal, Breadcrumbs, Tabs,
+  Button, Input, Select, Modal, Tabs,
   Card, SectionHeader, EditableCell, Field, Empty, Badge, useToast,
   thS, tdS, ghostBtn,
 } from '@/app/ui/components';
@@ -728,27 +728,16 @@ export default function SODetailPage() {
 
   return (
     <div className="fade-in page-pad">
-      <Breadcrumbs items={[
-        { label: 'Home', onClick: () => router.push('/dashboard') },
-        { label: 'Sales Orders', onClick: () => router.push('/sos') },
-        { label: so.so_number },
-      ]} />
+      {/* Title row — mobile only (desktop shows actions inline in the meta card) */}
+      {isMobile && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', margin: '8px 0 10px', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+            <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400, letterSpacing: '-0.01em' }}>
+              {so.so_number}
+            </h1>
+          </div>
 
-      {/* Title row */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', margin: isMobile ? '8px 0 10px' : '8px 0 8px', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-          <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 400, letterSpacing: '-0.01em' }}>
-            {so.so_number}
-          </h1>
-          {!isMobile && (
-            <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              Inbound {so.inbound_date}{so.outbound_date ? ` · Outbound ${so.outbound_date}` : ''} · {so.vendor_name} · Created {so.created_at?.slice(0, 10)}
-            </span>
-          )}
-        </div>
-
-        {isMobile ? (
-          /* Mobile: single "⋮" menu button */
+          {/* Mobile: single "⋮" menu button */}
           <div ref={actionMenuRef} style={{ position: 'relative', flexShrink: 0 }}>
             <button
               onClick={() => setActionMenuOpen(o => !o)}
@@ -793,15 +782,8 @@ export default function SODetailPage() {
               </div>
             )}
           </div>
-        ) : (
-          /* Desktop: three separate buttons */
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-            <Button variant="danger" icon={<TrashIcon />} onClick={() => setDeleteConfirmOpen(true)}>Delete</Button>
-            <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
-            <Button variant="outline" icon={<EditIcon />} onClick={() => setEditMeta(true)}>Edit</Button>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Meta card */}
       {isMobile ? (
@@ -936,9 +918,15 @@ export default function SODetailPage() {
               )}
             </div>
             {/* Note */}
-            <div style={{ flex: 1, padding: '6px 12px', minWidth: 0 }}>
+            <div style={{ flex: '0 0 300px', padding: '6px 12px', minWidth: 0 }}>
               <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
               <EditableCell value={so.note} onSave={v => handleSaveMeta({ note: v })} />
+            </div>
+            {/* Actions */}
+            <div style={{ flex: 1, padding: '6px 12px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+              <Button variant="danger" icon={<TrashIcon />} onClick={() => setDeleteConfirmOpen(true)}>Delete</Button>
+              <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
+              <Button variant="outline" icon={<EditIcon />} onClick={() => setEditMeta(true)}>Edit</Button>
             </div>
           </div>
         </Card>

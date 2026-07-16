@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import * as XLSXStyle from 'xlsx-js-style';
 import { saveAs } from 'file-saver';
 import {
-  Button, Input, Select, Modal, Pagination, Breadcrumbs, Empty,
+  Button, Input, Select, Modal, Pagination, Empty,
   Field, useToast, thS, tdS,
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
@@ -169,11 +169,7 @@ export default function SOListPage() {
   return (
     <>
     <div className="fade-in page-pad">
-      <Breadcrumbs items={[{ label: 'Home', onClick: () => router.push('/dashboard') }, { label: 'MSFT Order' }]} />
-
-      <div style={{ margin: '14px 0 16px' }}>
-        <h1 style={{ margin: '0 0 16px', fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>MSFT Order</h1>
-
+      <div style={{ margin: '0 0 16px' }}>
         {/* Filter bar */}
         {isMobile ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

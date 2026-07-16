@@ -292,9 +292,9 @@ function TopBreadcrumb() {
   const router = useRouter();
   const segments = pathname.split('/').filter(Boolean);
 
-  // Resolve SO number when on /sales-orders/[id]
+  // Resolve SO number when on /sales-orders/[id] or /sos/[id]
   const [soLabel, setSoLabel] = useState<string | null>(null);
-  const soId = segments[0] === 'sales-orders' && segments[1] && /^\d+$/.test(segments[1]) ? segments[1] : null;
+  const soId = (segments[0] === 'sales-orders' || segments[0] === 'sos') && segments[1] && /^\d+$/.test(segments[1]) ? segments[1] : null;
 
   useEffect(() => {
     if (!soId) { setSoLabel(null); return; }
