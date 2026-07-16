@@ -114,6 +114,9 @@ export interface GlobalSlot {
   key: string;
   /** Union of every alternate seen for this slot across all MPNs, slash-joined. */
   label: string;
+  /** The individual alternate chip MPNs that make up this slot (label === chipMpns.join('/')).
+   *  Kept separate so the export can build a per-alternate SUMIFS without re-splitting the label. */
+  chipMpns: string[];
   /** Chips harvested: sum over MPNs of (boards of that MPN x the slot's per-board qty). */
   processedQty: number;
   /** Chips that failed the cut: sum of NG-container counts. */
@@ -136,7 +139,7 @@ export interface GlobalSlot {
  */
 export function buildGlobalSlots(
   entries: MpnEntry[],
-  ngQtyByChipId: Map<number, number>,
+  ngQtyByChipId: Map<number, number> = new Map(),
 ): GlobalSlot[] {
   const out = new Map<string, GlobalSlot>();
   // Biggest MPN first, so a slot's alternates are labelled in a stable, sensible order.
@@ -163,12 +166,11 @@ export function buildGlobalSlots(
       const key = adopted ? `g:${adopted}` : globalSlotKey(head);
       let gs = out.get(key);
       if (!gs) {
-        gs = { key, label: '', processedQty: 0, failedQty: 0, date: '', chipIds: new Set() };
+        gs = { key, label: '', chipMpns: [], processedQty: 0, failedQty: 0, date: '', chipIds: new Set() };
         out.set(key, gs);
       }
-      const parts = gs.label ? gs.label.split('/') : [];
-      for (const mpn of slot.chipMpns) if (!parts.includes(mpn)) parts.push(mpn);
-      gs.label = parts.join('/');
+      for (const mpn of slot.chipMpns) if (!gs.chipMpns.includes(mpn)) gs.chipMpns.push(mpn);
+      gs.label = gs.chipMpns.join('/');
 
       gs.processedQty += entry.boardCount * slot.qtyPerBoard;
       if (entry.latestDate > gs.date) gs.date = entry.latestDate;

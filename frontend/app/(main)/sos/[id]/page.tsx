@@ -335,7 +335,6 @@ export default function SODetailPage() {
     try {
       const allBoards = await api.boards.listBySO(soId, { page: 1, page_size: 9999, include_chips: 1 });
       const allBoardData = allBoards.results;
-      const allContainers = await api.sos.chipContainers(soId);
       const workbook = new ExcelJS.Workbook();
       const palletMap = new Map(so.pallets.map(p => [p.id, p]));
 
@@ -353,15 +352,6 @@ export default function SODetailPage() {
         if (b.scanned_at > entry.latestDate) entry.latestDate = b.scanned_at;
       }
 
-      // Chips that failed the cut land in a container whose UID is the literal string "NG".
-      // (Sellable quantities are NOT summed here: Bid_Template_Chip reads them straight off
-      // the Inventory sheet with a SUMIF, so the workbook updates itself after a paste.)
-      const ngQtyByChipId = new Map<number, number>();
-      for (const c of allContainers) {
-        if (c.container_uid === NG_UID) {
-          ngQtyByChipId.set(c.chip, (ngQtyByChipId.get(c.chip) ?? 0) + (c.actual_qty ?? 0));
-        }
-      }
 
       // ── Sheet 1: Worksheet Descriptions (static) ─────────────────
       const wsDesc = workbook.addWorksheet('Worksheet Descriptions');
@@ -434,9 +424,19 @@ export default function SODetailPage() {
       const wsChipProc = workbook.addWorksheet('Processing chips');
       wsChipProc.columns = [{ width: 14 }, { width: 20 }, { width: 24 }, { width: 20 }, { width: 14 }, { width: 14 }];
       styleHdr(wsChipProc.addRow(['Date processed', 'process type', 'Chip MPN', 'Chips processed qty.', 'Chips failed', 'Failure rate']));
-      for (const gs of buildGlobalSlots([...mpnMap.values()], ngQtyByChipId)) {
-        const rate = gs.processedQty > 0 ? gs.failedQty / gs.processedQty : 0;
-        const row = wsChipProc.addRow([gs.date.slice(0, 10), 'Chip Harvest', gs.label, gs.processedQty, gs.failedQty, rate]);
+      // "Chips failed" is a LIVE formula off the Inventory sheet, so it fills itself once the
+      // user pastes their checklist: sum the Qty (col F) of every row whose Container UID (col B)
+      // is "NG" and whose Chip MPN (col C) matches. A memory slot bundles several alternate MPNs
+      // into one line, so we sum a SUMIFS per alternate. Failure rate tracks it as failed/processed.
+      const INV_NG_QTY = 'Inventory!$F:$F', INV_NG_UID = 'Inventory!$B:$B', INV_NG_MPN = 'Inventory!$C:$C';
+      for (const gs of buildGlobalSlots([...mpnMap.values()])) {
+        const row = wsChipProc.addRow([gs.date.slice(0, 10), 'Chip Harvest', gs.label, gs.processedQty, 0, 0]);
+        const rn = row.number;
+        const failed = gs.chipMpns
+          .map(m => `SUMIFS(${INV_NG_QTY},${INV_NG_UID},"${NG_UID}",${INV_NG_MPN},"${m.replace(/"/g, '""')}")`)
+          .join('+') || '0';
+        row.getCell(5).value = { formula: failed };
+        row.getCell(6).value = { formula: `IF(D${rn}>0,E${rn}/D${rn},0)` };
         row.getCell(6).numFmt = '0.00%';
       }
 
@@ -613,10 +613,13 @@ export default function SODetailPage() {
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
               });
-              const ext = e.photoUrl.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
-              const imgId = workbook.addImage({ base64, extension: ext });
+              const imgExt = e.photoUrl.toLowerCase().endsWith('.png') ? 'png' : 'jpeg';
+              const imgId = workbook.addImage({ base64, extension: imgExt });
               const r0 = dataRow.number - 1;
-              wsChipBom.addImage(imgId, { tl: { col: 4, row: r0 } as any, br: { col: 5, row: r0 + 1 } as any, editAs: 'oneCell' });
+              // Fixed-size one-cell anchor. A two-cell (br) anchor reserves the row below the
+              // data row, which then doubled up with the explicit spacer — two blank rows per
+              // chip instead of one. Sizing by ext keeps the photo inside its own row.
+              wsChipBom.addImage(imgId, { tl: { col: 4, row: r0 } as any, ext: { width: 115, height: 60 } });
             }
           } catch { /* skip failed image — leave cell empty */ }
         }
