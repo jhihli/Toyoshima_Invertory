@@ -82,7 +82,7 @@ import type {
   Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
-  PalletChipContainer,
+  PalletChipContainer, Cargo, CargoSearchResult,
 } from '@/interface/IDatatable';
 
 export const api = {
@@ -141,6 +141,19 @@ export const api = {
       upsert: (palletId: number, chipId: number, container_uid: string, actual_qty?: number | null) =>
         apiPut<PalletChipContainer>(`/pallets/${palletId}/chip-containers/${chipId}/`, { container_uid, actual_qty }),
     },
+    cargos: {
+      list: (palletId: number) => apiGet<Cargo[]>(`/pallets/${palletId}/cargos/`),
+      create: (palletId: number, d: { count?: number; qty?: number; note?: string }) =>
+        apiPost<Cargo[]>(`/pallets/${palletId}/cargos/`, d),
+      update: (palletId: number, id: number, d: Partial<Cargo>) =>
+        apiPut<Cargo>(`/pallets/${palletId}/cargos/${id}/`, d),
+      delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/cargos/${id}/`),
+    },
+  },
+
+  // Cargo (cross-SO barcode search)
+  cargos: {
+    search: (q: string) => apiGet<CargoSearchResult[]>(`/cargos/search/?q=${encodeURIComponent(q)}`),
   },
 
   // Photos

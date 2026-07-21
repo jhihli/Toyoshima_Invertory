@@ -15,13 +15,14 @@ def _check_scanner_key(request):
     if not key or key != settings.SCANNER_API_KEY:
         return Response({'success': False, 'error': 'Unauthorized'}, status=401)
     return None
-from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
+from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer, Cargo
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
     SOPhotoSerializer, PalletSerializer, PalletPhotoSerializer, BoardSerializer, BoardListSerializer,
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
-    PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer
+    PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer,
+    CargoSerializer
 )
 
 
@@ -285,6 +286,74 @@ def pallet_photo_detail(request, pallet_pk, pk):
     photo.image.delete(save=False)
     photo.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ─────────────────────────────────────────────────── Cargo
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def cargo_list(request, pallet_pk):
+    pallet = get_object_or_404(Pallet.objects.select_related('so'), pk=pallet_pk)
+    if request.method == 'GET':
+        return Response(CargoSerializer(pallet.cargos.all(), many=True).data)
+
+    # POST — create one or many cargo items. Barcodes are composed server-side.
+    def _as_int(val, default):
+        try:
+            return int(val)
+        except (TypeError, ValueError):
+            return default
+
+    count = max(1, min(_as_int(request.data.get('count', 1), 1), 500))
+    note = request.data.get('note', '') or ''
+
+    start = Cargo.next_index(pallet)
+    created = []
+    with transaction.atomic():
+        for i in range(count):
+            seq = start + i
+            created.append(Cargo.objects.create(
+                pallet=pallet, note=note,
+                barcode=Cargo.compose_barcode(pallet, seq),
+            ))
+    return Response(CargoSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def cargo_detail(request, pallet_pk, pk):
+    cargo = get_object_or_404(Cargo, pk=pk, pallet_id=pallet_pk)
+    if request.method == 'PUT':
+        serializer = CargoSerializer(cargo, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    cargo.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def cargo_search(request):
+    """Find cargo items by barcode (partial match), with the SO + pallet they live under so
+    the caller can navigate straight to the cargo page."""
+    q = request.query_params.get('q', '').strip()
+    if not q:
+        return Response([])
+    qs = (Cargo.objects
+          .select_related('pallet', 'pallet__so')
+          .filter(barcode__icontains=q)
+          .order_by('barcode')[:20])
+    data = [{
+        'id': c.id,
+        'barcode': c.barcode,
+        'note': c.note,
+        'pallet_id': c.pallet_id,
+        'pallet_label': c.pallet.licence_number or f'Pallet #{c.pallet.pallet_seq}',
+        'so_id': c.pallet.so_id,
+        'so_number': c.pallet.so.so_number,
+    } for c in qs]
+    return Response(data)
 
 
 # ─────────────────────────────────────────────────── Boards

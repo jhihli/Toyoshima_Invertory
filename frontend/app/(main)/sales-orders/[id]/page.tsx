@@ -4,6 +4,8 @@ import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/app/lib/api';
 import type { SODetail, Pallet, PalletPhoto } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
+import { crumbCache } from '@/app/lib/crumbCache';
+import { printLabels } from '@/app/lib/printLabels';
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 const IPlus = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>;
@@ -15,6 +17,7 @@ const IExport = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none
 const ISearch = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>;
 const IImage = () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>;
 const IClose = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>;
+const IPrint = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>;
 const IBox = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
 
 // ── Shared styles ──────────────────────────────────────────────────────────────
@@ -448,6 +451,7 @@ export default function SODetailPage() {
   const [filterQ, setFilterQ] = useState('');
   const [showSearch, setShowSearch] = useState(false);
 
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   const [palletModal, setPalletModal] = useState<{ mode: 'add' | 'edit'; item?: Pallet } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<Pallet | null>(null);
   const [lightbox, setLightbox] = useState<LightboxState | null>(null);
@@ -458,8 +462,12 @@ export default function SODetailPage() {
     setLoading(true);
     try {
       const soData = await api.sos.get(soId);
+      // Warm the breadcrumb cache so clicking into a pallet shows its label immediately (no id flash).
+      crumbCache.setSo(soData.id, soData.so_number);
+      (soData.pallets || []).forEach(p => crumbCache.setPallet(p.id, p.licence_number || `Pallet #${p.pallet_seq}`));
       setSo(soData);
       setPallets(soData.pallets || []);
+      setSelected(new Set());
     } catch { showToast('Failed to load', 'err'); }
     setLoading(false);
   }, [soId]);
@@ -502,11 +510,37 @@ export default function SODetailPage() {
     await reload(); setDeleteConfirm(null); showToast('Pallet deleted', 'err');
   };
 
+  const toggleSel = (id: number) => setSelected(s => {
+    const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+  const allSelected = filteredPallets.length > 0 && filteredPallets.every(p => selected.has(p.id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(filteredPallets.map(p => p.id)));
+
+  const handlePrintPallets = () => {
+    if (!so) return;
+    const chosen = pallets.filter(p => selected.has(p.id));
+    if (!chosen.length) return;
+    const seg = (v: any) => v != null && String(v).trim() !== '';
+    printLabels(chosen.map(p => {
+      // QR content: Vendor-SO_NUMBER-BARCODE-GATELOAD_NO, e.g. "SMS-SO123-tgt1-1".
+      const qr = [so.vendor_name, so.so_number, p.licence_number, p.gateload_number].filter(seg).join('-');
+      return { qr, context: `${so.so_number} · ${so.vendor_name}`, code: qr };
+    }));
+  };
+
   if (loading) return <div style={{ padding: 40, color: 'var(--ink-4)' }}>Loading…</div>;
   if (!so) return <div style={{ padding: 40, color: '#b91c1c' }}>Order not found.</div>;
 
   const totalInWt = pallets.reduce((s, p) => s + Number(p.in_weight_gross || 0), 0);
   const totalQty = pallets.reduce((s, p) => s + Number(p.qty || 0), 0);
+
+  const facts: [string, string][] = [
+    ['Inbound', so.inbound_date || '—'],
+    ['Outbound', so.outbound_date || '—'],
+    ['Pallets', String(so.total_pallet_count ?? so.pallet_record_count)],
+    ['Total WT', totalInWt ? `${totalInWt.toFixed(4)} lb` : '—'],
+    ['Created', so.created_at ? new Date(so.created_at).toLocaleDateString() : '—'],
+  ];
 
   const cell = (v: string | null | undefined, d = 4) =>
     (!v || Number(v) === 0) ? <span style={{ color: 'var(--ink-5)' }}>—</span> : Number(v).toFixed(d);
@@ -519,16 +553,55 @@ export default function SODetailPage() {
         {/* Green accent bar */}
         <div style={{ width: 6, flexShrink: 0, background: 'linear-gradient(180deg, #2f7d50, #256b43)' }} />
         {/* Body */}
-        <div style={{ flex: 1, minWidth: 0, padding: isMobile ? '14px 14px' : '18px 22px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? 12 : 22, flexWrap: 'wrap' }}>
-          {/* Lead + action buttons row on mobile */}
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: 8, flexWrap: 'wrap' }}>
-            <div style={{ minWidth: 0 }}>
-              <h1 className="mono" style={{ margin: 0, fontSize: isMobile ? 20 : 26, fontWeight: 700, letterSpacing: '-0.01em' }}>{so.so_number}</h1>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 13.5, color: 'var(--ink-3)' }}>
+        {isMobile ? (
+          <div style={{ flex: 1, minWidth: 0, padding: '14px 14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12 }}>
+            {/* Lead + action buttons row */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ minWidth: 0 }}>
+                <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em' }}>{so.so_number}</h1>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 13.5, color: 'var(--ink-3)' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, display: 'inline-block' }} />
+                  Vendor <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{so.vendor_name}</b>
+                </div>
+                {so.note && <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--ink-4)', fontStyle: 'italic' }}>{so.note}</div>}
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                <button onClick={() => router.push('/sales-orders')} style={BtnGhost}><IChevL /> Back</button>
+                <button style={BtnGhost}><IExport /> Export</button>
+              </div>
+            </div>
+            {/* Facts */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', textAlign: 'left', width: '100%' }}>
+              {facts.map(([label, val], i) => (
+                <div key={i}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 3 }}>{label}</div>
+                  <div className="mono" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* Desktop: everything on one row */
+          <div style={{ flex: 1, minWidth: 0, padding: '16px 22px', display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
+            {/* SO number + vendor */}
+            <div style={{ flexShrink: 0 }}>
+              <h1 className="mono" style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{so.so_number}</h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: 13, color: 'var(--ink-3)' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, display: 'inline-block' }} />
                 Vendor <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{so.vendor_name}</b>
               </div>
-              {so.note && <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--ink-4)', fontStyle: 'italic' }}>{so.note}</div>}
+              {so.note && <div style={{ marginTop: 4, fontSize: 12, color: 'var(--ink-4)', fontStyle: 'italic', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{so.note}</div>}
+            </div>
+            {/* Divider */}
+            <div style={{ width: 1, alignSelf: 'stretch', background: 'var(--hair)', margin: '4px 0' }} />
+            {/* Facts inline */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 28, flex: 1, minWidth: 0 }}>
+              {facts.map(([label, val], i) => (
+                <div key={i}>
+                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 3, whiteSpace: 'nowrap' }}>{label}</div>
+                  <div className="mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{val}</div>
+                </div>
+              ))}
             </div>
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
@@ -536,22 +609,7 @@ export default function SODetailPage() {
               <button style={BtnGhost}><IExport /> Export</button>
             </div>
           </div>
-          {/* Facts */}
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, auto)', gap: isMobile ? '8px 16px' : '5px 22px', textAlign: isMobile ? 'left' : 'right', width: isMobile ? '100%' : undefined }}>
-            {([
-              ['Inbound', so.inbound_date || '—'],
-              ['Outbound', so.outbound_date || '—'],
-              ['Pallets', String(so.total_pallet_count ?? so.pallet_record_count)],
-              ['Total WT', totalInWt ? `${totalInWt.toFixed(4)} lb` : '—'],
-              ['Created', so.created_at ? new Date(so.created_at).toLocaleDateString() : '—'],
-            ] as [string, string][]).map(([label, val], i) => (
-              <div key={i}>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 3 }}>{label}</div>
-                <div className="mono" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{val}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Pallets card */}
@@ -570,6 +628,11 @@ export default function SODetailPage() {
                 style={{ width: 34, height: 34, borderRadius: 8, background: showSearch || filterQ ? 'var(--accent)' : 'var(--surface-2)', border: '1px solid var(--hair)', color: showSearch || filterQ ? '#fff' : 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer', flexShrink: 0 }}>
                 <ISearch />
               </button>
+              {selected.size > 0 && (
+                <button style={{ ...BtnGhost, height: 34, padding: '0 11px', fontSize: 13 }} onClick={handlePrintPallets}>
+                  <IPrint /> {selected.size}
+                </button>
+              )}
               <button style={{ ...BtnPrimary, height: 34, padding: '0 11px', fontSize: 13 }} onClick={() => setPalletModal({ mode: 'add' })}>
                 <IPlus /> Add
               </button>
@@ -597,6 +660,9 @@ export default function SODetailPage() {
                   style={{ border: 0, background: 'transparent', outline: 'none', width: 150, fontFamily: 'inherit', fontSize: 13, color: 'var(--ink)' }} />
                 {filterQ && <button onClick={() => setFilterQ('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', display: 'flex', padding: 0 }}><IClose /></button>}
               </div>
+              {selected.size > 0 && (
+                <button style={BtnGhost} onClick={handlePrintPallets}><IPrint /> Print ({selected.size})</button>
+              )}
               <button style={BtnPrimary} onClick={() => setPalletModal({ mode: 'add' })}><IPlus /> Add pallet</button>
             </div>
           </div>
@@ -623,12 +689,18 @@ export default function SODetailPage() {
               const labelSty: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', whiteSpace: 'nowrap' };
               const valSty: React.CSSProperties = { fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' };
               return (
-                <div key={p.id} style={{ padding: '14px 16px', borderBottom: '1px solid var(--hair)' }}>
+                <div key={p.id} onClick={() => router.push(`/sales-orders/${soId}/pallets/${p.id}`)}
+                  style={{ padding: '14px 16px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
                   {/* Header: barcode + date */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10, gap: 8 }}>
-                    <span className="mono" style={{ fontWeight: 700, fontSize: 15 }}>
-                      {p.licence_number || <span style={{ color: 'var(--ink-4)', fontWeight: 400, fontSize: 13 }}>No barcode</span>}
-                    </span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                      <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSel(p.id)}
+                        onClick={e => e.stopPropagation()} aria-label="Select pallet"
+                        style={{ cursor: 'pointer', accentColor: 'var(--accent)', flexShrink: 0 }} />
+                      <span className="mono" style={{ fontWeight: 700, fontSize: 15 }}>
+                        {p.licence_number || <span style={{ color: 'var(--ink-4)', fontWeight: 400, fontSize: 13 }}>No barcode</span>}
+                      </span>
+                    </div>
                     <span style={{ fontSize: 11.5, color: 'var(--ink-4)', whiteSpace: 'nowrap', flexShrink: 0 }}>
                       {p.created_at ? new Date(p.created_at).toLocaleDateString('en-CA') : '—'}
                     </span>
@@ -639,7 +711,7 @@ export default function SODetailPage() {
                     {/* Photo thumbnail */}
                     {imgs.length > 0 && (
                       <div style={{ position: 'relative', flexShrink: 0, cursor: 'zoom-in', alignSelf: 'flex-start' }}
-                        onClick={() => setLightbox({ images: imgs, index: 0 })}>
+                        onClick={e => { e.stopPropagation(); setLightbox({ images: imgs, index: 0 }); }}>
                         <img src={imgs[0].src} alt="" style={{ width: 54, height: 54, borderRadius: 9, objectFit: 'cover', display: 'block', border: '1px solid var(--hair)' }} />
                         {imgs.length > 1 && (
                           <span style={{ position: 'absolute', bottom: 3, right: 3, background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 4, padding: '1px 4px', lineHeight: 1.5 }}>
@@ -673,7 +745,7 @@ export default function SODetailPage() {
                   </div>
 
                   {/* Actions: equal-width buttons */}
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
                     <button onClick={() => setPalletModal({ mode: 'edit', item: p })}
                       style={{ flex: 1, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
                       <IEdit /> Edit
@@ -698,6 +770,10 @@ export default function SODetailPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 980 }}>
               <thead>
                 <tr>
+                  <th style={{ ...Th, width: 40 }}>
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all"
+                      style={{ cursor: 'pointer', accentColor: 'var(--accent)' }} />
+                  </th>
                   <th style={Th}>Image</th>
                   <th style={Th}>Barcode</th>
                   <th style={Th}>Date</th>
@@ -712,8 +788,15 @@ export default function SODetailPage() {
               <tbody>
                 {filteredPallets.map(p => (
                   <tr key={p.id}
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => router.push(`/sales-orders/${soId}/pallets/${p.id}`)}
                     onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = '#eef5f0'}
                     onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'}>
+                    {/* Select */}
+                    <td style={{ ...Td, width: 40 }} onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSel(p.id)}
+                        aria-label="Select pallet" style={{ cursor: 'pointer', accentColor: 'var(--accent)' }} />
+                    </td>
                     {/* Image */}
                     <td style={Td} onClick={e => e.stopPropagation()}>
                       {(() => {
@@ -786,6 +869,7 @@ export default function SODetailPage() {
               {/* Total row */}
               <tfoot>
                 <tr style={{ background: 'var(--surface-2)' }}>
+                  <td style={{ ...Td, borderTop: '1px solid var(--hair-strong)', borderBottom: 'none' }}></td>
                   <td style={{ ...Td, borderTop: '1px solid var(--hair-strong)', borderBottom: 'none' }}></td>
                   <td style={{ ...Td, borderTop: '1px solid var(--hair-strong)', borderBottom: 'none', fontWeight: 700 }}>Total</td>
                   <td colSpan={4} style={{ ...Td, borderTop: '1px solid var(--hair-strong)', borderBottom: 'none' }}></td>

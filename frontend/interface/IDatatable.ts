@@ -64,7 +64,26 @@ export interface Pallet {
   qty: number;
   board_qty: number | null;
   board_count: number;
+  cargo_count?: number;
   created_at: string;
+}
+
+export interface Cargo {
+  id: number;
+  pallet: number;
+  barcode: string;
+  note: string;
+  created_at: string;
+}
+
+export interface CargoSearchResult {
+  id: number;
+  barcode: string;
+  note: string;
+  pallet_id: number;
+  pallet_label: string;
+  so_id: number;
+  so_number: string;
 }
 
 export interface MPN {

@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { signOut, useSession, getSession } from 'next-auth/react';
 import Image from 'next/image';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
+import { crumbCache } from '@/app/lib/crumbCache';
 
 interface NavItem {
   key: string;
@@ -292,31 +293,52 @@ function TopBreadcrumb() {
   const router = useRouter();
   const segments = pathname.split('/').filter(Boolean);
 
-  // Resolve SO number when on /sales-orders/[id] or /sos/[id]
-  const [soLabel, setSoLabel] = useState<string | null>(null);
+  // Resolve SO number (and pallet label) when on /sales-orders/[id] or /sos/[id][/pallets/[palletId]].
+  // Labels come from the shared crumbCache, which source pages (SO list, SO detail) prime as they
+  // load — so navigating from a row shows the real label immediately, no raw-id flash. Subscribe so
+  // a later fill (or this component's own fallback fetch) re-renders the crumb.
+  const [, bump] = useState(0);
+  useEffect(() => crumbCache.subscribe(() => bump(n => n + 1)), []);
+
   const soId = (segments[0] === 'sales-orders' || segments[0] === 'sos') && segments[1] && /^\d+$/.test(segments[1]) ? segments[1] : null;
+  const palletId = soId && segments[2] === 'pallets' && segments[3] && /^\d+$/.test(segments[3]) ? segments[3] : null;
 
   useEffect(() => {
-    if (!soId) { setSoLabel(null); return; }
-    setSoLabel(null);
+    if (!soId) return;
+    if (crumbCache.getSo(soId) && (!palletId || crumbCache.getPallet(palletId))) return;  // already primed
+    let cancelled = false;
     getSession().then((session: any) => {
       const token = session?.accessToken;
       return fetch(`${API}/product/sos/${soId}/`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
     }).then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.so_number) setSoLabel(d.so_number); })
+      .then(d => {
+        if (cancelled || !d) return;
+        if (d.so_number) crumbCache.setSo(soId, d.so_number);
+        if (palletId && Array.isArray(d.pallets)) {
+          const p = d.pallets.find((pp: any) => String(pp.id) === palletId);
+          if (p) crumbCache.setPallet(palletId, p.licence_number || `Pallet #${p.pallet_seq}`);
+        }
+      })
       .catch(() => {});
-  }, [soId]);
+    return () => { cancelled = true; };
+  }, [soId, palletId]);
 
-  const crumbs: { label: string; href: string }[] = [{ label: 'Home', href: '/dashboard' }];
+  const soLabel = soId ? crumbCache.getSo(soId) : null;
+  const palletLabel = palletId ? crumbCache.getPallet(palletId) : null;
+
+  const crumbs: { label: string; href: string; loading?: boolean }[] = [{ label: 'Home', href: '/dashboard' }];
   let path = '';
-  for (const seg of segments) {
+  segments.forEach((seg, idx) => {
     path += '/' + seg;
-    let label = SEGMENT_LABELS[seg] ?? seg;
-    if (seg === soId) label = soLabel ?? seg;
-    crumbs.push({ label, href: path });
-  }
+    // Collapse the "Pallets" segment on a pallet detail route — the pallet crumb follows.
+    if (palletId && seg === 'pallets' && idx === 2) return;
+    // An id segment whose label hasn't resolved yet renders as a skeleton, never the raw number.
+    if (palletId && idx === 3) { crumbs.push({ label: palletLabel ?? '', href: path, loading: palletLabel == null }); return; }
+    if (soId && idx === 1) { crumbs.push({ label: soLabel ?? '', href: path, loading: soLabel == null }); return; }
+    crumbs.push({ label: SEGMENT_LABELS[seg] ?? seg, href: path });
+  });
 
   if (crumbs.length <= 1) return null;
 
@@ -327,10 +349,12 @@ function TopBreadcrumb() {
         return (
           <React.Fragment key={i}>
             {i > 0 && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>}
-            <span onClick={isLast ? undefined : () => router.push(c.href)}
-              style={{ fontSize: 13, fontWeight: isLast ? 700 : 500, color: isLast ? 'var(--ink)' : 'var(--ink-4)', cursor: isLast ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
-              {c.label}
-            </span>
+            {c.loading
+              ? <span aria-hidden style={{ display: 'inline-block', width: 44, height: 12, borderRadius: 4, background: 'var(--hair-strong)', opacity: 0.5 }} />
+              : <span onClick={isLast ? undefined : () => router.push(c.href)}
+                  style={{ fontSize: 13, fontWeight: isLast ? 700 : 500, color: isLast ? 'var(--ink)' : 'var(--ink-4)', cursor: isLast ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+                  {c.label}
+                </span>}
           </React.Fragment>
         );
       })}

@@ -5,6 +5,7 @@ import { api } from '@/app/lib/api';
 import { Pagination } from '@/app/ui/components';
 import type { SO, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
+import { crumbCache } from '@/app/lib/crumbCache';
 
 // ── Note popover ────────────────────────────────────────────────────────────────
 const INoteIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>;
@@ -56,6 +57,7 @@ function NoteCell({ note }: { note: string }) {
 // ── Icons ──────────────────────────────────────────────────────────────────────
 const IPlus = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>;
 const ISearch = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>;
+const IScan = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>;
 const ICalendar = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
 const IEdit = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
 const ITrash = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>;
@@ -245,6 +247,64 @@ function ShipModal({ open, order, onClose, onConfirm }: {
   );
 }
 
+// ── Cargo barcode search ─────────────────────────────────────────────────────────
+function CargoSearch({ isMobile }: { isMobile: boolean }) {
+  const router = useRouter();
+  const [q, setQ] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; fading: boolean } | null>(null);
+  const timers = React.useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
+
+  // Not-found message: hold ~2.6s, fade over 0.4s, remove at 3s.
+  const flash = (text: string) => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    setMsg({ text, fading: false });
+    timers.current.push(setTimeout(() => setMsg(m => (m ? { ...m, fading: true } : null)), 2600));
+    timers.current.push(setTimeout(() => setMsg(null), 3000));
+  };
+
+  const handleSearch = async () => {
+    const term = q.trim();
+    if (!term || searching) return;
+    setQ('');  // clear so the next scan starts clean (scanners type into the focused field)
+    setSearching(true);
+    try {
+      const res = await api.cargos.search(term);
+      if (res.length > 0) {
+        const r = res[0];
+        router.push(`/sales-orders/${r.so_id}/pallets/${r.pallet_id}?highlight=${encodeURIComponent(r.barcode)}`);
+      } else {
+        flash(`Cargo barcode “${term}” not found`);
+      }
+    } catch {
+      flash('Search failed — please try again');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  return (
+    <form onSubmit={e => { e.preventDefault(); handleSearch(); }}
+      style={{ position: 'relative', ...(isMobile ? { width: '100%' } : { flex: 1, minWidth: 200, maxWidth: 320 }) }}>
+      <div style={{ height: 42, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, padding: '0 13px', color: 'var(--ink-4)' }}>
+        <IScan />
+        <input value={q} onChange={e => setQ(e.target.value)} enterKeyHint="search"
+          placeholder="Scan or enter cargo barcode…"
+          style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)', minWidth: 0 }} />
+        {q && <button type="button" onClick={() => setQ('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', display: 'flex', padding: 0, fontSize: 16, lineHeight: 1 }}>×</button>}
+      </div>
+      {msg && (
+        <div style={{ position: 'absolute', top: 46, left: 0, right: 0, zIndex: 60, background: '#991b1b', color: '#fff', fontSize: 12.5, fontWeight: 500, padding: '9px 13px', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.18)', opacity: msg.fading ? 0 : 1, transition: 'opacity 0.4s ease', pointerEvents: 'none' }}>
+          {msg.text}
+        </div>
+      )}
+    </form>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────────────────────────
 export default function SalesOrdersPage() {
   const router = useRouter();
@@ -274,7 +334,9 @@ export default function SalesOrdersPage() {
         api.sos.list({ page_size: 500 }),
         api.vendors.list(),
       ]);
-      setOrders(soRes.results || []);
+      const rows = soRes.results || [];
+      rows.forEach(o => crumbCache.setSo(o.id, o.so_number));  // warm breadcrumb before any row click
+      setOrders(rows);
       setVendors(vendorData);
     } catch { showToast('Failed to load', 'err'); }
     setLoading(false);
@@ -298,6 +360,11 @@ export default function SalesOrdersPage() {
       return true;
     });
   }, [orders, tab, q, vendorFilter, dateFrom, dateTo]);
+
+  // MSFT SOs use the board workflow (/sos/[id]); everyone else uses the cargo/pallet
+  // workflow (/sales-orders/[id]). Vendor detection mirrors the MSFT Order page (/sos).
+  const isMsft = (vendorName?: string) => (vendorName || '').toUpperCase().includes('MSFT');
+  const soDetailHref = (o: SO) => (isMsft(o.vendor_name) ? `/sos/${o.id}` : `/sales-orders/${o.id}`);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const pageRows = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -332,6 +399,8 @@ export default function SalesOrdersPage() {
             <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Filter by SO number…"
               style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)' }} />
           </div>
+          {/* Row 2b: Cargo barcode search */}
+          <CargoSearch isMobile={true} />
           {/* Row 3: Vendor + New SO */}
           <div style={{ display: 'flex', gap: 8 }}>
             <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
@@ -367,6 +436,7 @@ export default function SalesOrdersPage() {
             <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Filter by SO number…"
               style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)' }} />
           </div>
+          <CargoSearch isMobile={false} />
           <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
             style={{ height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
             <option value="">All vendors</option>
@@ -400,7 +470,7 @@ export default function SalesOrdersPage() {
             {pageRows.map(o => {
               const totWt = Number(o.total_pallet_weight || 0);
               return (
-                <div key={o.id} onClick={() => router.push(`/sales-orders/${o.id}`)}
+                <div key={o.id} onClick={() => router.push(soDetailHref(o))}
                   style={{ padding: '14px 16px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
                     <span className="mono" style={{ fontWeight: 700, fontSize: 15 }}>{o.so_number}</span>
@@ -469,7 +539,7 @@ export default function SalesOrdersPage() {
                   return (
                     <tr key={o.id}
                       style={{ cursor: 'pointer' }}
-                      onClick={() => router.push(`/sales-orders/${o.id}`)}
+                      onClick={() => router.push(soDetailHref(o))}
                       onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = '#eef5f0'}
                       onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'}>
                       <td style={Td}><span className="mono" style={{ fontWeight: 600 }}>{o.so_number}</span></td>

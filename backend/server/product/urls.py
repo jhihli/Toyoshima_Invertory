@@ -25,6 +25,9 @@ urlpatterns = [
     path('pallets/<int:pk>/photo/', views.pallet_photo, name='pallet-photo'),
     path('pallets/<int:pallet_pk>/photos/', views.pallet_photos_list, name='pallet-photos-list'),
     path('pallets/<int:pallet_pk>/photos/<int:pk>/', views.pallet_photo_detail, name='pallet-photo-detail'),
+    path('pallets/<int:pallet_pk>/cargos/', views.cargo_list, name='cargo-list'),
+    path('pallets/<int:pallet_pk>/cargos/<int:pk>/', views.cargo_detail, name='cargo-detail'),
+    path('cargos/search/', views.cargo_search, name='cargo-search'),
     path('sos/<int:so_pk>/boards/', views.board_list_by_so, name='board-list-by-so'),
     path('sos/<int:so_pk>/boards/bulk/', views.board_bulk_create, name='board-bulk-create'),
 

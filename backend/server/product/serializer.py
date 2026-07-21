@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.conf import settings
-from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer
+from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer, Cargo
 import os
 
 
@@ -57,16 +57,20 @@ class PalletPhotoSerializer(serializers.ModelSerializer):
 
 class PalletSerializer(serializers.ModelSerializer):
     board_count = serializers.SerializerMethodField(read_only=True)
+    cargo_count = serializers.SerializerMethodField(read_only=True)
     photo_url = serializers.SerializerMethodField(read_only=True)
     photos = PalletPhotoSerializer(many=True, read_only=True)
 
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_count', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_count', 'cargo_count', 'created_at']
         read_only_fields = ['created_at', 'photo_url', 'photos']
 
     def get_board_count(self, obj):
         return obj.boards.count()
+
+    def get_cargo_count(self, obj):
+        return obj.cargos.count()
 
     def get_photo_url(self, obj):
         if not obj.photo:
@@ -78,6 +82,13 @@ class PalletSerializer(serializers.ModelSerializer):
         if request:
             return request.build_absolute_uri(obj.photo.url)
         return obj.photo.url
+
+
+class CargoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Cargo
+        fields = ['id', 'pallet', 'barcode', 'note', 'created_at']
+        read_only_fields = ['pallet', 'barcode', 'created_at']
 
 
 class ChipSerializer(serializers.ModelSerializer):
