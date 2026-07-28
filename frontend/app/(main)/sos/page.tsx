@@ -318,7 +318,9 @@ function SORow({ so, onClick }: { so: SO; onClick: () => void }) {
     <tr onClick={onClick}
       style={{ borderBottom: '1px solid var(--hair)', cursor: 'pointer', background: hover ? 'var(--surface-2)' : 'transparent' }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <td style={tdS}><span className="mono" style={{ fontSize: 12.5 }}>{so.so_number}</span></td>
+      <td style={tdS} title={so.so_number}>
+        <span className="mono" style={{ fontSize: 12.5, display: 'block', maxWidth: 'clamp(180px, 24vw, 420px)', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{so.so_number}</span>
+      </td>
       <td style={{ ...tdS, fontSize: 12.5 }}>{so.vendor_name}</td>
       <td style={{ ...tdS, fontSize: 12.5 }} className="num">{so.inbound_date}</td>
       <td style={{ ...tdS, fontSize: 12.5, color: so.outbound_date ? 'var(--ink)' : 'var(--ink-5)' }} className="num">{so.outbound_date ?? '—'}</td>
@@ -344,7 +346,7 @@ function SOCard({ so, onClick }: { so: SO; onClick: () => void }) {
       borderRadius: 4, padding: '10px 14px', cursor: 'pointer',
       display: 'flex', alignItems: 'center', gap: 8,
     }}>
-      <span className="mono" style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500, flexShrink: 0 }}>{so.so_number}</span>
+      <span className="mono" title={so.so_number} style={{ fontSize: 13, color: 'var(--ink)', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{so.so_number}</span>
       <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>
       <span style={{ fontSize: 12, color: 'var(--ink-3)', flexShrink: 0 }}>{so.vendor_name}</span>
       <span style={{ color: 'var(--hair-strong)', flexShrink: 0 }}>·</span>

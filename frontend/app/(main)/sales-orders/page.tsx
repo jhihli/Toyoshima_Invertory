@@ -472,9 +472,9 @@ export default function SalesOrdersPage() {
               return (
                 <div key={o.id} onClick={() => router.push(soDetailHref(o))}
                   style={{ padding: '14px 16px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span className="mono" style={{ fontWeight: 700, fontSize: 15 }}>{o.so_number}</span>
-                    <span style={{ fontSize: 12, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}>{o.inbound_date}</span>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
+                    <span className="mono" title={o.so_number} style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{o.so_number}</span>
+                    <span style={{ fontSize: 12, color: 'var(--ink-4)', whiteSpace: 'nowrap', flexShrink: 0 }}>{o.inbound_date}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
                     <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{o.vendor_name}</span>
@@ -508,7 +508,17 @@ export default function SalesOrdersPage() {
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: tab !== 'inbound' ? 900 : 800 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: tab !== 'inbound' ? 900 : 800 }}>
+              <colgroup>
+                <col style={{ width: tab !== 'inbound' ? '12%' : '13%' }} /> {/* SO Number */}
+                <col style={{ width: tab !== 'inbound' ? '12%' : '15%' }} /> {/* Vendor */}
+                <col style={{ width: tab !== 'inbound' ? '12%' : '14%' }} /> {/* Inbound Date */}
+                {tab !== 'inbound' && <col style={{ width: '12%' }} />}      {/* Outbound Date */}
+                <col style={{ width: tab !== 'inbound' ? '9%' : '10%' }} />  {/* Pallets */}
+                <col style={{ width: tab !== 'inbound' ? '12%' : '15%' }} /> {/* Total WT Gross */}
+                <col style={{ width: tab !== 'inbound' ? '15%' : '17%' }} /> {/* Note */}
+                <col style={{ width: tab !== 'inbound' ? '16%' : '16%' }} /> {/* Actions */}
+              </colgroup>
               <thead>
                 <tr>
                   <th style={Th}>SO Number</th>
@@ -542,7 +552,7 @@ export default function SalesOrdersPage() {
                       onClick={() => router.push(soDetailHref(o))}
                       onMouseEnter={e => (e.currentTarget as HTMLTableRowElement).style.background = '#eef5f0'}
                       onMouseLeave={e => (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'}>
-                      <td style={Td}><span className="mono" style={{ fontWeight: 600 }}>{o.so_number}</span></td>
+                      <td style={Td} title={o.so_number}><span className="mono" style={{ fontWeight: 600, display: 'block', maxWidth: '100%', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{o.so_number}</span></td>
                       <td style={{ ...Td, color: 'var(--ink-2)' }}>{o.vendor_name}</td>
                       <td style={{ ...Td, color: 'var(--ink-3)', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>{o.inbound_date}</td>
                       {tab !== 'inbound' && (

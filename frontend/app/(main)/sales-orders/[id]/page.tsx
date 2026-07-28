@@ -558,7 +558,7 @@ export default function SODetailPage() {
             {/* Lead + action buttons row */}
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: 8, flexWrap: 'wrap' }}>
               <div style={{ minWidth: 0 }}>
-                <h1 className="mono" style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em' }}>{so.so_number}</h1>
+                <h1 className="mono" title={so.so_number} style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{so.so_number}</h1>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 13.5, color: 'var(--ink-3)' }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, display: 'inline-block' }} />
                   Vendor <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{so.vendor_name}</b>
@@ -584,8 +584,8 @@ export default function SODetailPage() {
           /* Desktop: everything on one row */
           <div style={{ flex: 1, minWidth: 0, padding: '16px 22px', display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
             {/* SO number + vendor */}
-            <div style={{ flexShrink: 0 }}>
-              <h1 className="mono" style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.15 }}>{so.so_number}</h1>
+            <div style={{ flexShrink: 1, minWidth: 0, maxWidth: 'clamp(220px, 34vw, 560px)' }}>
+              <h1 className="mono" title={so.so_number} style={{ margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: '-0.01em', lineHeight: 1.15, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{so.so_number}</h1>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: 13, color: 'var(--ink-3)' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, display: 'inline-block' }} />
                 Vendor <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{so.vendor_name}</b>
