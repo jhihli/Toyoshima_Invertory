@@ -26,7 +26,7 @@ class Vendor(models.Model):
 class SO(models.Model):
     WEIGHT_RULE_CHOICES = Vendor.WEIGHT_RULE_CHOICES
 
-    so_number = models.CharField(max_length=50, unique=True, db_index=True)
+    so_number = models.CharField(max_length=1000, unique=True, db_index=True)
     vendor = models.ForeignKey(Vendor, on_delete=models.PROTECT, related_name='sos')
     weight_rule = models.CharField(max_length=20, blank=True)
     inbound_date = models.DateField()
@@ -365,3 +365,170 @@ class MPNReportEmail(models.Model):
 
     def __str__(self):
         return f"{self.sent_at:%Y-%m-%d %H:%M} → {self.sent_to} [{self.status}]"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Microsoft Recycling API — Buyback reporting (Credit Details / PO Document / PNR)
+#
+# We PUSH JSON to Microsoft's Recycling API. Non-secret connection config +
+# secrets live in .env (settings.MSFT_API); this DB config is only a UI toggle.
+# Reports are: Credit Details → PO Document → Payment Notifications, linked by
+# supplierPoNumber. For Buyback, supplierUnitType must be 'Memory' or 'CPU'.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Buyback Credit Details accepts only these unit types (Onboarding Guide rule).
+MSFT_BUYBACK_UNIT_TYPES = ['Memory', 'CPU']
+
+# The three Buyback report types (used as MsftApiLog.report_type + endpoint sub-path).
+MSFT_REPORT_CHOICES = [
+    ('credit', 'Credit Details'),
+    ('podoc',  'PO Document'),
+    ('pnr',    'Payment Notifications'),
+]
+
+
+class MsftApiConfig(models.Model):
+    """Singleton (id=1) — UI-editable master toggle. Connection creds are in .env."""
+    enabled     = models.BooleanField(default=True)
+    default_job_status   = models.CharField(max_length=20, default='ACTIVE')
+    default_po_currency  = models.CharField(max_length=10, default='USD')
+    default_billing_country = models.CharField(max_length=2, default='US')
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'msft_api_config'
+
+    def __str__(self):
+        return f"MsftApiConfig (enabled={self.enabled})"
+
+    @classmethod
+    def get_config(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+
+class MsftCompanyCode(models.Model):
+    """Master data seeded from 'Company Code Master.xlsx' (code → country)."""
+    code    = models.CharField(max_length=20, unique=True, db_index=True)
+    country = models.CharField(max_length=100, blank=True)
+
+    class Meta:
+        db_table = 'msft_company_code'
+        ordering = ['code']
+
+    def __str__(self):
+        return f"{self.code} — {self.country}"
+
+
+class MsftUnitType(models.Model):
+    """Master data seeded from 'Unit Type Master.xlsx' — the 38 accepted unit types."""
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        db_table = 'msft_unit_type'
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class MsftUnitTypeMap(models.Model):
+    """Maps our internal chip/part category (e.g. Chip.item_group, MPN.part_type)
+    to an accepted Microsoft unit type. For Buyback the target must be Memory/CPU."""
+    source_value = models.CharField(max_length=100, unique=True, db_index=True)
+    unit_type    = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = 'msft_unit_type_map'
+        ordering = ['source_value']
+
+    def __str__(self):
+        return f"{self.source_value} → {self.unit_type}"
+
+
+class MsftJobInfo(models.Model):
+    """MSFT Buyback job-level fields for one SO (only MSFT SOs get a row)."""
+    so                 = models.OneToOneField(SO, on_delete=models.CASCADE, related_name='msft_job')
+    supplier_job_type  = models.CharField(max_length=50, default='Buyback')
+    ms_company_code    = models.CharField(max_length=20, blank=True)
+    supplier_po_number = models.CharField(max_length=100, blank=True)
+    supplier_po_currency = models.CharField(max_length=10, default='USD')
+    billing_country    = models.CharField(max_length=2, default='US')
+    job_status         = models.CharField(max_length=20, default='ACTIVE')
+    # PO Document (P2): the supplier PO PDF, base64-encoded into fileContent at push time.
+    po_document        = models.FileField(upload_to='msft_po/%Y/%m/', blank=True, null=True)
+    updated_at         = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'msft_job_info'
+
+    def __str__(self):
+        return f"MSFT Job for {self.so.so_number}"
+
+
+class MsftCreditUnit(models.Model):
+    """One sold-unit line for a Buyback Credit Details report. Manually entered /
+    source-decoupled (may come from harvested chips, the Toyo Data Capture Excel,
+    or hand entry). For Buyback, unit_type must be 'Memory' or 'CPU'."""
+    so                 = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='msft_credit_units')
+    supplier_unit_id   = models.CharField(max_length=100)
+    unit_type          = models.CharField(max_length=100, blank=True)   # Memory | CPU (validated)
+    date_sold          = models.DateField(null=True, blank=True)
+    sale_price         = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    supplier_commission = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    ms_revenue_share   = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    supplier_po_number = models.CharField(max_length=100, blank=True)
+    quantity           = models.IntegerField(default=1)
+    created_at         = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'msft_credit_unit'
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.supplier_unit_id} ({self.unit_type})"
+
+
+class MsftPaymentNotice(models.Model):
+    """One payment-notification line (PNR) for a Buyback job, keyed by supplier PO."""
+    so                 = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='msft_payment_notices')
+    supplier_po_number = models.CharField(max_length=100)
+    supplier_po_currency = models.CharField(max_length=10, default='USD')
+    ms_invoice_number  = models.CharField(max_length=100, blank=True)
+    payment_date       = models.DateField(null=True, blank=True)
+    payment_amount     = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    payment_amount_usd = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    created_at         = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'msft_payment_notice'
+        ordering = ['id']
+
+    def __str__(self):
+        return f"PNR {self.supplier_po_number} / {self.ms_invoice_number}"
+
+
+class MsftApiLog(models.Model):
+    """Audit log of every push (dry-run or live) to the Microsoft Recycling API."""
+    STATUS_CHOICES = [('ok', 'Success'), ('error', 'Error'), ('dryrun', 'Dry run')]
+
+    so                 = models.ForeignKey(SO, on_delete=models.SET_NULL, null=True, blank=True, related_name='msft_logs')
+    report_type        = models.CharField(max_length=20, choices=MSFT_REPORT_CHOICES)
+    supplier_po_number = models.CharField(max_length=100, blank=True)
+    correlation_id     = models.CharField(max_length=64, blank=True)
+    endpoint           = models.CharField(max_length=300, blank=True)
+    http_status        = models.IntegerField(null=True, blank=True)
+    request_payload    = models.JSONField(null=True, blank=True)
+    response           = models.JSONField(null=True, blank=True)
+    success_count      = models.IntegerField(default=0)
+    error_count        = models.IntegerField(default=0)
+    status             = models.CharField(max_length=10, choices=STATUS_CHOICES)
+    error              = models.TextField(blank=True)
+    created_at         = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'msft_api_log'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.created_at:%Y-%m-%d %H:%M} {self.report_type} [{self.status}]"

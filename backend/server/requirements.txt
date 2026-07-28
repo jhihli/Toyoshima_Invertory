@@ -10,3 +10,4 @@ python-dotenv
 gunicorn
 Pillow
 openpyxl
+requests

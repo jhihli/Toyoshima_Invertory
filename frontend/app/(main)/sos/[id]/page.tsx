@@ -17,6 +17,7 @@ import {
   type MpnEntry,
 } from '@/app/lib/chipSlots';
 import { WeightRuleField } from '../WeightRuleField';
+import MsftReportPanel from './MsftReportPanel';
 import type { SODetail, Pallet, Board, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -64,7 +65,7 @@ export default function SODetailPage() {
   const [so, setSo] = useState<SODetail | null>(null);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'pallets' | 'boards'>('pallets');
+  const [tab, setTab] = useState<'pallets' | 'boards' | 'msft'>('pallets');
   const [editMeta, setEditMeta] = useState(false);
   const [addPalletOpen, setAddPalletOpen] = useState(false);
   const [addBoardOpen, setAddBoardOpen] = useState(false);
@@ -939,6 +940,7 @@ export default function SODetailPage() {
         <Tabs value={tab} onChange={v => setTab(v as any)} tabs={[
           { value: 'pallets', label: 'Pallets' },
           { value: 'boards', label: 'Boards' },
+          { value: 'msft', label: 'MSFT Report' },
         ]} />
       ) : (
         <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--hair)' }}>
@@ -946,6 +948,7 @@ export default function SODetailPage() {
           {[
             { value: 'pallets', label: 'Pallets' },
             { value: 'boards', label: 'Boards' },
+            { value: 'msft', label: 'MSFT Report' },
           ].map(t => {
             const active = tab === t.value;
             return (
@@ -1041,6 +1044,7 @@ export default function SODetailPage() {
             onDeleteBoard={setDeleteBoardId}
           />
         )}
+        {tab === 'msft' && <MsftReportPanel soId={soId} />}
       </div>
 
       {/* Lightbox */}

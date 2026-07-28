@@ -24,6 +24,12 @@ env/
 .vscode/
 .idea/
 
+# Claude worktrees (scratch)
+.claude/worktrees/
+
+# Reference docs / requirements (not code)
+asset/
+
 # Media & uploads
 media/
 Images/

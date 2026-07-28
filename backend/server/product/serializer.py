@@ -1,6 +1,11 @@
 from rest_framework import serializers
 from django.conf import settings
-from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer, Cargo
+from .models import (
+    Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
+    MPNReportConfig, MPNReportEmail, PalletChipContainer, Cargo,
+    MsftApiConfig, MsftJobInfo, MsftCreditUnit, MsftPaymentNotice, MsftApiLog,
+    MsftCompanyCode, MsftUnitType, MSFT_BUYBACK_UNIT_TYPES,
+)
 import os
 
 
@@ -400,3 +405,83 @@ class PalletChipContainerWithChipSerializer(serializers.ModelSerializer):
 
     def get_inventory_qty(self, obj):
         return obj.actual_qty if obj.actual_qty is not None else (obj.chip.qty or 0)
+
+
+# ─── Microsoft Recycling API (Buyback) ──────────────────────────────────────
+class MsftApiConfigSerializer(serializers.ModelSerializer):
+    environment = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = MsftApiConfig
+        fields = ['enabled', 'default_job_status', 'default_po_currency',
+                  'default_billing_country', 'environment', 'updated_at']
+        read_only_fields = ['updated_at']
+
+    def get_environment(self, obj):
+        return settings.MSFT_API.get('ENVIRONMENT', 'test')
+
+
+class MsftJobInfoSerializer(serializers.ModelSerializer):
+    so_number = serializers.CharField(source='so.so_number', read_only=True)
+    po_document_name = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = MsftJobInfo
+        fields = ['id', 'so', 'so_number', 'supplier_job_type', 'ms_company_code',
+                  'supplier_po_number', 'supplier_po_currency', 'billing_country',
+                  'job_status', 'po_document_name', 'updated_at']
+        read_only_fields = ['so', 'updated_at']
+
+    def get_po_document_name(self, obj):
+        import os as _os
+        return _os.path.basename(obj.po_document.name) if obj.po_document else None
+
+
+class MsftCreditUnitSerializer(serializers.ModelSerializer):
+    # Allow blank drafts: a new row is created empty, then filled inline.
+    supplier_unit_id = serializers.CharField(required=False, allow_blank=True, max_length=100)
+
+    class Meta:
+        model = MsftCreditUnit
+        fields = ['id', 'so', 'supplier_unit_id', 'unit_type', 'date_sold',
+                  'sale_price', 'supplier_commission', 'ms_revenue_share',
+                  'supplier_po_number', 'quantity', 'created_at']
+        read_only_fields = ['so', 'created_at']
+
+    def validate_unit_type(self, value):
+        if value and value not in MSFT_BUYBACK_UNIT_TYPES:
+            raise serializers.ValidationError(
+                f"Buyback unit type must be one of {MSFT_BUYBACK_UNIT_TYPES}."
+            )
+        return value
+
+
+class MsftPaymentNoticeSerializer(serializers.ModelSerializer):
+    supplier_po_number = serializers.CharField(required=False, allow_blank=True, max_length=100)
+
+    class Meta:
+        model = MsftPaymentNotice
+        fields = ['id', 'so', 'supplier_po_number', 'supplier_po_currency',
+                  'ms_invoice_number', 'payment_date', 'payment_amount',
+                  'payment_amount_usd', 'created_at']
+        read_only_fields = ['so', 'created_at']
+
+
+class MsftApiLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MsftApiLog
+        fields = ['id', 'so', 'report_type', 'supplier_po_number', 'correlation_id',
+                  'endpoint', 'http_status', 'request_payload', 'response',
+                  'success_count', 'error_count', 'status', 'error', 'created_at']
+
+
+class MsftCompanyCodeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MsftCompanyCode
+        fields = ['code', 'country']
+
+
+class MsftUnitTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MsftUnitType
+        fields = ['name']

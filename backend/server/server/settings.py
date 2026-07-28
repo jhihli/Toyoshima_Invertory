@@ -224,3 +224,18 @@ EMAIL_HOST_USER     = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL  = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 EMAIL_TIMEOUT       = 15
+
+# ─── Microsoft Recycling API (Buyback) — secrets & config from .env, never in git
+MSFT_API = {
+    'ENVIRONMENT':      os.getenv('MSFT_ENVIRONMENT', 'test'),   # 'test' | 'prod'
+    'SUPPLIER_ID':      os.getenv('MSFT_SUPPLIER_ID', ''),
+    'SUPPLIER_NAME':    os.getenv('MSFT_SUPPLIER_NAME', ''),
+    'PROGRAM_TYPE':     os.getenv('MSFT_PROGRAM_TYPE', 'CLOUD'),
+    'TEST_BASE':        os.getenv('MSFT_TEST_BASE', 'https://p2p.azure-api.net/recycling/api/devicerecycling'),
+    'PROD_BASE':        os.getenv('MSFT_PROD_BASE', 'https://supplier.azure-api.net/recycling/v1/api/devicerecycling'),
+    'TENANT_ID':        os.getenv('MSFT_TENANT_ID', ''),
+    'CLIENT_ID':        os.getenv('MSFT_CLIENT_ID', ''),
+    'CLIENT_SECRET':    os.getenv('MSFT_CLIENT_SECRET', ''),
+    'RESOURCE_SCOPE':   os.getenv('MSFT_RESOURCE_SCOPE', ''),
+    'SUBSCRIPTION_KEY': os.getenv('MSFT_SUBSCRIPTION_KEY', ''),
+}

@@ -216,3 +216,69 @@ export type User = {
   email: string;
   role: string;
 };
+
+// ─── Microsoft Recycling API (Buyback) ──────────────────────────────────────
+export interface MsftMeta {
+  company_codes: { code: string; country: string }[];
+  unit_types: string[];
+  buyback_unit_types: string[];
+  environment: string;
+  supplier_id: string;
+}
+
+export interface MsftJobInfo {
+  id: number;
+  so: number;
+  so_number: string;
+  supplier_job_type: string;
+  ms_company_code: string;
+  supplier_po_number: string;
+  supplier_po_currency: string;
+  billing_country: string;
+  job_status: string;
+  po_document_name: string | null;
+  updated_at: string;
+}
+
+export interface MsftCreditUnit {
+  id: number;
+  so: number;
+  supplier_unit_id: string;
+  unit_type: string;
+  date_sold: string | null;
+  sale_price: string | null;
+  supplier_commission: string | null;
+  ms_revenue_share: string | null;
+  supplier_po_number: string;
+  quantity: number;
+  created_at: string;
+}
+
+export interface MsftPaymentNotice {
+  id: number;
+  so: number;
+  supplier_po_number: string;
+  supplier_po_currency: string;
+  ms_invoice_number: string;
+  payment_date: string | null;
+  payment_amount: string | null;
+  payment_amount_usd: string | null;
+  created_at: string;
+}
+
+export interface MsftApiLog {
+  id: number;
+  so: number | null;
+  report_type: 'credit' | 'podoc' | 'pnr';
+  supplier_po_number: string;
+  correlation_id: string;
+  endpoint: string;
+  http_status: number | null;
+  request_payload: unknown;
+  response: unknown;
+  success_count: number;
+  error_count: number;
+  status: 'ok' | 'error' | 'dryrun';
+  error: string;
+  created_at: string;
+}

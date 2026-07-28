@@ -15,14 +15,22 @@ def _check_scanner_key(request):
     if not key or key != settings.SCANNER_API_KEY:
         return Response({'success': False, 'error': 'Unauthorized'}, status=401)
     return None
-from .models import Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN, MPNReportConfig, MPNReportEmail, PalletChipContainer, Cargo
+from .models import (
+    Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
+    MPNReportConfig, MPNReportEmail, PalletChipContainer, Cargo,
+    MsftApiConfig, MsftJobInfo, MsftCreditUnit, MsftPaymentNotice, MsftApiLog,
+    MsftCompanyCode, MsftUnitType, MSFT_BUYBACK_UNIT_TYPES,
+)
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
     SOPhotoSerializer, PalletSerializer, PalletPhotoSerializer, BoardSerializer, BoardListSerializer,
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
     PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer,
-    CargoSerializer
+    CargoSerializer,
+    MsftApiConfigSerializer, MsftJobInfoSerializer, MsftCreditUnitSerializer,
+    MsftPaymentNoticeSerializer, MsftApiLogSerializer,
+    MsftCompanyCodeSerializer, MsftUnitTypeSerializer,
 )
 
 
@@ -909,3 +917,157 @@ def pallet_chip_container_upsert(request, pallet_pk, chip_pk):
         defaults={'container_uid': container_uid, 'actual_qty': actual_qty},
     )
     return Response(PalletChipContainerSerializer(obj).data)
+
+
+# ═══════════════════════════════════════════ Microsoft Recycling API (Buyback)
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def msft_config(request):
+    config = MsftApiConfig.get_config()
+    if request.method == 'GET':
+        return Response(MsftApiConfigSerializer(config).data)
+    s = MsftApiConfigSerializer(config, data=request.data, partial=True)
+    if not s.is_valid():
+        return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+    s.save()
+    return Response(s.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def msft_meta(request):
+    """Dropdown data for the MSFT reporting UI."""
+    return Response({
+        'company_codes': MsftCompanyCodeSerializer(MsftCompanyCode.objects.all(), many=True).data,
+        'unit_types': list(MsftUnitType.objects.values_list('name', flat=True)),
+        'buyback_unit_types': MSFT_BUYBACK_UNIT_TYPES,
+        'environment': settings.MSFT_API.get('ENVIRONMENT', 'test'),
+        'supplier_id': settings.MSFT_API.get('SUPPLIER_ID', ''),
+    })
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def msft_job_info(request, so_pk):
+    so = get_object_or_404(SO, pk=so_pk)
+    config = MsftApiConfig.get_config()
+    job, _ = MsftJobInfo.objects.get_or_create(so=so, defaults={
+        'job_status': config.default_job_status,
+        'supplier_po_currency': config.default_po_currency,
+        'billing_country': config.default_billing_country,
+    })
+    if request.method == 'GET':
+        return Response(MsftJobInfoSerializer(job).data)
+    s = MsftJobInfoSerializer(job, data=request.data, partial=True)
+    if not s.is_valid():
+        return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+    s.save()
+    return Response(s.data)
+
+
+@api_view(['POST', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def msft_po_document(request, so_pk):
+    so = get_object_or_404(SO, pk=so_pk)
+    job, _ = MsftJobInfo.objects.get_or_create(so=so)
+    if request.method == 'DELETE':
+        if job.po_document:
+            job.po_document.delete(save=True)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    f = request.FILES.get('file')
+    if not f:
+        return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+    job.po_document = f
+    job.save()
+    return Response(MsftJobInfoSerializer(job).data)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def msft_credit_units(request, so_pk):
+    so = get_object_or_404(SO, pk=so_pk)
+    if request.method == 'GET':
+        qs = MsftCreditUnit.objects.filter(so=so)
+        return Response(MsftCreditUnitSerializer(qs, many=True).data)
+    s = MsftCreditUnitSerializer(data=request.data)
+    if not s.is_valid():
+        return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+    s.save(so=so)
+    return Response(s.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def msft_credit_unit_detail(request, so_pk, pk):
+    unit = get_object_or_404(MsftCreditUnit, pk=pk, so_id=so_pk)
+    if request.method == 'DELETE':
+        unit.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    s = MsftCreditUnitSerializer(unit, data=request.data, partial=True)
+    if not s.is_valid():
+        return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+    s.save()
+    return Response(s.data)
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def msft_payment_notices(request, so_pk):
+    so = get_object_or_404(SO, pk=so_pk)
+    if request.method == 'GET':
+        qs = MsftPaymentNotice.objects.filter(so=so)
+        return Response(MsftPaymentNoticeSerializer(qs, many=True).data)
+    s = MsftPaymentNoticeSerializer(data=request.data)
+    if not s.is_valid():
+        return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+    s.save(so=so)
+    return Response(s.data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def msft_payment_notice_detail(request, so_pk, pk):
+    notice = get_object_or_404(MsftPaymentNotice, pk=pk, so_id=so_pk)
+    if request.method == 'DELETE':
+        notice.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    s = MsftPaymentNoticeSerializer(notice, data=request.data, partial=True)
+    if not s.is_valid():
+        return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+    s.save()
+    return Response(s.data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def msft_logs(request, so_pk):
+    qs = MsftApiLog.objects.filter(so_id=so_pk)
+    report = request.query_params.get('report')
+    if report:
+        qs = qs.filter(report_type=report)
+    return Response(MsftApiLogSerializer(qs[:50], many=True).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def msft_push(request, so_pk):
+    """Assemble + push (or dry-run) a Buyback report for this SO.
+    Body: { "report": "credit"|"podoc"|"pnr", "dry_run": bool }."""
+    so = get_object_or_404(SO, pk=so_pk)
+    report = request.data.get('report')
+    if report not in ('credit', 'podoc', 'pnr'):
+        return Response({'error': 'report must be credit, podoc or pnr'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    dry_run = bool(request.data.get('dry_run', False))
+
+    from django.core.management import call_command
+    try:
+        call_command('push_msft_report', report=report, so=so.pk, dry_run=dry_run)
+    except Exception:
+        pass  # outcome already persisted in MsftApiLog
+
+    log = MsftApiLog.objects.filter(so=so, report_type=report).first()
+    if log is None:
+        return Response({'error': 'No log produced.'}, status=status.HTTP_400_BAD_REQUEST)
+    return Response(MsftApiLogSerializer(log).data, status=status.HTTP_201_CREATED)
