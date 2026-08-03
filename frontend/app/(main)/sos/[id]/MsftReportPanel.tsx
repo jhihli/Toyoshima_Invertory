@@ -52,7 +52,14 @@ export default function MsftReportPanel({ soId }: { soId: number }) {
     setMeta(m); setJob(j); setUnits(u); setNotices(n); setLogs(l);
   }, [soId]);
 
-  useEffect(() => { reload().catch(() => toast('Failed to load MSFT data')); }, [reload, toast]);
+  // Load once per SO. `toast` is intentionally NOT a dep — including it can loop
+  // (each toast re-renders the provider → new toast fn → effect re-runs → refetch → fail → toast…).
+  useEffect(() => {
+    let alive = true;
+    reload().catch(() => { if (alive) toast('Failed to load MSFT data'); });
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reload]);
 
   // ─── Job info ─────────────────────────────────────────────
   const patchJob = (field: keyof MsftJobInfo, value: string) =>
