@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter, useParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import ExcelJS from 'exceljs';
 import * as XLSX from 'xlsx';
 import { saveAs } from 'file-saver';
@@ -66,6 +67,9 @@ export default function SODetailPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'pallets' | 'boards' | 'msft'>('pallets');
+  const { data: session } = useSession();
+  // MSFT Report tab is restricted to admin/manager (backend also enforces this).
+  const canMsft = ['admin', 'manager'].includes(session?.user?.role ?? '');
   const [editMeta, setEditMeta] = useState(false);
   const [addPalletOpen, setAddPalletOpen] = useState(false);
   const [addBoardOpen, setAddBoardOpen] = useState(false);
@@ -940,7 +944,7 @@ export default function SODetailPage() {
         <Tabs value={tab} onChange={v => setTab(v as any)} tabs={[
           { value: 'pallets', label: 'Pallets' },
           { value: 'boards', label: 'Boards' },
-          { value: 'msft', label: 'MSFT Report' },
+          ...(canMsft ? [{ value: 'msft', label: 'MSFT Report' }] : []),
         ]} />
       ) : (
         <div style={{ display: 'flex', alignItems: 'stretch', borderBottom: '1px solid var(--hair)' }}>
@@ -948,7 +952,7 @@ export default function SODetailPage() {
           {[
             { value: 'pallets', label: 'Pallets' },
             { value: 'boards', label: 'Boards' },
-            { value: 'msft', label: 'MSFT Report' },
+            ...(canMsft ? [{ value: 'msft', label: 'MSFT Report' }] : []),
           ].map(t => {
             const active = tab === t.value;
             return (
@@ -1044,7 +1048,7 @@ export default function SODetailPage() {
             onDeleteBoard={setDeleteBoardId}
           />
         )}
-        {tab === 'msft' && <MsftReportPanel soId={soId} />}
+        {tab === 'msft' && canMsft && <MsftReportPanel soId={soId} />}
       </div>
 
       {/* Lightbox */}

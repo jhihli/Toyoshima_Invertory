@@ -1,5 +1,5 @@
 from rest_framework.decorators import api_view, permission_classes,authentication_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import IsAuthenticated, AllowAny, BasePermission
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.views import APIView
@@ -15,6 +15,15 @@ def _check_scanner_key(request):
     if not key or key != settings.SCANNER_API_KEY:
         return Response({'success': False, 'error': 'Unauthorized'}, status=401)
     return None
+
+
+class IsAdminOrManager(BasePermission):
+    """Only admin/manager roles. Used to gate the Microsoft Recycling API endpoints."""
+    message = 'Requires admin or manager role.'
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and getattr(user, 'is_admin_or_manager', False))
 from .models import (
     Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
     MPNReportConfig, MPNReportEmail, PalletChipContainer, Cargo,
@@ -922,7 +931,7 @@ def pallet_chip_container_upsert(request, pallet_pk, chip_pk):
 # ═══════════════════════════════════════════ Microsoft Recycling API (Buyback)
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_config(request):
     config = MsftApiConfig.get_config()
     if request.method == 'GET':
@@ -935,7 +944,7 @@ def msft_config(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_meta(request):
     """Dropdown data for the MSFT reporting UI."""
     return Response({
@@ -948,7 +957,7 @@ def msft_meta(request):
 
 
 @api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_job_info(request, so_pk):
     so = get_object_or_404(SO, pk=so_pk)
     config = MsftApiConfig.get_config()
@@ -967,7 +976,7 @@ def msft_job_info(request, so_pk):
 
 
 @api_view(['POST', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_po_document(request, so_pk):
     so = get_object_or_404(SO, pk=so_pk)
     job, _ = MsftJobInfo.objects.get_or_create(so=so)
@@ -984,7 +993,7 @@ def msft_po_document(request, so_pk):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_credit_units(request, so_pk):
     so = get_object_or_404(SO, pk=so_pk)
     if request.method == 'GET':
@@ -998,7 +1007,7 @@ def msft_credit_units(request, so_pk):
 
 
 @api_view(['PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_credit_unit_detail(request, so_pk, pk):
     unit = get_object_or_404(MsftCreditUnit, pk=pk, so_id=so_pk)
     if request.method == 'DELETE':
@@ -1012,7 +1021,7 @@ def msft_credit_unit_detail(request, so_pk, pk):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_payment_notices(request, so_pk):
     so = get_object_or_404(SO, pk=so_pk)
     if request.method == 'GET':
@@ -1026,7 +1035,7 @@ def msft_payment_notices(request, so_pk):
 
 
 @api_view(['PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_payment_notice_detail(request, so_pk, pk):
     notice = get_object_or_404(MsftPaymentNotice, pk=pk, so_id=so_pk)
     if request.method == 'DELETE':
@@ -1040,7 +1049,7 @@ def msft_payment_notice_detail(request, so_pk, pk):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_logs(request, so_pk):
     qs = MsftApiLog.objects.filter(so_id=so_pk)
     report = request.query_params.get('report')
@@ -1050,7 +1059,7 @@ def msft_logs(request, so_pk):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAdminOrManager])
 def msft_push(request, so_pk):
     """Assemble + push (or dry-run) a Buyback report for this SO.
     Body: { "report": "credit"|"podoc"|"pnr", "dry_run": bool }."""
