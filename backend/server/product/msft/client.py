@@ -37,10 +37,17 @@ class MsftClient:
 
     # ─── config helpers ────────────────────────────────────────────────
     @property
+    def is_prod(self) -> bool:
+        return (self.cfg.get('ENVIRONMENT') or 'test').lower() == 'prod'
+
+    @property
     def base_url(self) -> str:
-        env = (self.cfg.get('ENVIRONMENT') or 'test').lower()
-        base = self.cfg['PROD_BASE'] if env == 'prod' else self.cfg['TEST_BASE']
+        base = self.cfg['PROD_BASE'] if self.is_prod else self.cfg['TEST_BASE']
         return base.rstrip('/')
+
+    @property
+    def subscription_key(self) -> str:
+        return self.cfg['PROD_SUBSCRIPTION_KEY'] if self.is_prod else self.cfg['TEST_SUBSCRIPTION_KEY']
 
     def endpoint(self, report_type: str) -> str:
         try:
@@ -49,8 +56,14 @@ class MsftClient:
             raise MsftApiError(f"Unknown report type: {report_type!r}")
 
     def _missing_creds(self) -> list:
-        need = ['TENANT_ID', 'CLIENT_ID', 'CLIENT_SECRET', 'RESOURCE_SCOPE', 'SUBSCRIPTION_KEY']
-        return [k for k in need if not self.cfg.get(k)]
+        need = {
+            'TENANT_ID': self.cfg.get('TENANT_ID'),
+            'CLIENT_ID': self.cfg.get('CLIENT_ID'),
+            'CLIENT_SECRET': self.cfg.get('CLIENT_SECRET'),
+            'RESOURCE_SCOPE': self.cfg.get('RESOURCE_SCOPE'),
+            f"{'PROD' if self.is_prod else 'TEST'}_SUBSCRIPTION_KEY": self.subscription_key,
+        }
+        return [k for k, v in need.items() if not v]
 
     # ─── auth ──────────────────────────────────────────────────────────
     def get_token(self) -> str:
@@ -78,7 +91,7 @@ class MsftClient:
     def _headers(self, correlation_id: str) -> dict:
         return {
             'Authorization': f'Bearer {self.get_token()}',
-            'Ocp-Apim-Subscription-Key': self.cfg['SUBSCRIPTION_KEY'],
+            'Ocp-Apim-Subscription-Key': self.subscription_key,
             'Correlation-Id': correlation_id,
             'ProgramType': self.cfg.get('PROGRAM_TYPE', 'CLOUD'),
             'TenantId': self.cfg['TENANT_ID'],

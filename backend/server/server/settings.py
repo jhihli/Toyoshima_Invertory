@@ -237,5 +237,7 @@ MSFT_API = {
     'CLIENT_ID':        os.getenv('MSFT_CLIENT_ID', ''),
     'CLIENT_SECRET':    os.getenv('MSFT_CLIENT_SECRET', ''),
     'RESOURCE_SCOPE':   os.getenv('MSFT_RESOURCE_SCOPE', ''),
-    'SUBSCRIPTION_KEY': os.getenv('MSFT_SUBSCRIPTION_KEY', ''),
+    # Per-environment subscription keys (TEST falls back to legacy MSFT_SUBSCRIPTION_KEY).
+    'TEST_SUBSCRIPTION_KEY': os.getenv('MSFT_TEST_SUBSCRIPTION_KEY', os.getenv('MSFT_SUBSCRIPTION_KEY', '')),
+    'PROD_SUBSCRIPTION_KEY': os.getenv('MSFT_PROD_SUBSCRIPTION_KEY', ''),
 }
