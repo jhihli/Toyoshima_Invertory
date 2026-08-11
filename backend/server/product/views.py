@@ -865,6 +865,25 @@ def scanner_cargo_bulk_create(request, pallet_pk):
 
     return Response({'success': True, 'data': {'created': created, 'skipped': skipped}})
 
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_cargo_list(request, pallet_pk):
+    """设备端读取某托盘服务器上的全部 cargo，用于多设备下的标签列表合并。"""
+    err = _check_scanner_key(request)
+    if err:
+        return err
+
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    cargos = [{
+        'id': c.id,
+        'barcode': c.barcode,
+        'note': c.note,
+        'created_at': c.created_at.isoformat(),
+    } for c in pallet.cargos.all()]
+    return Response({'success': True, 'data': {'cargos': cargos}})
+
 # ─────────────────────────────────────────────────── Dashboard
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

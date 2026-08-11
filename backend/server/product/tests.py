@@ -208,3 +208,36 @@ class BulkCargoCreateTests(TestCase):
         self.assertEqual(resp.status_code, 400)
         self.assertFalse(resp.json()['success'])
         self.assertIn('string', resp.json()['error'].lower())
+
+
+@override_settings(SCANNER_API_KEY='test-key')
+class ScannerCargoListTests(TestCase):
+    def url(self, pallet):
+        return f'/product/scanner/pallets/{pallet.id}/cargos/'
+
+    def test_requires_api_key(self):
+        pallet = make_pallet()
+        self.assertEqual(self.client.get(self.url(pallet)).status_code, 401)
+
+    def test_lists_cargos(self):
+        pallet = make_pallet()
+        Cargo.objects.create(pallet=pallet, barcode='SO112750-hdh77-1-A20260810022801', note='n')
+        Cargo.objects.create(pallet=pallet, barcode='SO112750-hdh77-1-B20260810022802')
+        resp = self.client.get(self.url(pallet), HTTP_X_API_KEY='test-key')
+        self.assertEqual(resp.status_code, 200)
+        cargos = resp.json()['data']['cargos']
+        self.assertEqual(len(cargos), 2)
+        self.assertEqual(cargos[0]['barcode'], 'SO112750-hdh77-1-A20260810022801')
+        self.assertEqual(cargos[0]['note'], 'n')
+        self.assertIn('created_at', cargos[0])
+
+    def test_empty_pallet(self):
+        pallet = make_pallet()
+        resp = self.client.get(self.url(pallet), HTTP_X_API_KEY='test-key')
+        self.assertEqual(resp.json()['data']['cargos'], [])
+
+    def test_unknown_pallet_returns_404(self):
+        resp = self.client.get(
+            '/product/scanner/pallets/999999/cargos/', HTTP_X_API_KEY='test-key'
+        )
+        self.assertEqual(resp.status_code, 404)
