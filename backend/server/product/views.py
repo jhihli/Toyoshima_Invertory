@@ -824,6 +824,43 @@ def scanner_pallet_lookup(request):
         'multiple_matches': matches.count() > 1,
     }})
 
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_cargo_bulk_create(request, pallet_pk):
+    """设备端组装好的条码原样入库，不调用 compose_barcode / next_index。
+    按 (pallet, barcode) 跳过重复，使重复同步幂等。"""
+    err = _check_scanner_key(request)
+    if err:
+        return err
+
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    items = request.data.get('cargos') or []
+    if not isinstance(items, list):
+        return Response({'success': False, 'error': 'cargos must be a list'}, status=400)
+
+    cleaned = []
+    for item in items:
+        barcode = (item or {}).get('barcode', '')
+        barcode = barcode.strip() if isinstance(barcode, str) else ''
+        if not barcode:
+            return Response({'success': False, 'error': 'blank barcode'}, status=400)
+        cleaned.append((barcode, (item.get('note') or '')))
+
+    existing = set(pallet.cargos.values_list('barcode', flat=True))
+    created, skipped, seen = [], [], set()
+
+    with transaction.atomic():
+        for barcode, note in cleaned:
+            if barcode in existing or barcode in seen:
+                skipped.append(barcode)
+                continue
+            seen.add(barcode)
+            cargo = Cargo.objects.create(pallet=pallet, barcode=barcode, note=note)
+            created.append({'id': cargo.id, 'barcode': cargo.barcode})
+
+    return Response({'success': True, 'data': {'created': created, 'skipped': skipped}})
+
 # ─────────────────────────────────────────────────── Dashboard
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

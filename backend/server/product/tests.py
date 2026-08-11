@@ -1,4 +1,5 @@
 from datetime import date
+import json
 
 from django.test import TestCase, override_settings
 
@@ -96,3 +97,84 @@ class PalletLookupTests(TestCase):
         data = resp.json()['data']
         self.assertEqual(data['pallet_id'], newer.id)
         self.assertTrue(data['multiple_matches'])
+
+
+@override_settings(SCANNER_API_KEY='test-key')
+class BulkCargoCreateTests(TestCase):
+    def url(self, pallet):
+        return f'/product/scanner/pallets/{pallet.id}/cargos/bulk/'
+
+    def post(self, pallet, cargos, key='test-key'):
+        return self.client.post(
+            self.url(pallet), data=json.dumps({'cargos': cargos}),
+            content_type='application/json', HTTP_X_API_KEY=key,
+        )
+
+    def test_requires_api_key(self):
+        pallet = make_pallet()
+        resp = self.client.post(
+            self.url(pallet), data=json.dumps({'cargos': []}),
+            content_type='application/json',
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_stores_barcode_verbatim(self):
+        pallet = make_pallet()
+        bc = 'SO112750-hdh77-1-A20260810022801'
+        resp = self.post(pallet, [{'barcode': bc, 'note': 'x'}])
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()['data']
+        self.assertEqual([c['barcode'] for c in data['created']], [bc])
+        self.assertEqual(data['skipped'], [])
+        saved = Cargo.objects.get(pallet=pallet)
+        self.assertEqual(saved.barcode, bc)
+        self.assertEqual(saved.note, 'x')
+
+    def test_skips_duplicates_idempotently(self):
+        pallet = make_pallet()
+        bc = 'SO112750-hdh77-1-A20260810022801'
+        self.post(pallet, [{'barcode': bc}])
+        resp = self.post(pallet, [{'barcode': bc}])
+        data = resp.json()['data']
+        self.assertEqual(data['created'], [])
+        self.assertEqual(data['skipped'], [bc])
+        self.assertEqual(Cargo.objects.filter(pallet=pallet).count(), 1)
+
+    def test_mixed_batch(self):
+        pallet = make_pallet()
+        old = 'SO112750-hdh77-1-A20260810022801'
+        new = 'SO112750-hdh77-1-A20260810022802'
+        self.post(pallet, [{'barcode': old}])
+        resp = self.post(pallet, [{'barcode': old}, {'barcode': new}])
+        data = resp.json()['data']
+        self.assertEqual([c['barcode'] for c in data['created']], [new])
+        self.assertEqual(data['skipped'], [old])
+
+    def test_duplicates_within_one_request_collapse(self):
+        pallet = make_pallet()
+        bc = 'SO112750-hdh77-1-A20260810022801'
+        resp = self.post(pallet, [{'barcode': bc}, {'barcode': bc}])
+        data = resp.json()['data']
+        self.assertEqual(len(data['created']), 1)
+        self.assertEqual(data['skipped'], [bc])
+        self.assertEqual(Cargo.objects.filter(pallet=pallet).count(), 1)
+
+    def test_empty_list_is_success(self):
+        pallet = make_pallet()
+        resp = self.post(pallet, [])
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['data'], {'created': [], 'skipped': []})
+
+    def test_blank_barcode_rejected(self):
+        pallet = make_pallet()
+        resp = self.post(pallet, [{'barcode': '  '}])
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()['success'])
+
+    def test_unknown_pallet_returns_404(self):
+        resp = self.client.post(
+            '/product/scanner/pallets/999999/cargos/bulk/',
+            data=json.dumps({'cargos': []}),
+            content_type='application/json', HTTP_X_API_KEY='test-key',
+        )
+        self.assertEqual(resp.status_code, 404)
