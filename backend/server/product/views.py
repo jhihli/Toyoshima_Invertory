@@ -838,6 +838,8 @@ def scanner_cargo_bulk_create(request, pallet_pk):
         pallet = Pallet.objects.get(pk=pallet_pk)
     except Pallet.DoesNotExist:
         return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+    if not isinstance(request.data, dict):
+        return Response({'success': False, 'error': 'request body must be a JSON object'}, status=400)
     items = request.data.get('cargos') or []
     if not isinstance(items, list):
         return Response({'success': False, 'error': 'cargos must be a list'}, status=400)

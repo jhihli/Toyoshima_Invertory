@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 import json
 
 from django.test import TestCase, override_settings
@@ -210,6 +210,18 @@ class BulkCargoCreateTests(TestCase):
         self.assertFalse(resp.json()['success'])
         self.assertIn('string', resp.json()['error'].lower())
 
+    def test_top_level_array_body_rejected_not_500(self):
+        """A top-level JSON array makes request.data a list, which has no
+        .get(). Must be caught and answered with the {"success": ...}
+        envelope, not surfaced as an unhandled 500."""
+        pallet = make_pallet()
+        resp = self.client.post(
+            self.url(pallet), data=json.dumps([{'barcode': 'x'}]),
+            content_type='application/json', HTTP_X_API_KEY='test-key',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()['success'])
+
 
 @override_settings(SCANNER_API_KEY='test-key')
 class ScannerCargoListTests(TestCase):
@@ -231,6 +243,13 @@ class ScannerCargoListTests(TestCase):
         self.assertEqual(cargos[0]['barcode'], 'SO112750-hdh77-1-A20260810022801')
         self.assertEqual(cargos[0]['note'], 'n')
         self.assertIn('created_at', cargos[0])
+        # Pin the wire format: it must be a timezone-aware ISO-8601 string
+        # (USE_TZ=True / TIME_ZONE='UTC' means this is really UTC, not
+        # local time) so the Dart client's DateTime.parse(...).toLocal()
+        # contract has something real to parse.
+        parsed = datetime.fromisoformat(cargos[0]['created_at'])
+        self.assertIsNotNone(parsed.tzinfo)
+        self.assertIsNotNone(parsed.tzinfo.utcoffset(parsed))
 
     def test_empty_pallet(self):
         pallet = make_pallet()
