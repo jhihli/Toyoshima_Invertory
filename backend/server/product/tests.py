@@ -241,3 +241,4 @@ class ScannerCargoListTests(TestCase):
             '/product/scanner/pallets/999999/cargos/', HTTP_X_API_KEY='test-key'
         )
         self.assertEqual(resp.status_code, 404)
+        self.assertFalse(resp.json()['success'])
