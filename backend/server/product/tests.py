@@ -178,3 +178,33 @@ class BulkCargoCreateTests(TestCase):
             content_type='application/json', HTTP_X_API_KEY='test-key',
         )
         self.assertEqual(resp.status_code, 404)
+
+    def test_bare_string_element_rejected(self):
+        pallet = make_pallet()
+        resp = self.client.post(
+            self.url(pallet), data=json.dumps({'cargos': ['bare-string']}),
+            content_type='application/json', HTTP_X_API_KEY='test-key',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()['success'])
+        self.assertIn('object', resp.json()['error'].lower())
+
+    def test_list_element_rejected(self):
+        pallet = make_pallet()
+        resp = self.client.post(
+            self.url(pallet), data=json.dumps({'cargos': [['list', 'item']]}),
+            content_type='application/json', HTTP_X_API_KEY='test-key',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()['success'])
+        self.assertIn('object', resp.json()['error'].lower())
+
+    def test_non_string_barcode_rejected(self):
+        pallet = make_pallet()
+        resp = self.client.post(
+            self.url(pallet), data=json.dumps({'cargos': [{'barcode': 123}]}),
+            content_type='application/json', HTTP_X_API_KEY='test-key',
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(resp.json()['success'])
+        self.assertIn('string', resp.json()['error'].lower())

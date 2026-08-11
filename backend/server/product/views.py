@@ -841,8 +841,12 @@ def scanner_cargo_bulk_create(request, pallet_pk):
 
     cleaned = []
     for item in items:
-        barcode = (item or {}).get('barcode', '')
-        barcode = barcode.strip() if isinstance(barcode, str) else ''
+        if not isinstance(item, dict):
+            return Response({'success': False, 'error': 'each cargo must be an object'}, status=400)
+        barcode = item.get('barcode', '')
+        if not isinstance(barcode, str):
+            return Response({'success': False, 'error': 'barcode must be a string'}, status=400)
+        barcode = barcode.strip()
         if not barcode:
             return Response({'success': False, 'error': 'blank barcode'}, status=400)
         cleaned.append((barcode, (item.get('note') or '')))
