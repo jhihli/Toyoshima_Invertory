@@ -25,7 +25,10 @@
       "Bash(powershell -Command:*)",
       "WebFetch(domain:api.anthropic.com)",
       "Read(//d/Projects/TGTscan/lib/**)",
-      "Read(//d/Projects/TGTscan/**)"
+      "Read(//d/Projects/TGTscan/**)",
+      "PowerShell(Get-Content \"C:\\\\Users\\\\weny8\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--Projects-Toyoshima-Invertory\\\\f40e3f96-b57e-4c2b-96be-79e81e0b00e1\\\\tasks\\\\bsul3zckl.output\" -Wait -Tail 20)",
+      "PowerShell(Get-ChildItem -Path \"d:\\\\Projects\\\\Toyoshima_Invertory\\\\frontend\\\\app\" -Recurse | Where-Object { $_.FullName -match '\\\\[id\\\\]' })",
+      "PowerShell(cd d:\\\\Projects\\\\Toyoshima_Invertory; git ls-files | Where-Object { $_ -match \"frontend/app\" } | Select-Object -First 30)"
     ],
     "deny": [],
     "ask": []

@@ -373,11 +373,21 @@ class MPNReportEmail(models.Model):
 # We PUSH JSON to Microsoft's Recycling API. Non-secret connection config +
 # secrets live in .env (settings.MSFT_API); this DB config is only a UI toggle.
 # Reports are: Credit Details → PO Document → Payment Notifications, linked by
-# supplierPoNumber. For Buyback, supplierUnitType must be 'Memory' or 'CPU'.
+# supplierPoNumber.
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Buyback Credit Details accepts only these unit types (Onboarding Guide rule).
-MSFT_BUYBACK_UNIT_TYPES = ['Memory', 'CPU']
+# Allowed supplierUnitType values for Buyback Credit Details.
+# Per Microsoft (Karanvir, 2026-08-10) the canonical enum is:
+#   Server, Drive, Monitor, Memory, Network Module, Mix, Bulk, Cables, Other.
+# AST1050 (Aspeed data-mgmt chip) -> 'Other'. 'CPU' is NOT canonical but has been
+# tolerated in practice, so we keep it TEMPORARILY for FPGA (EP4CE15F23C9LN) and
+# Intel PCH (SLKM8) until Varun/Amit confirm the accepted enum for this Special
+# Project (strict conformance would map those to 'Other' too). Chip-relevant
+# values first for the dropdown.
+MSFT_BUYBACK_UNIT_TYPES = [
+    'Memory', 'CPU', 'Other',
+    'Server', 'Drive', 'Monitor', 'Network Module', 'Mix', 'Bulk', 'Cables',
+]
 
 # The three Buyback report types (used as MsftApiLog.report_type + endpoint sub-path).
 MSFT_REPORT_CHOICES = [
@@ -472,7 +482,7 @@ class MsftCreditUnit(models.Model):
     or hand entry). For Buyback, unit_type must be 'Memory' or 'CPU'."""
     so                 = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='msft_credit_units')
     supplier_unit_id   = models.CharField(max_length=100)
-    unit_type          = models.CharField(max_length=100, blank=True)   # Memory | CPU (validated)
+    unit_type          = models.CharField(max_length=100, blank=True)   # MSFT_BUYBACK_UNIT_TYPES (validated)
     date_sold          = models.DateField(null=True, blank=True)
     sale_price         = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     supplier_commission = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)

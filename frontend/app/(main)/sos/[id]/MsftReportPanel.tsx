@@ -33,6 +33,14 @@ function statusTone(s: string): 'ok' | 'err' | 'warn' | 'neutral' {
   return s === 'ok' ? 'ok' : s === 'error' ? 'err' : s === 'dryrun' ? 'warn' : 'neutral';
 }
 
+// Local (not UTC) today as YYYY-MM-DD — used as the default Date Sold for new units.
+function todayISO(): string {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
 export default function MsftReportPanel({ soId }: { soId: number }) {
   const toast = useToast();
   const [meta, setMeta] = useState<MsftMeta | null>(null);
@@ -82,6 +90,7 @@ export default function MsftReportPanel({ soId }: { soId: number }) {
     try {
       const created = await api.msft.creditUnits.create(soId, {
         supplier_unit_id: '', unit_type: 'Memory', quantity: 1,
+        date_sold: todayISO(),
         supplier_po_number: job?.supplier_po_number || '',
       });
       setUnits(u => [...u, created]);
@@ -186,7 +195,7 @@ export default function MsftReportPanel({ soId }: { soId: number }) {
       </Section>
 
       {/* ② Credit units */}
-      <Section title="② Credit Details (sold chips · Memory / CPU only)"
+      <Section title="② Credit Details (sold chips · Memory / CPU / Other)"
         action={<Button size="sm" variant="outline" onClick={addUnit}>+ Add unit</Button>}>
         {units.length === 0 ? <Muted>No units yet. Click "+ Add unit".</Muted> : (
           <div style={{ overflowX: 'auto' }}>
