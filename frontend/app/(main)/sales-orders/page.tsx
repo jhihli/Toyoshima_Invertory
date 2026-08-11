@@ -65,6 +65,24 @@ const IShip = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" 
 const IRevert = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.51"/></svg>;
 const IChevR = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="9 18 15 12 9 6"/></svg>;
 const IBox = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
+const IFilter = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>;
+const IChevD = () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>;
+const IKebab = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>;
+
+// ── Dropdown menu item (mobile card actions) ─────────────────────────────────────
+function MenuItem({ icon, label, onClick, danger, accent }: {
+  icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean; accent?: boolean;
+}) {
+  return (
+    <button onClick={onClick}
+      onMouseEnter={e => (e.currentTarget.style.background = danger ? '#fef2f2' : 'var(--surface-2)')}
+      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', height: 42, padding: '0 13px', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, textAlign: 'left', color: danger ? '#b0432b' : accent ? 'var(--accent-2)' : 'var(--ink-2)' }}>
+      <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+      {label}
+    </button>
+  );
+}
 
 // ── Shared styles ──────────────────────────────────────────────────────────────
 const BtnPrimary: React.CSSProperties = { height: 40, padding: '0 16px', borderRadius: 9, fontSize: 13.5, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, border: 'none', background: 'var(--accent)', color: '#fff', whiteSpace: 'nowrap', fontFamily: 'inherit' };
@@ -319,6 +337,8 @@ export default function SalesOrdersPage() {
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 20;
+  const [filtersOpen, setFiltersOpen] = useState(false);            // mobile: collapsible filter panel
+  const [menu, setMenu] = useState<{ o: SO; top: number; right: number } | null>(null);  // mobile: card action menu
 
   const [soModal, setSoModal] = useState<{ mode: 'add' | 'edit'; item?: SO } | null>(null);
   const [shipModal, setShipModal] = useState<SO | null>(null);
@@ -376,6 +396,7 @@ export default function SalesOrdersPage() {
   const handleRevert = async () => { if (!confirm?.item) return; await api.sos.update(confirm.item.id, { outbound_date: null } as any); await reload(); setConfirm(null); showToast('Reverted to 入庫'); };
 
   const hasFilter = q || vendorFilter || dateFrom || dateTo;
+  const advCount = (vendorFilter ? 1 : 0) + (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);  // filters hidden behind the collapse toggle
 
   return (
     <div style={{ padding: isMobile ? '12px 12px 40px' : '22px 28px 40px' }}>
@@ -393,31 +414,44 @@ export default function SalesOrdersPage() {
               </button>
             ))}
           </div>
-          {/* Row 2: Search */}
-          <div style={{ height: 42, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, padding: '0 13px', color: 'var(--ink-4)' }}>
-            <ISearch />
-            <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Filter by SO number…"
-              style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)' }} />
-          </div>
-          {/* Row 2b: Cargo barcode search */}
-          <CargoSearch isMobile={true} />
-          {/* Row 3: Vendor + New SO */}
+          {/* Row 2: SO search + Filters toggle */}
           <div style={{ display: 'flex', gap: 8 }}>
-            <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
-              style={{ flex: 1, height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
-              <option value="">All vendors</option>
-              {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-            </select>
-            <button style={BtnPrimary} onClick={() => setSoModal({ mode: 'add' })}><IPlus /> New SO</button>
+            <div style={{ flex: 1, minWidth: 0, height: 42, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, padding: '0 13px', color: 'var(--ink-4)' }}>
+              <ISearch />
+              <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Filter by SO number…"
+                style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, minWidth: 0, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)' }} />
+              {q && <button type="button" onClick={() => { setQ(''); setPage(1); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', display: 'flex', padding: 0, fontSize: 16, lineHeight: 1 }}>×</button>}
+            </div>
+            <button onClick={() => setFiltersOpen(o => !o)}
+              style={{ height: 42, padding: '0 13px', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 9, fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                background: filtersOpen || advCount > 0 ? 'var(--accent-light)' : 'var(--surface)',
+                color: filtersOpen || advCount > 0 ? 'var(--accent-2)' : 'var(--ink-2)',
+                border: `1px solid ${filtersOpen || advCount > 0 ? '#cfe2d6' : 'var(--hair-strong)'}` }}>
+              <IFilter /> Filters
+              {advCount > 0 && <span style={{ minWidth: 17, height: 17, padding: '0 4px', borderRadius: 9, background: 'var(--accent)', color: '#fff', fontSize: 10.5, fontWeight: 700, display: 'inline-grid', placeItems: 'center' }}>{advCount}</span>}
+              <span style={{ display: 'inline-flex', transform: filtersOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }}><IChevD /></span>
+            </button>
           </div>
-          {/* Row 4: Date range */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-4)' }}>
-            <ICalendar />
-            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)', flex: 1, minWidth: 0 }} />
-            <span style={{ color: 'var(--ink-5)', fontSize: 12, flexShrink: 0 }}>→</span>
-            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)', flex: 1, minWidth: 0 }} />
-          </div>
-          {hasFilter && <button onClick={() => { setQ(''); setVendorFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }} style={{ ...BtnGhost, width: '100%', justifyContent: 'center' }}>Clear filters</button>}
+          {/* Collapsible advanced filters: cargo scan, vendor, date range */}
+          {filtersOpen && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <CargoSearch isMobile={true} />
+              <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
+                style={{ height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
+                <option value="">All vendors</option>
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+              </select>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-4)' }}>
+                <ICalendar />
+                <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)', flex: 1, minWidth: 0 }} />
+                <span style={{ color: 'var(--ink-5)', fontSize: 12, flexShrink: 0 }}>→</span>
+                <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', fontSize: 13, color: 'var(--ink-2)', flex: 1, minWidth: 0 }} />
+              </div>
+              {hasFilter && <button onClick={() => { setQ(''); setVendorFilter(''); setDateFrom(''); setDateTo(''); setPage(1); }} style={{ ...BtnGhost, width: '100%', justifyContent: 'center' }}>Clear filters</button>}
+            </div>
+          )}
+          {/* New SO — always reachable */}
+          <button style={{ ...BtnPrimary, width: '100%', justifyContent: 'center' }} onClick={() => setSoModal({ mode: 'add' })}><IPlus /> New SO</button>
         </div>
       ) : (
         /* Desktop: existing single-row layout */
@@ -469,55 +503,69 @@ export default function SalesOrdersPage() {
             )}
             {pageRows.map(o => {
               const totWt = Number(o.total_pallet_weight || 0);
+              const menuOn = menu?.o.id === o.id;
               return (
                 <div key={o.id} onClick={() => router.push(soDetailHref(o))}
-                  style={{ padding: '14px 16px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 6 }}>
-                    <span className="mono" title={o.so_number} style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{o.so_number}</span>
-                    <span style={{ fontSize: 12, color: 'var(--ink-4)', whiteSpace: 'nowrap', flexShrink: 0 }}>{o.inbound_date}</span>
+                  style={{ padding: '13px 16px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                    <span className="mono" title={o.so_number} style={{ fontWeight: 700, fontSize: 15, flex: 1, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', paddingTop: 4 }}>{o.so_number}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, color: 'var(--ink-4)', whiteSpace: 'nowrap', paddingTop: 4 }}>{o.inbound_date}</span>
+                      <button aria-label="Actions" onClick={e => {
+                        e.stopPropagation();
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setMenu(menuOn ? null : { o, top: r.bottom + 6, right: window.innerWidth - r.right });
+                      }}
+                        style={{ width: 30, height: 30, borderRadius: 8, marginRight: -4, display: 'grid', placeItems: 'center', cursor: 'pointer', color: menuOn ? 'var(--ink-2)' : 'var(--ink-4)', background: menuOn ? 'var(--surface-2)' : 'transparent', border: `1px solid ${menuOn ? 'var(--hair-strong)' : 'transparent'}` }}>
+                        <IKebab />
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
                     <span style={{ fontSize: 13, color: 'var(--ink-2)' }}>{o.vendor_name}</span>
                     <span style={{ fontSize: 12, color: 'var(--ink-4)' }}>·</span>
                     <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{o.pallet_record_count ?? 0} pallets</span>
                     {totWt > 0 && <><span style={{ fontSize: 12, color: 'var(--ink-4)' }}>·</span><span style={{ fontSize: 12, color: 'var(--ink-3)' }}>{totWt.toFixed(2)} kg</span></>}
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
-                    {o.outbound_date
-                      ? <button onClick={() => setConfirm({ kind: 'revert', item: o })}
-                          style={{ height: 40, padding: '0 12px', borderRadius: 8, background: 'var(--surface-2)', color: 'var(--ink-2)', border: '1px solid var(--hair-strong)', fontSize: 12.5, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          <IRevert /> Revert
-                        </button>
-                      : <button onClick={() => setShipModal(o)}
-                          style={{ height: 40, padding: '0 12px', borderRadius: 8, background: 'var(--accent-light)', color: 'var(--accent-2)', border: '1px solid #cfe2d6', fontSize: 12.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 5, cursor: 'pointer', fontFamily: 'inherit' }}>
-                          <IShip /> 出庫
-                        </button>
-                    }
-                    <button onClick={() => setSoModal({ mode: 'edit', item: o })}
-                      style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-                      <IEdit />
-                    </button>
-                    <button onClick={() => setConfirm({ kind: 'delete', item: o })}
-                      style={{ width: 40, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
-                      <ITrash />
-                    </button>
+                    {o.outbound_date && <span style={{ marginLeft: 'auto', flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 6, background: 'var(--accent-light)', color: 'var(--accent-2)' }}>出庫</span>}
                   </div>
                 </div>
               );
             })}
+            {/* Card action menu (fixed-positioned so the card's overflow:hidden can't clip it) */}
+            {menu && (
+              <>
+                <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 190 }} />
+                <div onClick={e => e.stopPropagation()}
+                  style={{ position: 'fixed', top: menu.top, right: menu.right, zIndex: 200, minWidth: 180, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 11, boxShadow: '0 12px 32px rgba(20,30,20,0.18)', padding: 5 }}>
+                  {menu.o.outbound_date
+                    ? <MenuItem icon={<IRevert />} label="Revert to 入庫" onClick={() => { const o = menu.o; setMenu(null); setConfirm({ kind: 'revert', item: o }); }} />
+                    : <MenuItem icon={<IShip />} label="出庫 Ship out" accent onClick={() => { const o = menu.o; setMenu(null); setShipModal(o); }} />}
+                  <MenuItem icon={<IEdit />} label="Edit" onClick={() => { const o = menu.o; setMenu(null); setSoModal({ mode: 'edit', item: o }); }} />
+                  <MenuItem icon={<ITrash />} label="Delete" danger onClick={() => { const o = menu.o; setMenu(null); setConfirm({ kind: 'delete', item: o }); }} />
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: tab !== 'inbound' ? 900 : 800 }}>
               <colgroup>
-                <col style={{ width: tab !== 'inbound' ? '12%' : '13%' }} /> {/* SO Number */}
-                <col style={{ width: tab !== 'inbound' ? '12%' : '15%' }} /> {/* Vendor */}
-                <col style={{ width: tab !== 'inbound' ? '12%' : '14%' }} /> {/* Inbound Date */}
-                {tab !== 'inbound' && <col style={{ width: '12%' }} />}      {/* Outbound Date */}
-                <col style={{ width: tab !== 'inbound' ? '9%' : '10%' }} />  {/* Pallets */}
-                <col style={{ width: tab !== 'inbound' ? '12%' : '15%' }} /> {/* Total WT Gross */}
-                <col style={{ width: tab !== 'inbound' ? '15%' : '17%' }} /> {/* Note */}
-                <col style={{ width: tab !== 'inbound' ? '16%' : '16%' }} /> {/* Actions */}
+                {/* SO Number */}
+                <col style={{ width: tab !== 'inbound' ? '12%' : '13%' }} />
+                {/* Vendor */}
+                <col style={{ width: tab !== 'inbound' ? '12%' : '15%' }} />
+                {/* Inbound Date */}
+                <col style={{ width: tab !== 'inbound' ? '12%' : '14%' }} />
+                {/* Outbound Date */}
+                {tab !== 'inbound' && <col style={{ width: '12%' }} />}
+                {/* Pallets */}
+                <col style={{ width: tab !== 'inbound' ? '9%' : '10%' }} />
+                {/* Total WT Gross */}
+                <col style={{ width: tab !== 'inbound' ? '12%' : '15%' }} />
+                {/* Note */}
+                <col style={{ width: tab !== 'inbound' ? '15%' : '17%' }} />
+                {/* Actions */}
+                <col style={{ width: tab !== 'inbound' ? '16%' : '16%' }} />
               </colgroup>
               <thead>
                 <tr>

@@ -19,6 +19,23 @@ const IImage = () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
 const IClose = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>;
 const IPrint = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>;
 const IBox = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
+const IChevD = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>;
+const IKebab = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>;
+
+// ── Dropdown menu item (mobile card actions) ─────────────────────────────────────
+function MenuItem({ icon, label, onClick, danger }: {
+  icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean;
+}) {
+  return (
+    <button onClick={onClick}
+      onMouseEnter={e => (e.currentTarget.style.background = danger ? '#fef2f2' : 'var(--surface-2)')}
+      onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+      style={{ display: 'flex', alignItems: 'center', gap: 11, width: '100%', height: 42, padding: '0 13px', borderRadius: 8, border: 'none', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 600, textAlign: 'left', color: danger ? '#b0432b' : 'var(--ink-2)' }}>
+      <span style={{ display: 'inline-flex', flexShrink: 0 }}>{icon}</span>
+      {label}
+    </button>
+  );
+}
 
 // ── Shared styles ──────────────────────────────────────────────────────────────
 const BtnPrimary: React.CSSProperties = { height: 36, padding: '0 13px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, border: 'none', background: 'var(--accent)', color: '#fff', whiteSpace: 'nowrap', fontFamily: 'inherit' };
@@ -450,6 +467,9 @@ export default function SODetailPage() {
   const [loading, setLoading] = useState(true);
   const [filterQ, setFilterQ] = useState('');
   const [showSearch, setShowSearch] = useState(false);
+  const [heroOpen, setHeroOpen] = useState(false);   // mobile: collapsible SO fact grid
+  const [menu, setMenu] = useState<{ p: Pallet; top: number; right: number } | null>(null);  // mobile: pallet action menu
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());   // mobile: per-card detail expand
 
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [palletModal, setPalletModal] = useState<{ mode: 'add' | 'edit'; item?: Pallet } | null>(null);
@@ -515,6 +535,7 @@ export default function SODetailPage() {
   });
   const allSelected = filteredPallets.length > 0 && filteredPallets.every(p => selected.has(p.id));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(filteredPallets.map(p => p.id)));
+  const toggleExpand = (pid: number) => setExpanded(s => { const n = new Set(s); n.has(pid) ? n.delete(pid) : n.add(pid); return n; });
 
   const handlePrintPallets = () => {
     if (!so) return;
@@ -556,29 +577,37 @@ export default function SODetailPage() {
         {isMobile ? (
           <div style={{ flex: 1, minWidth: 0, padding: '14px 14px', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12 }}>
             {/* Lead + action buttons row */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: 8, flexWrap: 'wrap' }}>
-              <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', width: '100%', gap: 8 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <h1 className="mono" title={so.so_number} style={{ margin: 0, fontSize: 20, fontWeight: 700, letterSpacing: '-0.01em', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{so.so_number}</h1>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, fontSize: 13.5, color: 'var(--ink-3)' }}>
                   <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0, display: 'inline-block' }} />
                   Vendor <b style={{ color: 'var(--ink)', fontWeight: 600 }}>{so.vendor_name}</b>
                 </div>
-                {so.note && <div style={{ marginTop: 5, fontSize: 12.5, color: 'var(--ink-4)', fontStyle: 'italic' }}>{so.note}</div>}
               </div>
               <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
                 <button onClick={() => router.push('/sales-orders')} style={BtnGhost}><IChevL /> Back</button>
-                <button style={BtnGhost}><IExport /> Export</button>
+                <button aria-label={heroOpen ? 'Hide details' : 'Show details'} onClick={() => setHeroOpen(o => !o)}
+                  style={{ ...BtnGhost, width: 36, padding: 0, justifyContent: 'center' }}>
+                  <span style={{ display: 'inline-flex', transform: heroOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }}><IChevD /></span>
+                </button>
               </div>
             </div>
-            {/* Facts */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', textAlign: 'left', width: '100%' }}>
-              {facts.map(([label, val], i) => (
-                <div key={i}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 3 }}>{label}</div>
-                  <div className="mono" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{val}</div>
+            {/* Collapsible details: note + facts + Export */}
+            {heroOpen && (
+              <>
+                {so.note && <div style={{ fontSize: 12.5, color: 'var(--ink-4)', fontStyle: 'italic', width: '100%' }}>{so.note}</div>}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', textAlign: 'left', width: '100%' }}>
+                  {facts.map(([label, val], i) => (
+                    <div key={i}>
+                      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 3 }}>{label}</div>
+                      <div className="mono" style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' }}>{val}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+                <button style={{ ...BtnGhost, width: '100%', justifyContent: 'center' }}><IExport /> Export</button>
+              </>
+            )}
           </div>
         ) : (
           /* Desktop: everything on one row */
@@ -688,41 +717,54 @@ export default function SODetailPage() {
               const imgs = (p.photos || []).map(ph => ({ src: ph.image_url || ph.image, label: p.licence_number || `Pallet #${p.pallet_seq}` }));
               const labelSty: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)', whiteSpace: 'nowrap' };
               const valSty: React.CSSProperties = { fontSize: 13, color: 'var(--ink)', fontVariantNumeric: 'tabular-nums' };
+              const menuOn = menu?.p.id === p.id;
+              const isOpen = expanded.has(p.id);
               return (
                 <div key={p.id} onClick={() => router.push(`/sales-orders/${soId}/pallets/${p.id}`)}
-                  style={{ padding: '14px 16px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
-                  {/* Header: barcode + date */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 8 }}>
+                  style={{ padding: '12px 16px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
+                  {/* Header: photo + barcode + date, chevron, kebab */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: isOpen ? 12 : 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
                       <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSel(p.id)}
                         onClick={e => e.stopPropagation()} aria-label="Select pallet"
                         style={{ cursor: 'pointer', accentColor: 'var(--accent)', flexShrink: 0 }} />
-                      <span className="mono" style={{ fontWeight: 700, fontSize: 15 }}>
+                      {imgs.length > 0 && (
+                        <div style={{ position: 'relative', flexShrink: 0, cursor: 'zoom-in', lineHeight: 0 }}
+                          onClick={e => { e.stopPropagation(); setLightbox({ images: imgs, index: 0 }); }}>
+                          <img src={imgs[0].src} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', display: 'block', border: '1px solid var(--hair)' }} />
+                          {imgs.length > 1 && (
+                            <span style={{ position: 'absolute', bottom: -3, right: -3, background: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: 8.5, fontWeight: 700, borderRadius: 4, padding: '0 3px', lineHeight: 1.55 }}>
+                              +{imgs.length - 1}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      <span className="mono" style={{ fontWeight: 700, fontSize: 15, minWidth: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
                         {p.licence_number || <span style={{ color: 'var(--ink-4)', fontWeight: 400, fontSize: 13 }}>No barcode</span>}
                       </span>
                     </div>
-                    <span style={{ fontSize: 11.5, color: 'var(--ink-4)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {p.created_at ? new Date(p.created_at).toLocaleDateString('en-CA') : '—'}
-                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11.5, color: 'var(--ink-4)', whiteSpace: 'nowrap', marginRight: 2 }}>
+                        {p.created_at ? new Date(p.created_at).toLocaleDateString('en-CA') : '—'}
+                      </span>
+                      <button aria-label={isOpen ? 'Collapse details' : 'Expand details'} onClick={e => { e.stopPropagation(); toggleExpand(p.id); }}
+                        style={{ width: 30, height: 30, borderRadius: 8, display: 'grid', placeItems: 'center', cursor: 'pointer', color: 'var(--ink-4)', background: 'transparent', border: '1px solid transparent' }}>
+                        <span style={{ display: 'inline-flex', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }}><IChevD /></span>
+                      </button>
+                      <button aria-label="Actions" onClick={e => {
+                        e.stopPropagation();
+                        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setMenu(menuOn ? null : { p, top: r.bottom + 6, right: window.innerWidth - r.right });
+                      }}
+                        style={{ width: 30, height: 30, borderRadius: 8, marginRight: -4, display: 'grid', placeItems: 'center', cursor: 'pointer', color: menuOn ? 'var(--ink-2)' : 'var(--ink-4)', background: menuOn ? 'var(--surface-2)' : 'transparent', border: `1px solid ${menuOn ? 'var(--hair-strong)' : 'transparent'}` }}>
+                        <IKebab />
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Body: photo + metadata grid */}
-                  <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-                    {/* Photo thumbnail */}
-                    {imgs.length > 0 && (
-                      <div style={{ position: 'relative', flexShrink: 0, cursor: 'zoom-in', alignSelf: 'flex-start' }}
-                        onClick={e => { e.stopPropagation(); setLightbox({ images: imgs, index: 0 }); }}>
-                        <img src={imgs[0].src} alt="" style={{ width: 54, height: 54, borderRadius: 9, objectFit: 'cover', display: 'block', border: '1px solid var(--hair)' }} />
-                        {imgs.length > 1 && (
-                          <span style={{ position: 'absolute', bottom: 3, right: 3, background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 4, padding: '1px 4px', lineHeight: 1.5 }}>
-                            +{imgs.length - 1}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Label / value grid */}
-                    <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 10px', alignItems: 'baseline' }}>
+                  {/* Collapsible detail: label / value grid */}
+                  {isOpen && (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '5px 10px', alignItems: 'baseline' }}>
                       {p.location && <>
                         <span style={labelSty}>Location</span>
                         <span className="mono" style={{ ...valSty, color: 'var(--accent-2)', fontWeight: 600 }}>{p.location}</span>
@@ -742,22 +784,22 @@ export default function SODetailPage() {
                       <span style={labelSty}>Qty</span>
                       <span className="mono" style={valSty}>{p.qty}</span>
                     </div>
-                  </div>
+                  )}
 
-                  {/* Actions: equal-width buttons */}
-                  <div style={{ display: 'flex', gap: 8 }} onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setPalletModal({ mode: 'edit', item: p })}
-                      style={{ flex: 1, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-2)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      <IEdit /> Edit
-                    </button>
-                    <button onClick={() => setDeleteConfirm(p)}
-                      style={{ flex: 1, height: 40, borderRadius: 8, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', fontSize: 13, fontWeight: 600, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      <ITrash /> Delete
-                    </button>
-                  </div>
                 </div>
               );
             })}
+            {/* Pallet action menu (fixed-positioned so the card's overflow:hidden can't clip it) */}
+            {menu && (
+              <>
+                <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 190 }} />
+                <div onClick={e => e.stopPropagation()}
+                  style={{ position: 'fixed', top: menu.top, right: menu.right, zIndex: 200, minWidth: 168, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 11, boxShadow: '0 12px 32px rgba(20,30,20,0.18)', padding: 5 }}>
+                  <MenuItem icon={<IEdit />} label="Edit" onClick={() => { const p = menu.p; setMenu(null); setPalletModal({ mode: 'edit', item: p }); }} />
+                  <MenuItem icon={<ITrash />} label="Delete" danger onClick={() => { const p = menu.p; setMenu(null); setDeleteConfirm(p); }} />
+                </div>
+              </>
+            )}
             {/* Mobile totals */}
             <div style={{ padding: '10px 16px', background: 'var(--surface-2)', borderTop: '1px solid var(--hair-strong)', display: 'flex', gap: 16, fontSize: 13, fontWeight: 600 }}>
               <span>Total WT: <span className="mono">{totalInWt ? totalInWt.toFixed(4) : '—'} lb</span></span>
