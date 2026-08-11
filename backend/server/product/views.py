@@ -834,7 +834,10 @@ def scanner_cargo_bulk_create(request, pallet_pk):
     if err:
         return err
 
-    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    try:
+        pallet = Pallet.objects.get(pk=pallet_pk)
+    except Pallet.DoesNotExist:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
     items = request.data.get('cargos') or []
     if not isinstance(items, list):
         return Response({'success': False, 'error': 'cargos must be a list'}, status=400)

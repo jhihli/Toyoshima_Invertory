@@ -178,6 +178,7 @@ class BulkCargoCreateTests(TestCase):
             content_type='application/json', HTTP_X_API_KEY='test-key',
         )
         self.assertEqual(resp.status_code, 404)
+        self.assertFalse(resp.json()['success'])
 
     def test_bare_string_element_rejected(self):
         pallet = make_pallet()
