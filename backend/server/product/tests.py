@@ -1,6 +1,6 @@
 from datetime import date
 
-from django.test import TestCase
+from django.test import TestCase, override_settings
 
 from product.models import Vendor, SO, Pallet, Cargo
 
@@ -49,3 +49,50 @@ class NextIndexTests(TestCase):
             pallet=pallet, barcode='SO112750-hdh77-1-A20260810022801'
         )
         self.assertEqual(Cargo.next_index(pallet), 1)
+
+
+@override_settings(SCANNER_API_KEY='test-key')
+class PalletLookupTests(TestCase):
+    URL = '/product/scanner/pallets/lookup/'
+
+    def test_requires_api_key(self):
+        pallet = make_pallet()
+        resp = self.client.get(self.URL, {'barcode': 'hdh77'})
+        self.assertEqual(resp.status_code, 401)
+        self.assertFalse(resp.json()['success'])
+
+    def test_returns_pallet_fields(self):
+        pallet = make_pallet()
+        Cargo.objects.create(pallet=pallet, barcode='SO112750-hdh77-1-C1')
+        resp = self.client.get(
+            self.URL, {'barcode': 'hdh77'}, HTTP_X_API_KEY='test-key'
+        )
+        self.assertEqual(resp.status_code, 200)
+        data = resp.json()['data']
+        self.assertEqual(data['pallet_id'], pallet.id)
+        self.assertEqual(data['so_number'], 'SO112750')
+        self.assertEqual(data['licence_number'], 'hdh77')
+        self.assertEqual(data['gateload_number'], '1')
+        self.assertEqual(data['existing_cargo_count'], 1)
+        self.assertFalse(data['multiple_matches'])
+
+    def test_missing_pallet_returns_404(self):
+        resp = self.client.get(
+            self.URL, {'barcode': 'nope'}, HTTP_X_API_KEY='test-key'
+        )
+        self.assertEqual(resp.status_code, 404)
+        self.assertFalse(resp.json()['success'])
+
+    def test_blank_barcode_returns_404(self):
+        resp = self.client.get(self.URL, HTTP_X_API_KEY='test-key')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_duplicate_licence_takes_newest_and_flags(self):
+        older = make_pallet(so_number='SO-OLD')
+        newer = make_pallet(so_number='SO-NEW')
+        resp = self.client.get(
+            self.URL, {'barcode': 'hdh77'}, HTTP_X_API_KEY='test-key'
+        )
+        data = resp.json()['data']
+        self.assertEqual(data['pallet_id'], newer.id)
+        self.assertTrue(data['multiple_matches'])

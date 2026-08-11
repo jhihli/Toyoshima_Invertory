@@ -788,6 +788,42 @@ def scanner_pallet_photo_upload(request, pallet_pk):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# ─────────────────────────────────────────────────── Scanner: cargo label printer
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_pallet_lookup(request):
+    """按 licence_number 查托盘。licence_number 在库层面并不唯一，
+    因此取最新一条，并用 multiple_matches 告知调用方需要人工核对。"""
+    err = _check_scanner_key(request)
+    if err:
+        return err
+
+    barcode = request.query_params.get('barcode', '').strip()
+    if not barcode:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+
+    # 按 id 二次排序：同一秒内建的两条托盘 created_at 可能相同，
+    # 只按 created_at 排会导致「取最新」不确定。
+    matches = (Pallet.objects
+               .select_related('so')
+               .filter(licence_number=barcode)
+               .order_by('-created_at', '-id'))
+    pallet = matches.first()
+    if pallet is None:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+
+    return Response({'success': True, 'data': {
+        'pallet_id': pallet.id,
+        'so_id': pallet.so_id,
+        'so_number': pallet.so.so_number,
+        'licence_number': pallet.licence_number,
+        'gateload_number': pallet.gateload_number,
+        'existing_cargo_count': pallet.cargos.count(),
+        'multiple_matches': matches.count() > 1,
+    }})
+
 # ─────────────────────────────────────────────────── Dashboard
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
