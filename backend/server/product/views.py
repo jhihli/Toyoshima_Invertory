@@ -788,6 +788,111 @@ def scanner_pallet_photo_upload(request, pallet_pk):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+# ─────────────────────────────────────────────────── Scanner: cargo label printer
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_pallet_lookup(request):
+    """按 licence_number 查托盘。licence_number 在库层面并不唯一，
+    因此取最新一条，并用 multiple_matches 告知调用方需要人工核对。"""
+    err = _check_scanner_key(request)
+    if err:
+        return err
+
+    barcode = request.query_params.get('barcode', '').strip()
+    if not barcode:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+
+    # 按 id 二次排序：同一秒内建的两条托盘 created_at 可能相同，
+    # 只按 created_at 排会导致「取最新」不确定。
+    matches = (Pallet.objects
+               .select_related('so')
+               .filter(licence_number=barcode)
+               .order_by('-created_at', '-id'))
+    pallet = matches.first()
+    if pallet is None:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+
+    return Response({'success': True, 'data': {
+        'pallet_id': pallet.id,
+        'so_id': pallet.so_id,
+        'so_number': pallet.so.so_number,
+        'licence_number': pallet.licence_number,
+        'gateload_number': pallet.gateload_number,
+        'existing_cargo_count': pallet.cargos.count(),
+        'multiple_matches': matches.count() > 1,
+    }})
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_cargo_bulk_create(request, pallet_pk):
+    """设备端组装好的条码原样入库，不调用 compose_barcode / next_index。
+    按 (pallet, barcode) 跳过重复，使重复同步幂等。"""
+    err = _check_scanner_key(request)
+    if err:
+        return err
+
+    try:
+        pallet = Pallet.objects.get(pk=pallet_pk)
+    except Pallet.DoesNotExist:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+    if not isinstance(request.data, dict):
+        return Response({'success': False, 'error': 'request body must be a JSON object'}, status=400)
+    items = request.data.get('cargos') or []
+    if not isinstance(items, list):
+        return Response({'success': False, 'error': 'cargos must be a list'}, status=400)
+
+    cleaned = []
+    for item in items:
+        if not isinstance(item, dict):
+            return Response({'success': False, 'error': 'each cargo must be an object'}, status=400)
+        barcode = item.get('barcode', '')
+        if not isinstance(barcode, str):
+            return Response({'success': False, 'error': 'barcode must be a string'}, status=400)
+        barcode = barcode.strip()
+        if not barcode:
+            return Response({'success': False, 'error': 'blank barcode'}, status=400)
+        cleaned.append((barcode, (item.get('note') or '')))
+
+    existing = set(pallet.cargos.values_list('barcode', flat=True))
+    created, skipped, seen = [], [], set()
+
+    with transaction.atomic():
+        for barcode, note in cleaned:
+            if barcode in existing or barcode in seen:
+                skipped.append(barcode)
+                continue
+            seen.add(barcode)
+            cargo = Cargo.objects.create(pallet=pallet, barcode=barcode, note=note)
+            created.append({'id': cargo.id, 'barcode': cargo.barcode})
+
+    return Response({'success': True, 'data': {'created': created, 'skipped': skipped}})
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_cargo_list(request, pallet_pk):
+    """设备端读取某托盘服务器上的全部 cargo，用于多设备下的标签列表合并。"""
+    err = _check_scanner_key(request)
+    if err:
+        return err
+
+    try:
+        pallet = Pallet.objects.get(pk=pallet_pk)
+    except Pallet.DoesNotExist:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+
+    cargos = [{
+        'id': c.id,
+        'barcode': c.barcode,
+        'note': c.note,
+        'created_at': c.created_at.isoformat(),
+    } for c in pallet.cargos.all()]
+    return Response({'success': True, 'data': {'cargos': cargos}})
+
 # ─────────────────────────────────────────────────── Dashboard
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])

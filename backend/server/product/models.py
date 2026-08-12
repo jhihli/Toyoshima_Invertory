@@ -166,7 +166,7 @@ class Cargo(models.Model):
         import re
         mx = 0
         for bc in pallet.cargos.values_list('barcode', flat=True):
-            m = re.search(r'-C(\d+)$', bc or '')
+            m = re.search(r'-C(\d{1,6})$', bc or '')
             if m:
                 mx = max(mx, int(m.group(1)))
         return mx + 1

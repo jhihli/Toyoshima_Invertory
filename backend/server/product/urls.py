@@ -48,6 +48,9 @@ urlpatterns = [
     path('scanner/sos/<int:so_pk>/pallets/', views.scanner_so_pallets, name='scanner-so-pallets'),
     path('scanner/sos/<int:so_pk>/photos/', views.scanner_so_photo_upload, name='scanner-so-photo-upload'),
     path('scanner/boards/<int:board_pk>/photo/', views.scanner_board_photo, name='scanner-board-photo'),
+    path('scanner/pallets/lookup/', views.scanner_pallet_lookup, name='scanner-pallet-lookup'),
+    path('scanner/pallets/<int:pallet_pk>/cargos/bulk/', views.scanner_cargo_bulk_create, name='scanner-cargo-bulk-create'),
+    path('scanner/pallets/<int:pallet_pk>/cargos/', views.scanner_cargo_list, name='scanner-cargo-list'),
     path('scanner/pallets/<int:pallet_pk>/photos/', views.scanner_pallet_photo_upload, name='scanner-pallet-photo-upload'),
     
     # Dashboard
