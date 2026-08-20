@@ -10,6 +10,13 @@ from django.db.models import ProtectedError
 from django.conf import settings
 
 
+def _as_int(val, default):
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return default
+
+
 def _check_scanner_key(request):
     key = request.META.get('HTTP_X_API_KEY', '')
     if not key or key != settings.SCANNER_API_KEY:
@@ -26,7 +33,7 @@ class IsAdminOrManager(BasePermission):
         return bool(user and user.is_authenticated and getattr(user, 'is_admin_or_manager', False))
 from .models import (
     Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
-    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box,
+    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist,
     MsftApiConfig, MsftJobInfo, MsftCreditUnit, MsftPaymentNotice, MsftApiLog,
     MsftCompanyCode, MsftUnitType, MSFT_BUYBACK_UNIT_TYPES,
 )
@@ -36,7 +43,7 @@ from .serializer import (
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
     PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer,
-    BoxSerializer,
+    BoxSerializer, ChecklistSerializer,
     MsftApiConfigSerializer, MsftJobInfoSerializer, MsftCreditUnitSerializer,
     MsftPaymentNoticeSerializer, MsftApiLogSerializer,
     MsftCompanyCodeSerializer, MsftUnitTypeSerializer,
@@ -313,25 +320,16 @@ def box_list(request, pallet_pk):
     if request.method == 'GET':
         return Response(BoxSerializer(pallet.boxes.all(), many=True).data)
 
-    # POST — create one or many box items. Barcodes are composed server-side.
-    def _as_int(val, default):
-        try:
-            return int(val)
-        except (TypeError, ValueError):
-            return default
-
+    # POST — add N boxes to the pallet. Every one carries the pallet's own barcode.
     count = max(1, min(_as_int(request.data.get('count', 1), 1), 500))
     note = request.data.get('note', '') or ''
 
-    start = Box.next_index(pallet)
-    created = []
+    barcode = Box.compose_barcode(pallet)
     with transaction.atomic():
-        for i in range(count):
-            seq = start + i
-            created.append(Box.objects.create(
-                pallet=pallet, note=note,
-                barcode=Box.compose_barcode(pallet, seq),
-            ))
+        created = [
+            Box.objects.create(pallet=pallet, note=note, barcode=barcode)
+            for _ in range(count)
+        ]
     return Response(BoxSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
 
 
@@ -365,6 +363,109 @@ def box_search(request):
         'id': c.id,
         'barcode': c.barcode,
         'note': c.note,
+        'pallet_id': c.pallet_id,
+        'pallet_label': c.pallet.licence_number or f'Pallet #{c.pallet.pallet_seq}',
+        'so_id': c.pallet.so_id,
+        'so_number': c.pallet.so.so_number,
+    } for c in qs]
+    return Response(data)
+
+
+# ─────────────────────────────────────────────────── Checklist
+def _clean_checklist_rows(items):
+    """Normalise client-supplied checklist items. Returns (rows, error_message)."""
+    rows = []
+    for item in items:
+        if not isinstance(item, dict):
+            return None, 'each item must be an object'
+        brand = item.get('brand') or ''
+        model = item.get('model') or ''
+        if not isinstance(brand, str) or not isinstance(model, str):
+            return None, 'brand and model must be strings'
+        rows.append({
+            'brand': brand.strip()[:100],
+            'model': model.strip()[:100],
+            'qty': _as_int(item.get('qty'), None),
+        })
+    return rows, None
+
+
+def _create_checklists(pallet, rows):
+    """Allocate a contiguous block of checklist numbers and create one row per entry.
+
+    Numbers are assigned here, never by the caller: two scanners each working out the
+    next index on their own would both pick the same one. Locking the pallet row
+    serialises concurrent allocations for the same pallet.
+    """
+    with transaction.atomic():
+        Pallet.objects.select_for_update().filter(pk=pallet.pk).first()
+        start = Checklist.next_index(pallet)
+        return [
+            Checklist.objects.create(
+                pallet=pallet,
+                barcode=Checklist.compose_barcode(pallet, start + offset),
+                brand=row['brand'],
+                model=row['model'],
+                qty=row['qty'],
+            )
+            for offset, row in enumerate(rows)
+        ]
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def checklist_list(request, pallet_pk):
+    pallet = get_object_or_404(Pallet.objects.select_related('so'), pk=pallet_pk)
+    if request.method == 'GET':
+        return Response(ChecklistSerializer(pallet.checklists.all(), many=True).data)
+
+    # POST — allocate N checklist labels. Takes either {"items": [{brand, model, qty}, ...]}
+    # to pre-fill the rows, or {"count": N} for blank ones to be filled in later.
+    items = request.data.get('items')
+    if isinstance(items, list):
+        rows, error = _clean_checklist_rows(items[:500])
+        if error:
+            return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
+    else:
+        count = max(1, min(_as_int(request.data.get('count', 1), 1), 500))
+        rows = [{'brand': '', 'model': '', 'qty': None} for _ in range(count)]
+
+    created = _create_checklists(pallet, rows)
+    return Response(ChecklistSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def checklist_detail(request, pallet_pk, pk):
+    row = get_object_or_404(Checklist, pk=pk, pallet_id=pallet_pk)
+    if request.method == 'PUT':
+        serializer = ChecklistSerializer(row, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    row.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def checklist_search(request):
+    """Find checklist lines by barcode (partial match), with the SO + pallet they belong to
+    so a label picked up off the floor navigates straight to its pallet."""
+    q = request.query_params.get('q', '').strip()
+    if not q:
+        return Response([])
+    qs = (Checklist.objects
+          .select_related('pallet', 'pallet__so')
+          .filter(barcode__icontains=q)
+          .order_by('barcode')[:20])
+    data = [{
+        'id': c.id,
+        'barcode': c.barcode,
+        'brand': c.brand,
+        'model': c.model,
+        'qty': c.qty,
         'pallet_id': c.pallet_id,
         'pallet_label': c.pallet.licence_number or f'Pallet #{c.pallet.pallet_seq}',
         'so_id': c.pallet.so_id,
@@ -820,7 +921,11 @@ def scanner_pallet_lookup(request):
         'so_number': pallet.so.so_number,
         'licence_number': pallet.licence_number,
         'gateload_number': pallet.gateload_number,
+        # 服务器直接给出组装好的托盘条码，设备照它打印即可，不必自己再拼一次
+        # so/licence/gateload——两边各拼一次迟早会拼出不一样的结果。
+        'pallet_barcode': pallet.compose_barcode(),
         'existing_box_count': pallet.boxes.count(),
+        'existing_checklist_count': pallet.checklists.count(),
         'multiple_matches': matches.count() > 1,
     }})
 
@@ -828,14 +933,24 @@ def scanner_pallet_lookup(request):
 @authentication_classes([])
 @permission_classes([AllowAny])
 def scanner_box_bulk_create(request, pallet_pk):
-    """设备端组装好的条码原样入库，不调用 compose_barcode / next_index。
-    按 (pallet, barcode) 跳过重复，使重复同步幂等。"""
+    """把托盘的箱数补齐到设备上报的数量。
+
+    箱子条码现在与托盘条码完全相同，无法再按条码去重，因此改成数量语义：
+    len(boxes) 表示设备认为这个托盘一共有几箱，服务器只增不减地补到该数量。
+    同一台设备重复上传同一个数量即无操作（幂等）。
+
+    请求体里的 barcode 字段被忽略——条码由服务器按托盘统一组装，避免设备端和
+    服务器端各拼一次而拼出不同结果。note 按顺序分配给真正新建的那几行。
+
+    多设备注意：两台设备各自只知道自己扫的箱数时，服务器会取较大值而不是相加。
+    设备应先 GET scanner/pallets/<pk>/boxes/ 拿到服务器当前箱数，合并后再上报总数。
+    """
     err = _check_scanner_key(request)
     if err:
         return err
 
     try:
-        pallet = Pallet.objects.get(pk=pallet_pk)
+        pallet = Pallet.objects.select_related('so').get(pk=pallet_pk)
     except Pallet.DoesNotExist:
         return Response({'success': False, 'error': 'Pallet not found'}, status=404)
     if not isinstance(request.data, dict):
@@ -844,31 +959,31 @@ def scanner_box_bulk_create(request, pallet_pk):
     if not isinstance(items, list):
         return Response({'success': False, 'error': 'boxes must be a list'}, status=400)
 
-    cleaned = []
+    notes = []
     for item in items:
         if not isinstance(item, dict):
             return Response({'success': False, 'error': 'each box must be an object'}, status=400)
-        barcode = item.get('barcode', '')
-        if not isinstance(barcode, str):
-            return Response({'success': False, 'error': 'barcode must be a string'}, status=400)
-        barcode = barcode.strip()
-        if not barcode:
-            return Response({'success': False, 'error': 'blank barcode'}, status=400)
-        cleaned.append((barcode, (item.get('note') or '')))
+        note = item.get('note') or ''
+        if not isinstance(note, str):
+            return Response({'success': False, 'error': 'note must be a string'}, status=400)
+        notes.append(note)
 
-    existing = set(pallet.boxes.values_list('barcode', flat=True))
-    created, skipped, seen = [], [], set()
+    target = min(len(notes), 500)
+    barcode = Box.compose_barcode(pallet)
+    created = []
 
     with transaction.atomic():
-        for barcode, note in cleaned:
-            if barcode in existing or barcode in seen:
-                skipped.append(barcode)
-                continue
-            seen.add(barcode)
-            box = Box.objects.create(pallet=pallet, barcode=barcode, note=note)
+        Pallet.objects.select_for_update().filter(pk=pallet.pk).first()
+        existing = list(pallet.boxes.values_list('barcode', flat=True))
+        for i in range(len(existing), target):
+            box = Box.objects.create(pallet=pallet, barcode=barcode, note=notes[i])
             created.append({'id': box.id, 'barcode': box.barcode})
 
-    return Response({'success': True, 'data': {'created': created, 'skipped': skipped}})
+    return Response({'success': True, 'data': {
+        'created': created,
+        'skipped': existing[:target],
+        'total': len(existing) + len(created),
+    }})
 
 
 @api_view(['GET'])
@@ -892,6 +1007,79 @@ def scanner_box_list(request, pallet_pk):
         'created_at': c.created_at.isoformat(),
     } for c in pallet.boxes.all()]
     return Response({'success': True, 'data': {'boxes': boxes}})
+
+
+def _checklist_payload(c):
+    return {
+        'id': c.id,
+        'barcode': c.barcode,
+        'brand': c.brand,
+        'model': c.model,
+        'qty': c.qty,
+        'created_at': c.created_at.isoformat(),
+    }
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_checklist_bulk_create(request, pallet_pk):
+    """切板后开清單：设备上报要几条以及每条的 brand/model/qty，服务器分配连续序号、
+    组装条码并回传，供设备打印。
+
+    条码由服务器生成而不是设备拼装——两台设备各自推算下一个序号会同时算出 -1。
+    请求体 {"items": [{"brand", "model", "qty"}, ...]}；也接受 {"count": N} 建空行。
+    """
+    err = _check_scanner_key(request)
+    if err:
+        return err
+
+    try:
+        pallet = Pallet.objects.select_related('so').get(pk=pallet_pk)
+    except Pallet.DoesNotExist:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+    if not isinstance(request.data, dict):
+        return Response({'success': False, 'error': 'request body must be a JSON object'}, status=400)
+
+    items = request.data.get('items')
+    if items is None:
+        count = min(_as_int(request.data.get('count', 0), 0), 500)
+        if count < 1:
+            return Response({'success': False, 'error': 'items or count required'}, status=400)
+        rows = [{'brand': '', 'model': '', 'qty': None} for _ in range(count)]
+    else:
+        if not isinstance(items, list):
+            return Response({'success': False, 'error': 'items must be a list'}, status=400)
+        if not items:
+            return Response({'success': False, 'error': 'items must not be empty'}, status=400)
+        rows, error = _clean_checklist_rows(items[:500])
+        if error:
+            return Response({'success': False, 'error': error}, status=400)
+
+    created = _create_checklists(pallet, rows)
+    return Response({'success': True, 'data': {
+        'checklists': [_checklist_payload(c) for c in created],
+    }})
+
+
+@api_view(['GET'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def scanner_checklist_list(request, pallet_pk):
+    """设备端读取某托盘服务器上的全部清單，用于多设备下的标签列表合并。"""
+    err = _check_scanner_key(request)
+    if err:
+        return err
+
+    try:
+        pallet = Pallet.objects.get(pk=pallet_pk)
+    except Pallet.DoesNotExist:
+        return Response({'success': False, 'error': 'Pallet not found'}, status=404)
+
+    return Response({'success': True, 'data': {
+        'checklists': [_checklist_payload(c) for c in pallet.checklists.all()],
+    }})
+
 
 # ─────────────────────────────────────────────────── Dashboard
 @api_view(['GET'])

@@ -6,48 +6,17 @@ import type { Pallet, Box } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 import { crumbCache } from '@/app/lib/crumbCache';
 import { printLabels } from '@/app/lib/printLabels';
-
-// ── Icons ──────────────────────────────────────────────────────────────────────
-const IBack = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="15 18 9 12 15 6"/></svg>;
-const IPlus = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>;
-const IEdit = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
-const ITrash = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>;
-const IClose = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>;
-const IPrint = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>;
-
-// ── Shared styles ──────────────────────────────────────────────────────────────
-const BtnPrimary: React.CSSProperties = { height: 38, padding: '0 14px', borderRadius: 9, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, border: 'none', background: 'var(--accent)', color: '#fff', whiteSpace: 'nowrap', fontFamily: 'inherit' };
-const BtnGhost: React.CSSProperties = { ...BtnPrimary, background: 'var(--surface)', color: 'var(--ink-2)', border: '1px solid var(--hair-strong)' };
-const BtnDanger: React.CSSProperties = { ...BtnPrimary, background: '#b0432b' };
-const FieldLabel: React.CSSProperties = { fontSize: 10.5, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6 };
-const InputSty: React.CSSProperties = { width: '100%', height: 40, padding: '0 12px', border: '1px solid var(--hair-strong)', borderRadius: 9, background: 'var(--surface)', fontFamily: 'inherit', fontSize: 14, color: 'var(--ink)', outline: 'none', boxSizing: 'border-box' };
-const Th: React.CSSProperties = { textAlign: 'left', padding: '11px 18px', fontWeight: 600, fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)', borderBottom: '1px solid var(--hair)', whiteSpace: 'nowrap' };
-const ThR: React.CSSProperties = { ...Th, textAlign: 'right' };
-const Td: React.CSSProperties = { padding: '12px 18px', borderBottom: '1px solid var(--surface-2)', verticalAlign: 'middle', fontSize: 14 };
-const TdR: React.CSSProperties = { ...Td, textAlign: 'right' };
-
-// ── Toast ───────────────────────────────────────────────────────────────────────
-function Toast({ msg, type, onDone }: { msg: string; type: 'ok' | 'err'; onDone: () => void }) {
-  useEffect(() => { const t = setTimeout(onDone, 2800); return () => clearTimeout(t); }, [onDone]);
-  return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 400, padding: '10px 16px', borderRadius: 9, background: type === 'ok' ? 'var(--accent)' : '#991b1b', color: '#fff', fontSize: 13, boxShadow: '0 4px 24px rgba(0,0,0,0.2)', fontWeight: 500 }}>
-      {msg}
-    </div>
-  );
-}
-
-// ── Overlay ─────────────────────────────────────────────────────────────────────
-function Overlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,30,20,0.45)', zIndex: 200, overflowY: 'auto' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ margin: '80px auto 40px', width: 'calc(100% - 40px)', maxWidth: 460 }}>{children}</div>
-    </div>
-  );
-}
+import ChecklistCard from './ChecklistCard';
+import {
+  IBack, IPlus, IEdit, ITrash, IPrint,
+  BtnPrimary, BtnGhost, FieldLabel, InputSty, Th, ThR, Td, TdR,
+  CardSty, ModalSty, ErrorSty, OptionalSty,
+  Toast, Overlay, ModalHead, ModalFoot, RowActions, ConfirmDelete,
+} from './parts';
 
 // ── Add Box modal ─────────────────────────────────────────────────────────────
-function AddBoxModal({ open, nextSeq, composeBarcode, onClose, onSubmit }: {
-  open: boolean; nextSeq: number; composeBarcode: (seq: number) => string;
+function AddBoxModal({ open, barcode, onClose, onSubmit }: {
+  open: boolean; barcode: string;
   onClose: () => void; onSubmit: (d: { count: number; note: string }) => Promise<void>;
 }) {
   const [count, setCount] = useState('1');
@@ -58,9 +27,6 @@ function AddBoxModal({ open, nextSeq, composeBarcode, onClose, onSubmit }: {
   useEffect(() => { if (open) { setCount('1'); setNote(''); setError(''); } }, [open]);
 
   const n = Math.max(1, Math.min(parseInt(count) || 1, 500));
-  const preview = n === 1
-    ? composeBarcode(nextSeq)
-    : `${composeBarcode(nextSeq)}  …  ${composeBarcode(nextSeq + n - 1)}`;
 
   const handleSubmit = async () => {
     setSaving(true); setError('');
@@ -74,36 +40,32 @@ function AddBoxModal({ open, nextSeq, composeBarcode, onClose, onSubmit }: {
   if (!open) return null;
   return (
     <Overlay onClose={onClose}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--hair)' }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Add Box</h2>
-          <button onClick={onClose} style={{ marginLeft: 'auto', width: 28, height: 28, borderRadius: 7, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><IClose /></button>
-        </div>
+      <div style={ModalSty}>
+        <ModalHead title="Add Box" onClose={onClose} />
         <div style={{ padding: '18px 20px' }}>
-          {error && <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#b91c1c', fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+          {error && <div style={ErrorSty}>{error}</div>}
           <div style={{ marginBottom: 14 }}>
             <div style={FieldLabel}>How many</div>
             <input type="number" min="1" max="500" value={count} onChange={e => setCount(e.target.value)} autoFocus style={InputSty} />
-            <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--ink-4)' }}>Continues from the last barcode — next up is <b className="mono" style={{ color: 'var(--ink-3)' }}>C{nextSeq}</b>.</div>
           </div>
           <div style={{ marginBottom: 14 }}>
-            <div style={FieldLabel}>Note <span style={{ fontWeight: 500, letterSpacing: 0, textTransform: 'none', fontSize: 11, color: 'var(--ink-4)' }}>optional</span></div>
+            <div style={FieldLabel}>Note <span style={OptionalSty}>optional</span></div>
             <input value={note} onChange={e => setNote(e.target.value)} placeholder="Applied to all created items…" style={InputSty} />
           </div>
-          {/* Barcode preview */}
+          {/* Every box on a pallet carries the pallet's own barcode — there is one label to preview,
+              however many boxes you add. */}
           <div>
-            <div style={FieldLabel}>Barcode{n > 1 ? 's' : ''} preview</div>
+            <div style={FieldLabel}>Barcode preview</div>
             <div className="mono" style={{ padding: '10px 12px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--hair)', fontSize: 12.5, color: 'var(--accent-2)', fontWeight: 600, wordBreak: 'break-all', lineHeight: 1.5 }}>
-              {preview}
+              {barcode}
+            </div>
+            <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--ink-4)' }}>
+              All {n} box{n > 1 ? 'es' : ''} share this barcode — it is the pallet&apos;s own label.
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 20px', borderTop: '1px solid var(--hair)', background: 'var(--surface-2)' }}>
-          <button onClick={onClose} style={BtnGhost}>Cancel</button>
-          <button onClick={handleSubmit} disabled={saving} style={{ ...BtnPrimary, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>
-            {saving ? 'Adding…' : `Add ${n} box${n > 1 ? 'es' : ''}`}
-          </button>
-        </div>
+        <ModalFoot onClose={onClose} onSubmit={handleSubmit} saving={saving}
+          label={`Add ${n} box${n > 1 ? 'es' : ''}`} savingLabel="Adding…" />
       </div>
     </Overlay>
   );
@@ -131,48 +93,21 @@ function EditBoxModal({ box, onClose, onSubmit }: {
   if (!box) return null;
   return (
     <Overlay onClose={onClose}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden' }}>
-        <div style={{ display: 'flex', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--hair)' }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>Edit Box</h2>
-          <button onClick={onClose} style={{ marginLeft: 'auto', width: 28, height: 28, borderRadius: 7, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><IClose /></button>
-        </div>
+      <div style={ModalSty}>
+        <ModalHead title="Edit Box" onClose={onClose} />
         <div style={{ padding: '18px 20px' }}>
-          {error && <div style={{ padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, color: '#b91c1c', fontSize: 12.5, marginBottom: 14 }}>{error}</div>}
+          {error && <div style={ErrorSty}>{error}</div>}
           <div style={{ marginBottom: 14 }}>
             <div style={FieldLabel}>Barcode</div>
             <div className="mono" style={{ padding: '10px 12px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--hair)', fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 600, wordBreak: 'break-all' }}>{box.barcode}</div>
           </div>
           <div>
-            <div style={FieldLabel}>Note <span style={{ fontWeight: 500, letterSpacing: 0, textTransform: 'none', fontSize: 11, color: 'var(--ink-4)' }}>optional</span></div>
+            <div style={FieldLabel}>Note <span style={OptionalSty}>optional</span></div>
             <input value={note} onChange={e => setNote(e.target.value)} placeholder="Internal note…" autoFocus style={InputSty} />
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', padding: '14px 20px', borderTop: '1px solid var(--hair)', background: 'var(--surface-2)' }}>
-          <button onClick={onClose} style={BtnGhost}>Cancel</button>
-          <button onClick={handleSubmit} disabled={saving} style={{ ...BtnPrimary, opacity: saving ? 0.6 : 1, cursor: saving ? 'not-allowed' : 'pointer' }}>{saving ? 'Saving…' : 'Save changes'}</button>
-        </div>
-      </div>
-    </Overlay>
-  );
-}
-
-// ── Confirm modal ───────────────────────────────────────────────────────────────
-function ConfirmModal({ target, onClose, onConfirm }: {
-  target: Box | null; onClose: () => void; onConfirm: () => void;
-}) {
-  if (!target) return null;
-  return (
-    <Overlay onClose={onClose}>
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 14, boxShadow: '0 24px 60px rgba(20,30,20,0.3)', overflow: 'hidden', maxWidth: 400, margin: '0 auto' }}>
-        <div style={{ padding: '24px 24px 12px', textAlign: 'center' }}>
-          <div style={{ width: 46, height: 46, borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#b0432b', display: 'grid', placeItems: 'center', margin: '0 auto 12px' }}><ITrash /></div>
-          <h2 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 700 }}>Delete box?</h2>
-          <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>Box <b className="mono">{target.barcode}</b> will be permanently removed.</p>
-        </div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', padding: '12px 24px 20px' }}>
-          <button onClick={onClose} style={BtnGhost}>Cancel</button>
-          <button onClick={onConfirm} style={BtnDanger}><ITrash /> Delete</button>
-        </div>
+        <ModalFoot onClose={onClose} onSubmit={handleSubmit} saving={saving}
+          label="Save changes" savingLabel="Saving…" />
       </div>
     </Overlay>
   );
@@ -203,7 +138,7 @@ export default function BoxPage() {
   const [editTarget, setEditTarget] = useState<Box | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Box | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
-  const showToast = (msg: string, type: 'ok' | 'err' = 'ok') => setToast({ msg, type });
+  const showToast = useCallback((msg: string, type: 'ok' | 'err' = 'ok') => setToast({ msg, type }), []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -221,27 +156,16 @@ export default function BoxPage() {
       setSelected(new Set());
     } catch { showToast('Failed to load', 'err'); }
     setLoading(false);
-  }, [soId, pId]);
+  }, [soId, pId, showToast]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Next C-number: max trailing -C{n} across existing box barcodes, + 1 (matches the backend).
-  const nextSeq = useMemo(() => {
-    let mx = 0;
-    for (const c of boxes) {
-      const m = /-C(\d+)$/.exec(c.barcode || '');
-      if (m) mx = Math.max(mx, parseInt(m[1]));
-    }
-    return mx + 1;
-  }, [boxes]);
-
-  const composeBarcode = useCallback((seq: number) => {
-    const segs = [soNumber];
-    if (pallet?.licence_number) segs.push(pallet.licence_number);
-    if (pallet?.gateload_number) segs.push(pallet.gateload_number);
-    segs.push(`C${seq}`);
-    return segs.join('-');
-  }, [soNumber, pallet]);
+  // Mirrors Pallet.compose_barcode on the server. Every box on this pallet gets this
+  // string verbatim; each checklist line gets it plus '-{n}'.
+  const palletBarcode = useMemo(
+    () => [soNumber, pallet?.licence_number, pallet?.gateload_number].filter(Boolean).join('-'),
+    [soNumber, pallet],
+  );
 
   const handleAdd = async (d: { count: number; note: string }) => {
     const created = await api.pallets.boxes.create(pId, d);
@@ -266,10 +190,11 @@ export default function BoxPage() {
   const allSelected = boxes.length > 0 && boxes.every(c => selected.has(c.id));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(boxes.map(c => c.id)));
 
+  const palletLabel = pallet ? (pallet.licence_number || `Pallet #${pallet.pallet_seq}`) : '';
+
   const handlePrint = () => {
     const chosen = boxes.filter(c => selected.has(c.id));
     if (!chosen.length || !pallet) return;
-    const palletLabel = pallet.licence_number || `Pallet #${pallet.pallet_seq}`;
     printLabels(chosen.map(c => ({ qr: c.barcode, context: `${soNumber} · ${palletLabel}`, code: c.barcode, note: c.note })));
   };
 
@@ -280,7 +205,7 @@ export default function BoxPage() {
     <div style={{ padding: isMobile ? '12px 12px 40px' : '22px 28px 40px' }}>
 
       {/* Box card */}
-      <div style={{ background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={CardSty}>
 
         {/* Card header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px', borderBottom: boxes.length ? '1px solid var(--hair)' : 'none' }}>
@@ -356,14 +281,7 @@ export default function BoxPage() {
                       {c.created_at ? new Date(c.created_at).toLocaleDateString('en-CA') : '—'}
                     </td>
                     <td style={TdR}>
-                      <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
-                        <button title="Edit" onClick={() => setEditTarget(c)}
-                          style={{ width: 30, height: 30, borderRadius: 7, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}><IEdit /></button>
-                        <button title="Delete" onClick={() => setDeleteTarget(c)}
-                          style={{ width: 30, height: 30, borderRadius: 7, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}
-                          onMouseEnter={e => { const el = e.currentTarget as HTMLElement; el.style.color = '#b0432b'; el.style.background = '#fef2f2'; el.style.borderColor = '#fecaca'; }}
-                          onMouseLeave={e => { const el = e.currentTarget as HTMLElement; el.style.color = 'var(--ink-3)'; el.style.background = 'var(--surface-2)'; el.style.borderColor = 'var(--hair)'; }}><ITrash /></button>
-                      </div>
+                      <RowActions onEdit={() => setEditTarget(c)} onDelete={() => setDeleteTarget(c)} />
                     </td>
                   </tr>
                   );
@@ -374,16 +292,21 @@ export default function BoxPage() {
         )}
       </div>
 
+      {/* Checklist card — the 清單 produced after this pallet's boards are cut */}
+      <ChecklistCard palletId={pId} soNumber={soNumber} palletLabel={palletLabel}
+        palletBarcode={palletBarcode} isMobile={isMobile} showToast={showToast} />
+
       {/* Back link */}
       <button onClick={() => router.push(`/sales-orders/${soId}`)} style={{ ...BtnGhost, marginTop: 18 }}>
         <IBack /> Back to {soNumber}
       </button>
 
       {/* Modals */}
-      <AddBoxModal open={addOpen} nextSeq={nextSeq} composeBarcode={composeBarcode}
+      <AddBoxModal open={addOpen} barcode={palletBarcode}
         onClose={() => setAddOpen(false)} onSubmit={handleAdd} />
       <EditBoxModal box={editTarget} onClose={() => setEditTarget(null)} onSubmit={handleEdit} />
-      <ConfirmModal target={deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} />
+      <ConfirmDelete open={!!deleteTarget} title="Delete box?" barcode={deleteTarget?.barcode || ''}
+        onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} />
       {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
     </div>
   );

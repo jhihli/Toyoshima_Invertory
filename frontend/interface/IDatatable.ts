@@ -65,6 +65,7 @@ export interface Pallet {
   board_qty: number | null;
   board_count: number;
   box_count?: number;
+  checklist_count?: number;
   created_at: string;
 }
 
@@ -80,6 +81,30 @@ export interface BoxSearchResult {
   id: number;
   barcode: string;
   note: string;
+  pallet_id: number;
+  pallet_label: string;
+  so_id: number;
+  so_number: string;
+}
+
+/** One line of the checklist produced after a pallet's boards are cut. */
+export interface Checklist {
+  id: number;
+  pallet: number;
+  /** {pallet barcode}-{n}, composed server-side. */
+  barcode: string;
+  brand: string;
+  model: string;
+  qty: number | null;
+  created_at: string;
+}
+
+export interface ChecklistSearchResult {
+  id: number;
+  barcode: string;
+  brand: string;
+  model: string;
+  qty: number | null;
   pallet_id: number;
   pallet_label: string;
   so_id: number;
