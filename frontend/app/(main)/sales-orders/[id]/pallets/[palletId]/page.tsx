@@ -198,6 +198,13 @@ export default function BoxPage() {
               <button style={BtnGhost} onClick={handlePrint}><IPrint /> Print ({selected.size})</button>
             )}
             <button style={BtnPrimary} onClick={() => setAddOpen(true)}><IPlus /> Add Box</button>
+            {/* Through to the 清單 for this pallet — its own route, so the breadcrumb
+                can reach … > tgt1 > Checklist. */}
+            <button style={BtnGhost} onClick={() => router.push(`/sales-orders/${soId}/pallets/${pId}/checklist`)}>
+              Checklist
+              <span style={{ fontSize: 11.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent-2)' }}>{pallet.checklist_count ?? 0}</span>
+              <IForward />
+            </button>
           </div>
         </div>
 
@@ -273,20 +280,6 @@ export default function BoxPage() {
           </div>
         )}
       </div>
-
-      {/* Link through to the 清單 produced after this pallet's boards are cut. It lives on
-          its own route so the breadcrumb can reach … > tgt1 > Checklist. */}
-      <button
-        onClick={() => router.push(`/sales-orders/${soId}/pallets/${pId}/checklist`)}
-        style={{ ...CardSty, marginTop: 18, width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
-        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#eef5f0'}
-        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface)'}>
-        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Checklist</span>
-        <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent-2)' }}>{pallet.checklist_count ?? 0}</span>
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: 'var(--ink-3)' }}>
-          Open <IForward />
-        </span>
-      </button>
 
       {/* Back link */}
       <button onClick={() => router.push(`/sales-orders/${soId}`)} style={{ ...BtnGhost, marginTop: 18 }}>
