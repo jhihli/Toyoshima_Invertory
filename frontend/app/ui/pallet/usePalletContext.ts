@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '@/app/lib/api';
 import type { Pallet } from '@/interface/IDatatable';
-import { crumbCache } from '@/app/lib/crumbCache';
+import { crumbCache, palletCrumb } from '@/app/lib/crumbCache';
 
 /**
  * Loads the SO and the one pallet that both pallet routes hang off — the Boxes page and
@@ -23,7 +23,7 @@ export function usePalletContext(soId: number, palletId: number) {
     crumbCache.setSo(soData.id, soData.so_number);
     const thisPallet = soData.pallets?.find((p: Pallet) => p.id === palletId) || null;
     if (thisPallet) {
-      crumbCache.setPallet(thisPallet.id, thisPallet.licence_number || `Pallet #${thisPallet.pallet_seq}`);
+      crumbCache.setPallet(thisPallet.id, palletCrumb(soData.so_number, thisPallet));
     }
     setPallet(thisPallet);
   }, [soId, palletId]);

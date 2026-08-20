@@ -11,6 +11,7 @@ import {
   Card, SectionHeader, EditableCell, Field, Empty, Badge, useToast,
   thS, tdS, ghostBtn,
 } from '@/app/ui/components';
+import { crumbCache, palletCrumb } from '@/app/lib/crumbCache';
 import { api } from '@/app/lib/api';
 import {
   buildSlots, buildGlobalSlots, slotCount, bomTotalQty, normalizeChipMpn,
@@ -96,6 +97,10 @@ export default function SODetailPage() {
     try {
       const data = await api.sos.get(soId);
       setSo(data);
+      // Prime the breadcrumb so clicking through to a pallet's boxes shows its real
+      // label immediately instead of a skeleton while the crumb runs its own fetch.
+      crumbCache.setSo(data.id, data.so_number);
+      (data.pallets || []).forEach(p => crumbCache.setPallet(p.id, palletCrumb(data.so_number, p)));
     } catch { toast('Failed to load SO'); }
     finally { setLoading(false); }
   }, [soId]);
@@ -1029,6 +1034,7 @@ export default function SODetailPage() {
             onUpdate={handleUpdatePallet}
             onDelete={setDeletePalletId}
             onGoToBoards={palletId => { setBoardPalletFilter(String(palletId)); setTab('boards'); }}
+            onGoToBoxes={palletId => router.push(`/sos/${soId}/pallets/${palletId}`)}
           />
         )}
         {tab === 'boards' && (
@@ -1229,11 +1235,12 @@ export default function SODetailPage() {
 }
 
 // ─── Pallets Tab ──────────────────────────────────────────────────
-function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards }: {
+function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards, onGoToBoxes }: {
   pallets: Pallet[]; effectiveRule: string; ruleIsOverride: boolean; vendorName: string;
   palletTotal: { weight: number; qty: number; boardQty: number; outWeightGross: number; outWeightNet: number; tantalumWt: number }; addDisabled: boolean;
   onAdd: () => void; onUpdate: (id: number, p: Partial<Pallet>) => void; onDelete: (id: number) => void;
   onGoToBoards: (palletId: number) => void;
+  onGoToBoxes: (palletId: number) => void;
 }) {
   const [editingPallet, setEditingPallet] = useState<Pallet | null>(null);
   const isMobile = useIsMobile();
@@ -1263,6 +1270,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   {parseFloat(p.in_weight_gross).toFixed(2)} lb
                 </Badge>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={ghostBtn} title="Boxes & checklist"><BoxIcon /></button>
                   <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={ghostBtn} title="Edit"><EditIcon /></button>
                   <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={ghostBtn} title="Delete"><TrashIcon /></button>
                 </div>
@@ -1354,6 +1362,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   </td>
                   <td style={{ ...tdS, textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
+                      <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={ghostBtn} title="Boxes & checklist"><BoxIcon /></button>
                       <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={ghostBtn} title="Edit"><EditIcon /></button>
                       <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={ghostBtn} title="Delete"><TrashIcon /></button>
                     </div>
@@ -2460,6 +2469,13 @@ const TrashIcon = () => (
     <polyline points="3 6 5 6 21 6" />
     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
     <path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+  </svg>
+);
+
+const BoxIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+    <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
   </svg>
 );
 

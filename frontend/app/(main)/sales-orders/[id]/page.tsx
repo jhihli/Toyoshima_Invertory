@@ -4,7 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/app/lib/api';
 import type { SODetail, Pallet, PalletPhoto } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
-import { crumbCache } from '@/app/lib/crumbCache';
+import { crumbCache, palletCrumb } from '@/app/lib/crumbCache';
 import { printLabels } from '@/app/lib/printLabels';
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
@@ -484,7 +484,7 @@ export default function SODetailPage() {
       const soData = await api.sos.get(soId);
       // Warm the breadcrumb cache so clicking into a pallet shows its label immediately (no id flash).
       crumbCache.setSo(soData.id, soData.so_number);
-      (soData.pallets || []).forEach(p => crumbCache.setPallet(p.id, p.licence_number || `Pallet #${p.pallet_seq}`));
+      (soData.pallets || []).forEach(p => crumbCache.setPallet(p.id, palletCrumb(soData.so_number, p)));
       setSo(soData);
       setPallets(soData.pallets || []);
       setSelected(new Set());
