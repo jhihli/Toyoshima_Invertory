@@ -28,6 +28,9 @@ urlpatterns = [
     path('pallets/<int:pallet_pk>/boxes/', views.box_list, name='box-list'),
     path('pallets/<int:pallet_pk>/boxes/<int:pk>/', views.box_detail, name='box-detail'),
     path('boxes/search/', views.box_search, name='box-search'),
+    path('pallets/<int:pallet_pk>/checklists/', views.checklist_list, name='checklist-list'),
+    path('pallets/<int:pallet_pk>/checklists/<int:pk>/', views.checklist_detail, name='checklist-detail'),
+    path('checklists/search/', views.checklist_search, name='checklist-search'),
     path('sos/<int:so_pk>/boards/', views.board_list_by_so, name='board-list-by-so'),
     path('sos/<int:so_pk>/boards/bulk/', views.board_bulk_create, name='board-bulk-create'),
 
@@ -51,6 +54,8 @@ urlpatterns = [
     path('scanner/pallets/lookup/', views.scanner_pallet_lookup, name='scanner-pallet-lookup'),
     path('scanner/pallets/<int:pallet_pk>/boxes/bulk/', views.scanner_box_bulk_create, name='scanner-box-bulk-create'),
     path('scanner/pallets/<int:pallet_pk>/boxes/', views.scanner_box_list, name='scanner-box-list'),
+    path('scanner/pallets/<int:pallet_pk>/checklists/bulk/', views.scanner_checklist_bulk_create, name='scanner-checklist-bulk-create'),
+    path('scanner/pallets/<int:pallet_pk>/checklists/', views.scanner_checklist_list, name='scanner-checklist-list'),
     path('scanner/pallets/<int:pallet_pk>/photos/', views.scanner_pallet_photo_upload, name='scanner-pallet-photo-upload'),
     
     # Dashboard

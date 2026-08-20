@@ -113,6 +113,19 @@ class Pallet(models.Model):
     def __str__(self):
         return f"{self.so.so_number} - Pallet #{self.pallet_seq}"
 
+    def compose_barcode(self):
+        """The label printed on this pallet: {so}-{licence}-{gateload}, blank segments skipped.
+
+        Single source of truth for the barcode prefix. A box label is exactly this string;
+        a checklist label is this string plus '-{n}'.
+        """
+        segs = [self.so.so_number]
+        if self.licence_number:
+            segs.append(self.licence_number)
+        if self.gateload_number:
+            segs.append(self.gateload_number)
+        return '-'.join(segs)
+
 
 class PalletPhoto(models.Model):
     pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='photos')
@@ -127,21 +140,23 @@ class PalletPhoto(models.Model):
 
 
 class Box(models.Model):
-    """A box item on a pallet. Each has an auto-composed barcode.
+    """A box sitting on a pallet. Its label is the pallet's label, verbatim.
 
-    A pallet has one physical barcode (its licence_number); the user scans it, then
-    creates one or more box items under it. The box barcode is generated at creation
-    from the parent SO + pallet, e.g. 'SO5-000533-LP00067024-3-C1'.
+    A pallet carries one physical barcode; every box on it gets that same barcode, with
+    no per-box suffix — what the floor needs on a box is only "which SO, which pallet".
+    So a Box row is really a count of how many boxes the pallet holds, plus a per-box note.
 
-    The 'C' in the trailing -C{n} is legacy — it dates from when this model was
-    called Cargo. Do NOT change it to 'B': labels carrying -C{n} are already
-    printed and stuck to physical boxes, and next_index() parses that suffix.
+    Rows created before 2026-08 carry a legacy '-C{n}' suffix (from when this model was
+    called Cargo). Those labels are printed and stuck to physical boxes, so the rows are
+    left exactly as they are; only new boxes get the bare pallet barcode. Expect a pallet
+    to hold a mix of both.
     """
     pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='boxes')
     barcode = models.CharField(
         max_length=200, blank=True, db_index=True,
-        help_text="Composed at creation: {so_number}-{licence_number}-{gateload_number}-C{n}, "
-                  "where n is the next free index parsed from this pallet's existing box barcodes."
+        help_text="The parent pallet's barcode, copied at creation: "
+                  "{so_number}-{licence_number}-{gateload_number}. Not unique — every box "
+                  "on a pallet shares it. Legacy rows may still carry a '-C{n}' suffix."
     )
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -154,25 +169,55 @@ class Box(models.Model):
         return self.barcode or f"Box {self.id} (Pallet {self.pallet_id})"
 
     @staticmethod
+    def compose_barcode(pallet):
+        """A box label is the pallet label unchanged."""
+        return pallet.compose_barcode()
+
+
+class Checklist(models.Model):
+    """One line of the 清單 produced after the boards on a pallet are cut.
+
+    Barcoded '{pallet barcode}-{n}', numbered from 1 across the whole pallet rather than
+    per box: once every box on a pallet shares one barcode, "which box did this come from"
+    is neither answerable nor needed — SO and pallet are.
+
+    brand / model / qty are optional; a worker may print labels first and fill them in later.
+    """
+    pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='checklists')
+    barcode = models.CharField(
+        max_length=200, db_index=True,
+        help_text="Composed at creation: {pallet barcode}-{n}, n running from 1 within the pallet."
+    )
+    brand = models.CharField(max_length=100, blank=True)
+    model = models.CharField(max_length=100, blank=True)
+    qty = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'checklist'
+        unique_together = [['pallet', 'barcode']]
+        ordering = ['pallet', 'id']
+
+    def __str__(self):
+        return self.barcode
+
+    @staticmethod
     def compose_barcode(pallet, seq):
-        """Build the box barcode from the current SO + pallet fields and a C-number."""
-        segs = [pallet.so.so_number]
-        if pallet.licence_number:
-            segs.append(pallet.licence_number)
-        if pallet.gateload_number:
-            segs.append(pallet.gateload_number)
-        segs.append(f'C{seq}')
-        return '-'.join(segs)
+        return f'{pallet.compose_barcode()}-{seq}'
 
     @staticmethod
     def next_index(pallet):
-        """Next C-number for a pallet: max trailing -C{n} across its box barcodes, + 1."""
-        import re
+        """Next number for a pallet: the largest trailing -{digits} already used, + 1.
+
+        Read off the barcode rather than a stored column so the two can never disagree.
+        Splitting on the last hyphen (instead of matching the full pallet prefix) keeps
+        this correct even if the pallet's licence or gateload number is edited later.
+        """
         mx = 0
-        for bc in pallet.boxes.values_list('barcode', flat=True):
-            m = re.search(r'-C(\d{1,6})$', bc or '')
-            if m:
-                mx = max(mx, int(m.group(1)))
+        for bc in pallet.checklists.values_list('barcode', flat=True):
+            tail = (bc or '').rsplit('-', 1)[-1]
+            if tail.isdigit():
+                mx = max(mx, int(tail))
         return mx + 1
 
 

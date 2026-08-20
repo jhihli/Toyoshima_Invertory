@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.conf import settings
 from .models import (
     Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
-    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box,
+    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist,
     MsftApiConfig, MsftJobInfo, MsftCreditUnit, MsftPaymentNotice, MsftApiLog,
     MsftCompanyCode, MsftUnitType, MSFT_BUYBACK_UNIT_TYPES,
 )
@@ -63,12 +63,13 @@ class PalletPhotoSerializer(serializers.ModelSerializer):
 class PalletSerializer(serializers.ModelSerializer):
     board_count = serializers.SerializerMethodField(read_only=True)
     box_count = serializers.SerializerMethodField(read_only=True)
+    checklist_count = serializers.SerializerMethodField(read_only=True)
     photo_url = serializers.SerializerMethodField(read_only=True)
     photos = PalletPhotoSerializer(many=True, read_only=True)
 
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_count', 'box_count', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_count', 'box_count', 'checklist_count', 'created_at']
         read_only_fields = ['created_at', 'photo_url', 'photos']
 
     def get_board_count(self, obj):
@@ -76,6 +77,9 @@ class PalletSerializer(serializers.ModelSerializer):
 
     def get_box_count(self, obj):
         return obj.boxes.count()
+
+    def get_checklist_count(self, obj):
+        return obj.checklists.count()
 
     def get_photo_url(self, obj):
         if not obj.photo:
@@ -93,6 +97,14 @@ class BoxSerializer(serializers.ModelSerializer):
     class Meta:
         model = Box
         fields = ['id', 'pallet', 'barcode', 'note', 'created_at']
+        read_only_fields = ['pallet', 'barcode', 'created_at']
+
+
+class ChecklistSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Checklist
+        fields = ['id', 'pallet', 'barcode', 'brand', 'model', 'qty', 'created_at']
+        # barcode is composed server-side; a client editing it would break next_index().
         read_only_fields = ['pallet', 'barcode', 'created_at']
 
 

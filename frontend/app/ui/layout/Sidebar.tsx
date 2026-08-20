@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { signOut, useSession, getSession } from 'next-auth/react';
 import Image from 'next/image';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
-import { crumbCache } from '@/app/lib/crumbCache';
+import { crumbCache, palletCrumb } from '@/app/lib/crumbCache';
 
 interface NavItem {
   key: string;
@@ -284,6 +284,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   'mpns': 'MPN',
   'boards': 'Boards',
   'pallets': 'Pallets',
+  'checklist': 'Checklist',
 };
 
 const API = process.env.NEXT_PUBLIC_Django_API_URL || 'http://localhost:8000';
@@ -318,7 +319,7 @@ function TopBreadcrumb() {
         if (d.so_number) crumbCache.setSo(soId, d.so_number);
         if (palletId && Array.isArray(d.pallets)) {
           const p = d.pallets.find((pp: any) => String(pp.id) === palletId);
-          if (p) crumbCache.setPallet(palletId, p.licence_number || `Pallet #${p.pallet_seq}`);
+          if (p) crumbCache.setPallet(palletId, palletCrumb(d.so_number, p));
         }
       })
       .catch(() => {});
@@ -326,7 +327,10 @@ function TopBreadcrumb() {
   }, [soId, palletId]);
 
   const soLabel = soId ? crumbCache.getSo(soId) : null;
-  const palletLabel = palletId ? crumbCache.getPallet(palletId) : null;
+  // MSFT orders name a pallet by its full barcode (SO-licence-gateload); the general
+  // sales-order flow treats the licence number as the pallet's name and shows just that.
+  const pCrumb = palletId ? crumbCache.getPallet(palletId) : null;
+  const palletLabel = pCrumb ? (segments[0] === 'sos' ? pCrumb.barcode : pCrumb.licence) : null;
 
   const crumbs: { label: string; href: string; loading?: boolean }[] = [{ label: 'Home', href: '/dashboard' }];
   let path = '';

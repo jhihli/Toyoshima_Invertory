@@ -82,7 +82,7 @@ import type {
   Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
-  PalletChipContainer, Box, BoxSearchResult,
+  PalletChipContainer, Box, BoxSearchResult, Checklist, ChecklistSearchResult,
   MsftMeta, MsftJobInfo, MsftCreditUnit, MsftPaymentNotice, MsftApiLog,
 } from '@/interface/IDatatable';
 
@@ -150,11 +150,26 @@ export const api = {
         apiPut<Box>(`/pallets/${palletId}/boxes/${id}/`, d),
       delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/boxes/${id}/`),
     },
+    checklists: {
+      list: (palletId: number) => apiGet<Checklist[]>(`/pallets/${palletId}/checklists/`),
+      // Barcodes are allocated server-side — send how many labels you want, not the codes.
+      create: (palletId: number, d: { count?: number; items?: Partial<Checklist>[] }) =>
+        apiPost<Checklist[]>(`/pallets/${palletId}/checklists/`, d),
+      update: (palletId: number, id: number, d: Partial<Checklist>) =>
+        apiPut<Checklist>(`/pallets/${palletId}/checklists/${id}/`, d),
+      delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/checklists/${id}/`),
+    },
   },
 
   // Box (cross-SO barcode search)
   boxes: {
     search: (q: string) => apiGet<BoxSearchResult[]>(`/boxes/search/?q=${encodeURIComponent(q)}`),
+  },
+
+  // Checklist (cross-SO barcode search)
+  checklists: {
+    search: (q: string) =>
+      apiGet<ChecklistSearchResult[]>(`/checklists/search/?q=${encodeURIComponent(q)}`),
   },
 
   // Photos

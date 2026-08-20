@@ -185,16 +185,41 @@ Key field notes:
 - `Chip.mpn` — FK to `MPN` (nullable)
 - `Box.pallet` — FK to `Pallet` (`related_name='boxes'`), DB table `box`
 
-### Box (formerly Cargo)
+### Barcode composition
 
-A `Box` is a physical box sitting on a pallet — what the scanner prints labels for.
-The pallet carries one physical barcode (its `licence_number`); scanning it lets the
-user create one or more boxes under it, each with a server-composed barcode:
-`{so_number}-{licence_number}-{gateload_number}-C{n}`.
+`Pallet.compose_barcode()` is the single source of truth. Never rebuild this string
+by hand anywhere else — the frontend and the scanner app both take it from the server.
 
-**The `C` in `-C{n}` is legacy** — it dates from when the model was named `Cargo`.
-Never change it to `B`: those labels are already printed and stuck to physical boxes,
-and `Box.next_index()` parses that suffix to pick the next number.
+```
+pallet    = {so_number}-{licence_number}-{gateload_number}   (blank segments skipped)
+box       = pallet barcode, verbatim
+checklist = pallet barcode + "-{n}", n from 1, continuous within the pallet
+```
+
+### Box
+
+A `Box` is a physical box sitting on a pallet. **Every box on a pallet carries the
+pallet's own barcode** — there is no per-box suffix, because all the floor needs on a
+box is which SO and which pallet. A Box row is therefore a count of boxes plus a note.
+
+Rows created before 2026-08 still carry a legacy `-C{n}` suffix (from when the model
+was named `Cargo`). Those labels are printed and stuck to physical boxes, so the rows
+are never rewritten — expect a pallet to hold a mix of suffixed and bare barcodes.
+
+Because box barcodes are not unique, the scanner bulk endpoint uses **count semantics**,
+not per-barcode dedup: the device reports how many boxes the pallet has and the server
+tops the row count up to that number, never down.
+
+### Checklist
+
+A `Checklist` row is one line of the 清單 produced after a pallet's boards are cut,
+barcoded `{pallet barcode}-{n}`. It hangs off `Pallet`, not `Box` — once every box
+shares one barcode, "which box did this come from" is neither answerable nor needed.
+
+`brand`, `model` and `qty` are all optional free-text/numeric fields; labels are often
+printed first and filled in later. **Barcodes are always allocated server-side**
+(`Checklist.next_index()` + `compose_barcode()`), never composed by a client — two
+scanners each guessing the next number would both pick the same one.
 
 ### Pallet mode rules for seed data / tests
 
@@ -265,10 +290,17 @@ The Zebra scanner app calls `/product/scanner/` endpoints using `SCANNER_API_KEY
 { "success": false, "error": "reason" }
 ```
 
-Box label endpoints (renamed from `cargo` in a hard cutover — old clients get 404):
-- `GET  scanner/pallets/lookup/?barcode=` → includes `existing_box_count`
-- `POST scanner/pallets/<pk>/boxes/bulk/` → body `{ "boxes": [{ "barcode", "note" }] }`
+Label endpoints (renamed from `cargo` in a hard cutover — old clients get 404):
+- `GET  scanner/pallets/lookup/?barcode=` → `pallet_barcode`, `existing_box_count`,
+  `existing_checklist_count`. Print `pallet_barcode` as-is; do not recompose it.
+- `POST scanner/pallets/<pk>/boxes/bulk/` → body `{ "boxes": [{ "note" }] }`.
+  `len(boxes)` is the pallet's **total** box count, not a delta. Any `barcode` in the
+  body is ignored — the server composes it. Returns `created`, `skipped`, `total`.
 - `GET  scanner/pallets/<pk>/boxes/` → `data.boxes`
+- `POST scanner/pallets/<pk>/checklists/bulk/` → body `{ "items": [{ "brand", "model",
+  "qty" }] }` (or `{ "count": N }`). The server allocates the numbers and returns the
+  composed barcodes in `data.checklists` for printing.
+- `GET  scanner/pallets/<pk>/checklists/` → `data.checklists`
 
 Renaming these keys again requires rebuilding and redeploying the Zebra APK in lockstep.
 
