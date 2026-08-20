@@ -232,7 +232,7 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
   const describe = (r: Checklist) => [r.brand, r.model].filter(Boolean).join(' ');
 
   return (
-    <div style={{ ...CardSty, marginTop: 18 }}>
+    <div style={CardSty}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px', borderBottom: rows.length ? '1px solid var(--hair)' : 'none' }}>
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Checklist</h2>
         <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent-2)' }}>{rows.length}</span>

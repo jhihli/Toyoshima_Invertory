@@ -181,9 +181,16 @@ label found on the floor navigates straight to its pallet.
 
 ## Frontend
 
-The pallet detail page
-(`frontend/app/(main)/sales-orders/[id]/pallets/[palletId]/page.tsx`) gains a Checklist
-section below the existing Boxes section: a table of barcode / brand / model / qty, an
+The checklist lives on its own route,
+`/sales-orders/[id]/pallets/[palletId]/checklist`, rather than sharing the pallet page
+with the Boxes table — two label workflows on one screen read as one. The pallet page
+links through with a row showing the checklist count; the breadcrumb picks the new
+segment up automatically and reads `Home > Sales Orders > SO123 > tgt1 > Checklist`.
+
+Both routes load the pallet through a shared `usePalletContext` hook so they cannot
+drift on how a pallet is named or how its barcode is composed.
+
+The checklist page shows a table of barcode / brand / model / qty, an
 Add control taking a count, inline edit, and delete. `PalletSerializer` gains
 `checklist_count` to feed the section header.
 

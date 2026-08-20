@@ -1,14 +1,13 @@
 'use client';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { api } from '@/app/lib/api';
-import type { Pallet, Box } from '@/interface/IDatatable';
+import type { Box } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
-import { crumbCache } from '@/app/lib/crumbCache';
 import { printLabels } from '@/app/lib/printLabels';
-import ChecklistCard from './ChecklistCard';
+import { usePalletContext } from './usePalletContext';
 import {
-  IBack, IPlus, IEdit, ITrash, IPrint,
+  IBack, IPlus, IEdit, ITrash, IPrint, IForward,
   BtnPrimary, BtnGhost, FieldLabel, InputSty, Th, ThR, Td, TdR,
   CardSty, ModalSty, ErrorSty, OptionalSty,
   Toast, Overlay, ModalHead, ModalFoot, RowActions, ConfirmDelete,
@@ -129,10 +128,8 @@ export default function BoxPage() {
     if (el && !scrolledRef.current) { scrolledRef.current = true; el.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
   };
 
-  const [pallet, setPallet] = useState<Pallet | null>(null);
-  const [soNumber, setSoNumber] = useState('');
   const [boxes, setBoxes] = useState<Box[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [boxesLoading, setBoxesLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editTarget, setEditTarget] = useState<Box | null>(null);
@@ -140,48 +137,34 @@ export default function BoxPage() {
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
   const showToast = useCallback((msg: string, type: 'ok' | 'err' = 'ok') => setToast({ msg, type }), []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const { pallet, soNumber, palletLabel, palletBarcode, loading: palletLoading, error: palletError }
+    = usePalletContext(soId, pId);
+
+  const loadBoxes = useCallback(async () => {
     try {
-      const [soData, boxData] = await Promise.all([
-        api.sos.get(soId),
-        api.pallets.boxes.list(pId),
-      ]);
-      setSoNumber(soData.so_number);
-      const thisPallet = soData.pallets?.find((p: Pallet) => p.id === pId) || null;
-      crumbCache.setSo(soData.id, soData.so_number);
-      if (thisPallet) crumbCache.setPallet(thisPallet.id, thisPallet.licence_number || `Pallet #${thisPallet.pallet_seq}`);
-      setPallet(thisPallet);
-      setBoxes(boxData || []);
+      setBoxes((await api.pallets.boxes.list(pId)) || []);
       setSelected(new Set());
-    } catch { showToast('Failed to load', 'err'); }
-    setLoading(false);
-  }, [soId, pId, showToast]);
+    } catch { showToast('Failed to load boxes', 'err'); }
+    setBoxesLoading(false);
+  }, [pId, showToast]);
 
-  useEffect(() => { load(); }, [load]);
-
-  // Mirrors Pallet.compose_barcode on the server. Every box on this pallet gets this
-  // string verbatim; each checklist line gets it plus '-{n}'.
-  const palletBarcode = useMemo(
-    () => [soNumber, pallet?.licence_number, pallet?.gateload_number].filter(Boolean).join('-'),
-    [soNumber, pallet],
-  );
+  useEffect(() => { loadBoxes(); }, [loadBoxes]);
 
   const handleAdd = async (d: { count: number; note: string }) => {
     const created = await api.pallets.boxes.create(pId, d);
     const n = created?.length ?? d.count;
-    await load();
+    await loadBoxes();
     showToast(`Added ${n} box${n > 1 ? 'es' : ''}`);
   };
   const handleEdit = async (d: { note: string }) => {
     if (!editTarget) return;
     await api.pallets.boxes.update(pId, editTarget.id, d);
-    await load(); showToast('Box saved');
+    await loadBoxes(); showToast('Box saved');
   };
   const handleDelete = async () => {
     if (!deleteTarget) return;
     await api.pallets.boxes.delete(pId, deleteTarget.id);
-    await load(); setDeleteTarget(null); showToast('Box deleted', 'err');
+    await loadBoxes(); setDeleteTarget(null); showToast('Box deleted', 'err');
   };
 
   const toggleSel = (id: number) => setSelected(s => {
@@ -190,15 +173,14 @@ export default function BoxPage() {
   const allSelected = boxes.length > 0 && boxes.every(c => selected.has(c.id));
   const toggleAll = () => setSelected(allSelected ? new Set() : new Set(boxes.map(c => c.id)));
 
-  const palletLabel = pallet ? (pallet.licence_number || `Pallet #${pallet.pallet_seq}`) : '';
-
   const handlePrint = () => {
     const chosen = boxes.filter(c => selected.has(c.id));
     if (!chosen.length || !pallet) return;
     printLabels(chosen.map(c => ({ qr: c.barcode, context: `${soNumber} · ${palletLabel}`, code: c.barcode, note: c.note })));
   };
 
-  if (loading) return <div style={{ padding: 40, color: 'var(--ink-4)' }}>Loading…</div>;
+  if (palletLoading || boxesLoading) return <div style={{ padding: 40, color: 'var(--ink-4)' }}>Loading…</div>;
+  if (palletError) return <div style={{ padding: 40, color: '#b91c1c' }}>Couldn&apos;t load this pallet.</div>;
   if (!pallet) return <div style={{ padding: 40, color: '#b91c1c' }}>Pallet not found.</div>;
 
   return (
@@ -292,9 +274,19 @@ export default function BoxPage() {
         )}
       </div>
 
-      {/* Checklist card — the 清單 produced after this pallet's boards are cut */}
-      <ChecklistCard palletId={pId} soNumber={soNumber} palletLabel={palletLabel}
-        palletBarcode={palletBarcode} isMobile={isMobile} showToast={showToast} />
+      {/* Link through to the 清單 produced after this pallet's boards are cut. It lives on
+          its own route so the breadcrumb can reach … > tgt1 > Checklist. */}
+      <button
+        onClick={() => router.push(`/sales-orders/${soId}/pallets/${pId}/checklist`)}
+        style={{ ...CardSty, marginTop: 18, width: '100%', display: 'flex', alignItems: 'center', gap: 11, padding: '14px 16px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+        onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = '#eef5f0'}
+        onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface)'}>
+        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--ink)' }}>Checklist</span>
+        <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent-2)' }}>{pallet.checklist_count ?? 0}</span>
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 13, fontWeight: 600, color: 'var(--ink-3)' }}>
+          Open <IForward />
+        </span>
+      </button>
 
       {/* Back link */}
       <button onClick={() => router.push(`/sales-orders/${soId}`)} style={{ ...BtnGhost, marginTop: 18 }}>

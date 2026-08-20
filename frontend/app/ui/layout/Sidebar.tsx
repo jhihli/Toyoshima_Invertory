@@ -284,6 +284,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   'mpns': 'MPN',
   'boards': 'Boards',
   'pallets': 'Pallets',
+  'checklist': 'Checklist',
 };
 
 const API = process.env.NEXT_PUBLIC_Django_API_URL || 'http://localhost:8000';
