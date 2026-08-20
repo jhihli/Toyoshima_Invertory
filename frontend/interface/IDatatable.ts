@@ -64,11 +64,11 @@ export interface Pallet {
   qty: number;
   board_qty: number | null;
   board_count: number;
-  cargo_count?: number;
+  box_count?: number;
   created_at: string;
 }
 
-export interface Cargo {
+export interface Box {
   id: number;
   pallet: number;
   barcode: string;
@@ -76,7 +76,7 @@ export interface Cargo {
   created_at: string;
 }
 
-export interface CargoSearchResult {
+export interface BoxSearchResult {
   id: number;
   barcode: string;
   note: string;

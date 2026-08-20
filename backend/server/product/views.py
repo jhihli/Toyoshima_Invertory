@@ -26,7 +26,7 @@ class IsAdminOrManager(BasePermission):
         return bool(user and user.is_authenticated and getattr(user, 'is_admin_or_manager', False))
 from .models import (
     Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
-    MPNReportConfig, MPNReportEmail, PalletChipContainer, Cargo,
+    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box,
     MsftApiConfig, MsftJobInfo, MsftCreditUnit, MsftPaymentNotice, MsftApiLog,
     MsftCompanyCode, MsftUnitType, MSFT_BUYBACK_UNIT_TYPES,
 )
@@ -36,7 +36,7 @@ from .serializer import (
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
     PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer,
-    CargoSerializer,
+    BoxSerializer,
     MsftApiConfigSerializer, MsftJobInfoSerializer, MsftCreditUnitSerializer,
     MsftPaymentNoticeSerializer, MsftApiLogSerializer,
     MsftCompanyCodeSerializer, MsftUnitTypeSerializer,
@@ -305,15 +305,15 @@ def pallet_photo_detail(request, pallet_pk, pk):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
-# ─────────────────────────────────────────────────── Cargo
+# ─────────────────────────────────────────────────── Box
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
-def cargo_list(request, pallet_pk):
+def box_list(request, pallet_pk):
     pallet = get_object_or_404(Pallet.objects.select_related('so'), pk=pallet_pk)
     if request.method == 'GET':
-        return Response(CargoSerializer(pallet.cargos.all(), many=True).data)
+        return Response(BoxSerializer(pallet.boxes.all(), many=True).data)
 
-    # POST — create one or many cargo items. Barcodes are composed server-side.
+    # POST — create one or many box items. Barcodes are composed server-side.
     def _as_int(val, default):
         try:
             return int(val)
@@ -323,41 +323,41 @@ def cargo_list(request, pallet_pk):
     count = max(1, min(_as_int(request.data.get('count', 1), 1), 500))
     note = request.data.get('note', '') or ''
 
-    start = Cargo.next_index(pallet)
+    start = Box.next_index(pallet)
     created = []
     with transaction.atomic():
         for i in range(count):
             seq = start + i
-            created.append(Cargo.objects.create(
+            created.append(Box.objects.create(
                 pallet=pallet, note=note,
-                barcode=Cargo.compose_barcode(pallet, seq),
+                barcode=Box.compose_barcode(pallet, seq),
             ))
-    return Response(CargoSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+    return Response(BoxSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(['PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
-def cargo_detail(request, pallet_pk, pk):
-    cargo = get_object_or_404(Cargo, pk=pk, pallet_id=pallet_pk)
+def box_detail(request, pallet_pk, pk):
+    box = get_object_or_404(Box, pk=pk, pallet_id=pallet_pk)
     if request.method == 'PUT':
-        serializer = CargoSerializer(cargo, data=request.data, partial=True)
+        serializer = BoxSerializer(box, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    cargo.delete()
+    box.delete()
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def cargo_search(request):
-    """Find cargo items by barcode (partial match), with the SO + pallet they live under so
-    the caller can navigate straight to the cargo page."""
+def box_search(request):
+    """Find box items by barcode (partial match), with the SO + pallet they live under so
+    the caller can navigate straight to the box page."""
     q = request.query_params.get('q', '').strip()
     if not q:
         return Response([])
-    qs = (Cargo.objects
+    qs = (Box.objects
           .select_related('pallet', 'pallet__so')
           .filter(barcode__icontains=q)
           .order_by('barcode')[:20])
@@ -788,7 +788,7 @@ def scanner_pallet_photo_upload(request, pallet_pk):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-# ─────────────────────────────────────────────────── Scanner: cargo label printer
+# ─────────────────────────────────────────────────── Scanner: box label printer
 
 @api_view(['GET'])
 @authentication_classes([])
@@ -820,14 +820,14 @@ def scanner_pallet_lookup(request):
         'so_number': pallet.so.so_number,
         'licence_number': pallet.licence_number,
         'gateload_number': pallet.gateload_number,
-        'existing_cargo_count': pallet.cargos.count(),
+        'existing_box_count': pallet.boxes.count(),
         'multiple_matches': matches.count() > 1,
     }})
 
 @api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
-def scanner_cargo_bulk_create(request, pallet_pk):
+def scanner_box_bulk_create(request, pallet_pk):
     """设备端组装好的条码原样入库，不调用 compose_barcode / next_index。
     按 (pallet, barcode) 跳过重复，使重复同步幂等。"""
     err = _check_scanner_key(request)
@@ -840,14 +840,14 @@ def scanner_cargo_bulk_create(request, pallet_pk):
         return Response({'success': False, 'error': 'Pallet not found'}, status=404)
     if not isinstance(request.data, dict):
         return Response({'success': False, 'error': 'request body must be a JSON object'}, status=400)
-    items = request.data.get('cargos') or []
+    items = request.data.get('boxes') or []
     if not isinstance(items, list):
-        return Response({'success': False, 'error': 'cargos must be a list'}, status=400)
+        return Response({'success': False, 'error': 'boxes must be a list'}, status=400)
 
     cleaned = []
     for item in items:
         if not isinstance(item, dict):
-            return Response({'success': False, 'error': 'each cargo must be an object'}, status=400)
+            return Response({'success': False, 'error': 'each box must be an object'}, status=400)
         barcode = item.get('barcode', '')
         if not isinstance(barcode, str):
             return Response({'success': False, 'error': 'barcode must be a string'}, status=400)
@@ -856,7 +856,7 @@ def scanner_cargo_bulk_create(request, pallet_pk):
             return Response({'success': False, 'error': 'blank barcode'}, status=400)
         cleaned.append((barcode, (item.get('note') or '')))
 
-    existing = set(pallet.cargos.values_list('barcode', flat=True))
+    existing = set(pallet.boxes.values_list('barcode', flat=True))
     created, skipped, seen = [], [], set()
 
     with transaction.atomic():
@@ -865,8 +865,8 @@ def scanner_cargo_bulk_create(request, pallet_pk):
                 skipped.append(barcode)
                 continue
             seen.add(barcode)
-            cargo = Cargo.objects.create(pallet=pallet, barcode=barcode, note=note)
-            created.append({'id': cargo.id, 'barcode': cargo.barcode})
+            box = Box.objects.create(pallet=pallet, barcode=barcode, note=note)
+            created.append({'id': box.id, 'barcode': box.barcode})
 
     return Response({'success': True, 'data': {'created': created, 'skipped': skipped}})
 
@@ -874,8 +874,8 @@ def scanner_cargo_bulk_create(request, pallet_pk):
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
-def scanner_cargo_list(request, pallet_pk):
-    """设备端读取某托盘服务器上的全部 cargo，用于多设备下的标签列表合并。"""
+def scanner_box_list(request, pallet_pk):
+    """设备端读取某托盘服务器上的全部 box，用于多设备下的标签列表合并。"""
     err = _check_scanner_key(request)
     if err:
         return err
@@ -885,13 +885,13 @@ def scanner_cargo_list(request, pallet_pk):
     except Pallet.DoesNotExist:
         return Response({'success': False, 'error': 'Pallet not found'}, status=404)
 
-    cargos = [{
+    boxes = [{
         'id': c.id,
         'barcode': c.barcode,
         'note': c.note,
         'created_at': c.created_at.isoformat(),
-    } for c in pallet.cargos.all()]
-    return Response({'success': True, 'data': {'cargos': cargos}})
+    } for c in pallet.boxes.all()]
+    return Response({'success': True, 'data': {'boxes': boxes}})
 
 # ─────────────────────────────────────────────────── Dashboard
 @api_view(['GET'])

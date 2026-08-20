@@ -183,6 +183,18 @@ Key field notes:
 - `Board.pallet` — FK to `Pallet` (nullable), links boards to a specific pallet
 - `Pallet.board_qty` — total board count for this pallet row
 - `Chip.mpn` — FK to `MPN` (nullable)
+- `Box.pallet` — FK to `Pallet` (`related_name='boxes'`), DB table `box`
+
+### Box (formerly Cargo)
+
+A `Box` is a physical box sitting on a pallet — what the scanner prints labels for.
+The pallet carries one physical barcode (its `licence_number`); scanning it lets the
+user create one or more boxes under it, each with a server-composed barcode:
+`{so_number}-{licence_number}-{gateload_number}-C{n}`.
+
+**The `C` in `-C{n}` is legacy** — it dates from when the model was named `Cargo`.
+Never change it to `B`: those labels are already printed and stuck to physical boxes,
+and `Box.next_index()` parses that suffix to pick the next number.
 
 ### Pallet mode rules for seed data / tests
 
@@ -252,6 +264,13 @@ The Zebra scanner app calls `/product/scanner/` endpoints using `SCANNER_API_KEY
 { "success": true, "data": { ... } }
 { "success": false, "error": "reason" }
 ```
+
+Box label endpoints (renamed from `cargo` in a hard cutover — old clients get 404):
+- `GET  scanner/pallets/lookup/?barcode=` → includes `existing_box_count`
+- `POST scanner/pallets/<pk>/boxes/bulk/` → body `{ "boxes": [{ "barcode", "note" }] }`
+- `GET  scanner/pallets/<pk>/boxes/` → `data.boxes`
+
+Renaming these keys again requires rebuilding and redeploying the Zebra APK in lockstep.
 
 ## Media Files
 

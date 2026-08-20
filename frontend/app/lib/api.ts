@@ -82,7 +82,7 @@ import type {
   Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
-  PalletChipContainer, Cargo, CargoSearchResult,
+  PalletChipContainer, Box, BoxSearchResult,
   MsftMeta, MsftJobInfo, MsftCreditUnit, MsftPaymentNotice, MsftApiLog,
 } from '@/interface/IDatatable';
 
@@ -142,19 +142,19 @@ export const api = {
       upsert: (palletId: number, chipId: number, container_uid: string, actual_qty?: number | null) =>
         apiPut<PalletChipContainer>(`/pallets/${palletId}/chip-containers/${chipId}/`, { container_uid, actual_qty }),
     },
-    cargos: {
-      list: (palletId: number) => apiGet<Cargo[]>(`/pallets/${palletId}/cargos/`),
+    boxes: {
+      list: (palletId: number) => apiGet<Box[]>(`/pallets/${palletId}/boxes/`),
       create: (palletId: number, d: { count?: number; qty?: number; note?: string }) =>
-        apiPost<Cargo[]>(`/pallets/${palletId}/cargos/`, d),
-      update: (palletId: number, id: number, d: Partial<Cargo>) =>
-        apiPut<Cargo>(`/pallets/${palletId}/cargos/${id}/`, d),
-      delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/cargos/${id}/`),
+        apiPost<Box[]>(`/pallets/${palletId}/boxes/`, d),
+      update: (palletId: number, id: number, d: Partial<Box>) =>
+        apiPut<Box>(`/pallets/${palletId}/boxes/${id}/`, d),
+      delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/boxes/${id}/`),
     },
   },
 
-  // Cargo (cross-SO barcode search)
-  cargos: {
-    search: (q: string) => apiGet<CargoSearchResult[]>(`/cargos/search/?q=${encodeURIComponent(q)}`),
+  // Box (cross-SO barcode search)
+  boxes: {
+    search: (q: string) => apiGet<BoxSearchResult[]>(`/boxes/search/?q=${encodeURIComponent(q)}`),
   },
 
   // Photos
