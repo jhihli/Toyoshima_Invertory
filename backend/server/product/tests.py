@@ -446,3 +446,51 @@ class ScannerChecklistListTests(TestCase):
         )
         self.assertEqual(resp.status_code, 404)
         self.assertFalse(resp.json()['success'])
+
+
+class DeletionSemanticsTests(TestCase):
+    """Pins what deleting rows does across the Pallet -> Box / Checklist edges.
+
+    These are deliberate product decisions, not accidents of the schema — if one of
+    these tests starts failing, the behaviour was changed, not fixed.
+    """
+
+    def _stock(self, pallet, boxes=3, labels=5):
+        for _ in range(boxes):
+            Box.objects.create(pallet=pallet, barcode=Box.compose_barcode(pallet))
+        for n in range(1, labels + 1):
+            Checklist.objects.create(pallet=pallet, barcode=Checklist.compose_barcode(pallet, n))
+
+    def test_deleting_every_box_leaves_the_checklist_intact(self):
+        """清單 挂在 Pallet 而不是 Box：切完之后箱子已经拆开了,
+        贴在切出来的料上的标签不是箱子的子记录。"""
+        pallet = make_pallet()
+        self._stock(pallet)
+        pallet.boxes.all().delete()
+        self.assertEqual(pallet.boxes.count(), 0)
+        self.assertEqual(pallet.checklists.count(), 5)
+
+    def test_deleting_boxes_does_not_disturb_checklist_numbering(self):
+        pallet = make_pallet()
+        self._stock(pallet)
+        pallet.boxes.all().delete()
+        self.assertEqual(Checklist.next_index(pallet), 6)
+
+    def test_checklist_numbers_are_reused_after_deletion(self):
+        """Deliberate: 删除一行 = 这张标签作废(打错了、没发出去),
+        号码收回重用。前提是工人只在标签贴出去之前删。"""
+        pallet = make_pallet()
+        self._stock(pallet)
+        pallet.checklists.filter(barcode__endswith='-5').delete()
+        pallet.checklists.filter(barcode__endswith='-4').delete()
+        self.assertEqual(Checklist.next_index(pallet), 4)
+
+        pallet.checklists.all().delete()
+        self.assertEqual(Checklist.next_index(pallet), 1)
+
+    def test_deleting_the_pallet_cascades_to_both(self):
+        pallet = make_pallet()
+        self._stock(pallet)
+        pallet.delete()
+        self.assertEqual(Box.objects.count(), 0)
+        self.assertEqual(Checklist.objects.count(), 0)

@@ -210,6 +210,18 @@ adding a sequence column.
 Checklists are not exposed to this: their barcodes are unique and server-allocated, so
 concurrent devices simply extend the same sequence.
 
+**Checklist numbers are reused after a delete.** `next_index` reads the highest number
+off the surviving rows, so deleting `-4` and `-5` makes the next label `-4` again, and
+clearing the list restarts at `-1`. Decided deliberately: deleting a line means that
+label was scrapped, so recycling the number is correct. **This holds only while a line is
+deleted before its label goes out on material.** Delete a row whose label is already
+stuck to a bundle and two bundles will carry the same barcode, with nothing to flag it.
+If that ever happens on the floor, the fix is a monotonic counter on `Pallet` rather than
+deriving the number from surviving rows.
+
+Deleting boxes does not touch the checklist — `Checklist` hangs off `Pallet`. Deleting
+the pallet cascades to both. `DeletionSemanticsTests` pins all of this.
+
 **APK redeploy required.** Box barcode composition changed and the checklist endpoints
 are new, so the scanner app needs another release. This lands right after the Cargo → Box
 rename release and should be bundled with it if that build has not shipped yet.
