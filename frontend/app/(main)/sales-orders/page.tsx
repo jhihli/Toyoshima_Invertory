@@ -265,8 +265,8 @@ function ShipModal({ open, order, onClose, onConfirm }: {
   );
 }
 
-// ── Cargo barcode search ─────────────────────────────────────────────────────────
-function CargoSearch({ isMobile }: { isMobile: boolean }) {
+// ── Box barcode search ─────────────────────────────────────────────────────────
+function BoxSearch({ isMobile }: { isMobile: boolean }) {
   const router = useRouter();
   const [q, setQ] = useState('');
   const [searching, setSearching] = useState(false);
@@ -290,12 +290,12 @@ function CargoSearch({ isMobile }: { isMobile: boolean }) {
     setQ('');  // clear so the next scan starts clean (scanners type into the focused field)
     setSearching(true);
     try {
-      const res = await api.cargos.search(term);
+      const res = await api.boxes.search(term);
       if (res.length > 0) {
         const r = res[0];
         router.push(`/sales-orders/${r.so_id}/pallets/${r.pallet_id}?highlight=${encodeURIComponent(r.barcode)}`);
       } else {
-        flash(`Cargo barcode “${term}” not found`);
+        flash(`Box barcode “${term}” not found`);
       }
     } catch {
       flash('Search failed — please try again');
@@ -310,7 +310,7 @@ function CargoSearch({ isMobile }: { isMobile: boolean }) {
       <div style={{ height: 42, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, display: 'flex', alignItems: 'center', gap: 10, padding: '0 13px', color: 'var(--ink-4)' }}>
         <IScan />
         <input value={q} onChange={e => setQ(e.target.value)} enterKeyHint="search"
-          placeholder="Scan or enter cargo barcode…"
+          placeholder="Scan or enter box barcode…"
           style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)', minWidth: 0 }} />
         {q && <button type="button" onClick={() => setQ('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-4)', display: 'flex', padding: 0, fontSize: 16, lineHeight: 1 }}>×</button>}
       </div>
@@ -381,7 +381,7 @@ export default function SalesOrdersPage() {
     });
   }, [orders, tab, q, vendorFilter, dateFrom, dateTo]);
 
-  // MSFT SOs use the board workflow (/sos/[id]); everyone else uses the cargo/pallet
+  // MSFT SOs use the board workflow (/sos/[id]); everyone else uses the box/pallet
   // workflow (/sales-orders/[id]). Vendor detection mirrors the MSFT Order page (/sos).
   const isMsft = (vendorName?: string) => (vendorName || '').toUpperCase().includes('MSFT');
   const soDetailHref = (o: SO) => (isMsft(o.vendor_name) ? `/sos/${o.id}` : `/sales-orders/${o.id}`);
@@ -432,10 +432,10 @@ export default function SalesOrdersPage() {
               <span style={{ display: 'inline-flex', transform: filtersOpen ? 'rotate(180deg)' : 'none', transition: 'transform .2s ease' }}><IChevD /></span>
             </button>
           </div>
-          {/* Collapsible advanced filters: cargo scan, vendor, date range */}
+          {/* Collapsible advanced filters: box scan, vendor, date range */}
           {filtersOpen && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <CargoSearch isMobile={true} />
+              <BoxSearch isMobile={true} />
               <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
                 style={{ height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
                 <option value="">All vendors</option>
@@ -470,7 +470,7 @@ export default function SalesOrdersPage() {
             <input value={q} onChange={e => { setQ(e.target.value); setPage(1); }} placeholder="Filter by SO number…"
               style={{ border: 0, background: 'transparent', outline: 'none', flex: 1, fontFamily: 'inherit', fontSize: 13.5, color: 'var(--ink)' }} />
           </div>
-          <CargoSearch isMobile={false} />
+          <BoxSearch isMobile={false} />
           <select value={vendorFilter} onChange={e => { setVendorFilter(e.target.value); setPage(1); }}
             style={{ height: 42, padding: '0 12px', background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 9, color: 'var(--ink-2)', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
             <option value="">All vendors</option>

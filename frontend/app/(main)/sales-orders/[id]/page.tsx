@@ -938,7 +938,7 @@ export default function SODetailPage() {
         onSubmit={palletModal?.mode === 'edit' ? handleEditPallet : handleAddPallet} />
       <ConfirmModal open={!!deleteConfirm}
         title="Delete pallet?"
-        message={<>Pallet <b className="mono">{deleteConfirm?.licence_number || `#${deleteConfirm?.pallet_seq}`}</b> and its cargo will be permanently removed.</>}
+        message={<>Pallet <b className="mono">{deleteConfirm?.licence_number || `#${deleteConfirm?.pallet_seq}`}</b> and its boxes will be permanently removed.</>}
         onClose={() => setDeleteConfirm(null)}
         onConfirm={handleDeletePallet} />
       {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}

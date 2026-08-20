@@ -126,32 +126,36 @@ class PalletPhoto(models.Model):
         return f"Photo for Pallet #{self.pallet_id}"
 
 
-class Cargo(models.Model):
-    """A cargo item on a pallet. Each has an auto-composed barcode.
+class Box(models.Model):
+    """A box item on a pallet. Each has an auto-composed barcode.
 
     A pallet has one physical barcode (its licence_number); the user scans it, then
-    creates one or more cargo items under it. The cargo barcode is generated at creation
+    creates one or more box items under it. The box barcode is generated at creation
     from the parent SO + pallet, e.g. 'SO5-000533-LP00067024-3-C1'.
+
+    The 'C' in the trailing -C{n} is legacy — it dates from when this model was
+    called Cargo. Do NOT change it to 'B': labels carrying -C{n} are already
+    printed and stuck to physical boxes, and next_index() parses that suffix.
     """
-    pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='cargos')
+    pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='boxes')
     barcode = models.CharField(
         max_length=200, blank=True, db_index=True,
         help_text="Composed at creation: {so_number}-{licence_number}-{gateload_number}-C{n}, "
-                  "where n is the next free index parsed from this pallet's existing cargo barcodes."
+                  "where n is the next free index parsed from this pallet's existing box barcodes."
     )
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        db_table = 'cargo'
+        db_table = 'box'
         ordering = ['pallet', 'id']
 
     def __str__(self):
-        return self.barcode or f"Cargo {self.id} (Pallet {self.pallet_id})"
+        return self.barcode or f"Box {self.id} (Pallet {self.pallet_id})"
 
     @staticmethod
     def compose_barcode(pallet, seq):
-        """Build the cargo barcode from the current SO + pallet fields and a C-number."""
+        """Build the box barcode from the current SO + pallet fields and a C-number."""
         segs = [pallet.so.so_number]
         if pallet.licence_number:
             segs.append(pallet.licence_number)
@@ -162,10 +166,10 @@ class Cargo(models.Model):
 
     @staticmethod
     def next_index(pallet):
-        """Next C-number for a pallet: max trailing -C{n} across its cargo barcodes, + 1."""
+        """Next C-number for a pallet: max trailing -C{n} across its box barcodes, + 1."""
         import re
         mx = 0
-        for bc in pallet.cargos.values_list('barcode', flat=True):
+        for bc in pallet.boxes.values_list('barcode', flat=True):
             m = re.search(r'-C(\d{1,6})$', bc or '')
             if m:
                 mx = max(mx, int(m.group(1)))

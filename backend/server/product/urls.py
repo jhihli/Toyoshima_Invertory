@@ -25,9 +25,9 @@ urlpatterns = [
     path('pallets/<int:pk>/photo/', views.pallet_photo, name='pallet-photo'),
     path('pallets/<int:pallet_pk>/photos/', views.pallet_photos_list, name='pallet-photos-list'),
     path('pallets/<int:pallet_pk>/photos/<int:pk>/', views.pallet_photo_detail, name='pallet-photo-detail'),
-    path('pallets/<int:pallet_pk>/cargos/', views.cargo_list, name='cargo-list'),
-    path('pallets/<int:pallet_pk>/cargos/<int:pk>/', views.cargo_detail, name='cargo-detail'),
-    path('cargos/search/', views.cargo_search, name='cargo-search'),
+    path('pallets/<int:pallet_pk>/boxes/', views.box_list, name='box-list'),
+    path('pallets/<int:pallet_pk>/boxes/<int:pk>/', views.box_detail, name='box-detail'),
+    path('boxes/search/', views.box_search, name='box-search'),
     path('sos/<int:so_pk>/boards/', views.board_list_by_so, name='board-list-by-so'),
     path('sos/<int:so_pk>/boards/bulk/', views.board_bulk_create, name='board-bulk-create'),
 
@@ -49,8 +49,8 @@ urlpatterns = [
     path('scanner/sos/<int:so_pk>/photos/', views.scanner_so_photo_upload, name='scanner-so-photo-upload'),
     path('scanner/boards/<int:board_pk>/photo/', views.scanner_board_photo, name='scanner-board-photo'),
     path('scanner/pallets/lookup/', views.scanner_pallet_lookup, name='scanner-pallet-lookup'),
-    path('scanner/pallets/<int:pallet_pk>/cargos/bulk/', views.scanner_cargo_bulk_create, name='scanner-cargo-bulk-create'),
-    path('scanner/pallets/<int:pallet_pk>/cargos/', views.scanner_cargo_list, name='scanner-cargo-list'),
+    path('scanner/pallets/<int:pallet_pk>/boxes/bulk/', views.scanner_box_bulk_create, name='scanner-box-bulk-create'),
+    path('scanner/pallets/<int:pallet_pk>/boxes/', views.scanner_box_list, name='scanner-box-list'),
     path('scanner/pallets/<int:pallet_pk>/photos/', views.scanner_pallet_photo_upload, name='scanner-pallet-photo-upload'),
     
     # Dashboard
