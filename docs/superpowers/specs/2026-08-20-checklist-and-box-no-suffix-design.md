@@ -224,3 +224,87 @@ rename release and should be bundled with it if that build has not shipped yet.
 - Rewriting existing `-C{n}` box barcodes
 - Brand/model lookup tables or reporting
 - Linking checklists to the existing `Board` / `MPN` tables
+
+## Scanner app handoff prompt
+
+Copy-paste for the agent working on the Zebra app.
+
+---
+
+The Toyoshima backend changed how box labels are composed and added a new checklist
+(清單) flow. Auth (`X-API-KEY`) and the `{success, data}` / `{success, error}` envelope
+are unchanged. Update the app to match.
+
+**1. Box labels no longer carry a `-C{n}` suffix.**
+
+A box label is now exactly the pallet label. Every box on a pallet prints the same
+barcode. Stop appending `-C1`, `-C2`, … and remove any local next-index bookkeeping.
+
+Do not compose the string yourself either. `GET scanner/pallets/lookup/?barcode=` now
+returns `pallet_barcode` — print that verbatim:
+
+```json
+{"success": true, "data": {
+  "pallet_id": 7, "so_id": 3, "so_number": "SO112750",
+  "licence_number": "hdh77", "gateload_number": "1",
+  "pallet_barcode": "SO112750-hdh77-1",
+  "existing_box_count": 2,
+  "existing_checklist_count": 5,
+  "multiple_matches": false
+}}
+```
+
+**2. `POST scanner/pallets/<pk>/boxes/bulk/` switched to count semantics.**
+
+Body shape is unchanged — `{"boxes": [{"barcode", "note"}, ...]}` — but the meaning is
+not. `len(boxes)` is now the pallet's **total** box count, not a batch to append. The
+server tops the stored row count up to that number and never deletes. Any `barcode` you
+send is ignored; the server composes it.
+
+Response gains `total`:
+
+```json
+{"success": true, "data": {"created": [...], "skipped": [...], "total": 3}}
+```
+
+Consequence to handle: two devices working the same pallet no longer merge by barcode.
+Before uploading, `GET scanner/pallets/<pk>/boxes/`, merge with local state, and send the
+combined total. Sending only your own count makes the server settle on the larger of the
+two, which undercounts. It never loses rows, so a later correct upload fixes it.
+
+**3. New: checklist labels, printed after the boards on a pallet are cut.**
+
+Each line is barcoded `{pallet_barcode}-{n}` with `n` running from 1 across the whole
+pallet. **The server allocates the numbers — never compose these barcodes on the
+device.** Two scanners each working out the next number would both pick `-1`.
+
+```
+POST scanner/pallets/<pk>/checklists/bulk/
+body: {"items": [{"brand": "Dell", "model": "OptiPlex 7010", "qty": 12}, {}, {}]}
+```
+
+`brand`, `model` and `qty` are all optional — send `{}` for a blank label to be filled in
+on the web later. `{"count": 3}` is accepted as shorthand for three blank labels.
+`len(items)` decides how many labels you get.
+
+The response carries the composed barcodes; print those:
+
+```json
+{"success": true, "data": {"checklists": [
+  {"id": 41, "barcode": "SO112750-hdh77-1-1", "brand": "Dell", "model": "OptiPlex 7010",
+   "qty": 12, "created_at": "2026-08-20T18:00:00+00:00"}
+]}}
+```
+
+Unlike boxes, this endpoint appends — calling it twice creates two batches. Do not retry
+a successful call.
+
+```
+GET scanner/pallets/<pk>/checklists/
+→ {"success": true, "data": {"checklists": [...]}}
+```
+
+Use it to show what the server already has for a pallet and to merge across devices.
+
+**Errors:** 401 wrong/missing key, 404 unknown pallet, 400 malformed body — all with
+`{"success": false, "error": "..."}`.
