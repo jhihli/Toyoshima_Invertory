@@ -5,7 +5,7 @@ import type { Checklist } from '@/interface/IDatatable';
 import { printLabels } from '@/app/lib/printLabels';
 import {
   IPlus, IEdit, ITrash, IPrint,
-  BtnPrimary, BtnGhost, FieldLabel, InputSty, Th, ThR, Td, TdR,
+  BtnPrimary, BtnGhost, BtnDanger, FieldLabel, InputSty, Th, ThR, Td, TdR,
   CardSty, ModalSty, ErrorSty, OptionalSty,
   Overlay, ModalHead, ModalFoot, RowActions, ConfirmDelete, ToastFn,
 } from './parts';
@@ -169,6 +169,7 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
   const [addOpen, setAddOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Checklist | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Checklist | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
 
   const load = useCallback(async () => {
@@ -212,6 +213,19 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
     await load(); setDeleteTarget(null); showToast('Checklist line deleted', 'err');
   };
 
+
+  // One request per row — there is no batch endpoint, and a pallet's checklist is small
+  // enough that it does not need one. allSettled so one failure does not hide the rest.
+  const handleBulkDelete = async () => {
+    const ids = [...selected];
+    const results = await Promise.allSettled(ids.map(id => api.pallets.checklists.delete(palletId, id)));
+    const failed = results.filter(r => r.status === 'rejected').length;
+    setBulkOpen(false);
+    await load();
+    if (failed) showToast(`${ids.length - failed} deleted, ${failed} failed`, 'err');
+    else showToast(`${ids.length} checklist line${ids.length > 1 ? 's' : ''} deleted`, 'err');
+  };
+
   const toggleSel = (id: number) => setSelected(s => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
@@ -233,12 +247,15 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
 
   return (
     <div style={CardSty}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px', borderBottom: rows.length ? '1px solid var(--hair)' : 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 11, flexWrap: 'wrap', padding: '12px 16px', borderBottom: rows.length ? '1px solid var(--hair)' : 'none' }}>
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Checklist</h2>
         <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent-2)' }}>{rows.length}</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           {selected.size > 0 && (
-            <button style={BtnGhost} onClick={handlePrint}><IPrint /> Print ({selected.size})</button>
+            <>
+              <button style={BtnGhost} onClick={handlePrint}><IPrint /> Print ({selected.size})</button>
+              <button style={BtnDanger} onClick={() => setBulkOpen(true)}><ITrash /> Delete ({selected.size})</button>
+            </>
           )}
           <button style={BtnPrimary} onClick={() => setAddOpen(true)}><IPlus /> Add labels</button>
         </div>
@@ -315,8 +332,11 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
         onClose={() => setAddOpen(false)} onSubmit={handleAdd} />
       <EditModal row={editTarget} onClose={() => setEditTarget(null)} onSubmit={handleEdit} />
       <ConfirmDelete open={!!deleteTarget} title="Delete checklist line?"
-        barcode={deleteTarget?.barcode || ''}
+        body={<><b className="mono">{deleteTarget?.barcode}</b> will be permanently removed.</>}
         onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} />
+      <ConfirmDelete open={bulkOpen} title={`Delete ${selected.size} checklist line${selected.size > 1 ? 's' : ''}?`}
+        body={<>The <b>{selected.size}</b> selected checklist line{selected.size > 1 ? 's' : ''} will be permanently removed.</>}
+        onClose={() => setBulkOpen(false)} onConfirm={handleBulkDelete} />
     </div>
   );
 }

@@ -88,8 +88,8 @@ export function RowActions({ onEdit, onDelete }: { onEdit: () => void; onDelete:
 }
 
 // ── Delete confirmation ─────────────────────────────────────────────────────────
-export function ConfirmDelete({ open, title, barcode, onClose, onConfirm }: {
-  open: boolean; title: string; barcode: string; onClose: () => void; onConfirm: () => void;
+export function ConfirmDelete({ open, title, body, onClose, onConfirm }: {
+  open: boolean; title: string; body: React.ReactNode; onClose: () => void; onConfirm: () => void;
 }) {
   if (!open) return null;
   return (
@@ -98,7 +98,7 @@ export function ConfirmDelete({ open, title, barcode, onClose, onConfirm }: {
         <div style={{ padding: '24px 24px 12px', textAlign: 'center' }}>
           <div style={{ width: 46, height: 46, borderRadius: 12, background: '#fef2f2', border: '1px solid #fecaca', color: '#b0432b', display: 'grid', placeItems: 'center', margin: '0 auto 12px' }}><ITrash /></div>
           <h2 style={{ margin: '0 0 6px', fontSize: 17, fontWeight: 700 }}>{title}</h2>
-          <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-3)', lineHeight: 1.5 }}><b className="mono">{barcode}</b> will be permanently removed.</p>
+          <p style={{ margin: 0, fontSize: 13.5, color: 'var(--ink-3)', lineHeight: 1.5 }}>{body}</p>
         </div>
         <div style={{ display: 'flex', gap: 10, justifyContent: 'center', padding: '12px 24px 20px' }}>
           <button onClick={onClose} style={BtnGhost}>Cancel</button>

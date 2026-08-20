@@ -8,7 +8,7 @@ import { printLabels } from '@/app/lib/printLabels';
 import { usePalletContext } from './usePalletContext';
 import {
   IBack, IPlus, IEdit, ITrash, IPrint, IForward,
-  BtnPrimary, BtnGhost, FieldLabel, InputSty, Th, ThR, Td, TdR,
+  BtnPrimary, BtnGhost, BtnDanger, FieldLabel, InputSty, Th, ThR, Td, TdR,
   CardSty, ModalSty, ErrorSty, OptionalSty,
   Toast, Overlay, ModalHead, ModalFoot, RowActions, ConfirmDelete,
 } from './parts';
@@ -139,6 +139,7 @@ export default function BoxesView() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [editTarget, setEditTarget] = useState<Box | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Box | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [toast, setToast] = useState<{ msg: string; type: 'ok' | 'err' } | null>(null);
   const showToast = useCallback((msg: string, type: 'ok' | 'err' = 'ok') => setToast({ msg, type }), []);
 
@@ -172,6 +173,19 @@ export default function BoxesView() {
     await loadBoxes(); setDeleteTarget(null); showToast('Box deleted', 'err');
   };
 
+
+  // Bulk delete goes one request per row — there is no batch endpoint, and at the counts
+  // a pallet actually holds that is fine. allSettled so one failure does not hide the rest.
+  const handleBulkDelete = async () => {
+    const ids = [...selected];
+    const results = await Promise.allSettled(ids.map(id => api.pallets.boxes.delete(pId, id)));
+    const failed = results.filter(r => r.status === 'rejected').length;
+    setBulkOpen(false);
+    await loadBoxes();
+    if (failed) showToast(`${ids.length - failed} deleted, ${failed} failed`, 'err');
+    else showToast(`${ids.length} box${ids.length > 1 ? 'es' : ''} deleted`, 'err');
+  };
+
   const toggleSel = (id: number) => setSelected(s => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n;
   });
@@ -195,12 +209,15 @@ export default function BoxesView() {
       <div style={CardSty}>
 
         {/* Card header */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '12px 16px', borderBottom: boxes.length ? '1px solid var(--hair)' : 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 11, flexWrap: 'wrap', padding: '12px 16px', borderBottom: boxes.length ? '1px solid var(--hair)' : 'none' }}>
           <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Boxes</h2>
           <span style={{ fontSize: 12, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-light)', color: 'var(--accent-2)' }}>{boxes.length}</span>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
             {selected.size > 0 && (
-              <button style={BtnGhost} onClick={handlePrint}><IPrint /> Print ({selected.size})</button>
+              <>
+                <button style={BtnGhost} onClick={handlePrint}><IPrint /> Print ({selected.size})</button>
+                <button style={BtnDanger} onClick={() => setBulkOpen(true)}><ITrash /> Delete ({selected.size})</button>
+              </>
             )}
             <button style={BtnPrimary} onClick={() => setAddOpen(true)}><IPlus /> Add Box</button>
             {/* Through to the 清單 for this pallet — its own route, so the breadcrumb
@@ -295,8 +312,12 @@ export default function BoxesView() {
       <AddBoxModal open={addOpen} barcode={palletBarcode}
         onClose={() => setAddOpen(false)} onSubmit={handleAdd} />
       <EditBoxModal box={editTarget} onClose={() => setEditTarget(null)} onSubmit={handleEdit} />
-      <ConfirmDelete open={!!deleteTarget} title="Delete box?" barcode={deleteTarget?.barcode || ''}
+      <ConfirmDelete open={!!deleteTarget} title="Delete box?"
+        body={<><b className="mono">{deleteTarget?.barcode}</b> will be permanently removed.</>}
         onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} />
+      <ConfirmDelete open={bulkOpen} title={`Delete ${selected.size} box${selected.size > 1 ? 'es' : ''}?`}
+        body={<>The <b>{selected.size}</b> selected box{selected.size > 1 ? 'es' : ''} will be permanently removed.</>}
+        onClose={() => setBulkOpen(false)} onConfirm={handleBulkDelete} />
       {toast && <Toast msg={toast.msg} type={toast.type} onDone={() => setToast(null)} />}
     </div>
   );
