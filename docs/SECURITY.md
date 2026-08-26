@@ -112,7 +112,9 @@
       须与 APK 发布同步进行，不可单独修改）
 - [ ] PostgreSQL 数据库密码
 - [ ] 其余用户密码
-- [ ] MSFT Recycling API 订阅密钥
+- [ ] MSFT Recycling API 凭据 —— **该功能已整体改为本地专用**，服务器上不再存放任何
+      MSFT 凭据，详见 [MSFT_LOCAL.md](MSFT_LOCAL.md)。但旧凭据仍需轮换（Entra ID
+      client secret 自行更换，subscription key 联系微软 CDO 团队）
 - [ ] 检查 Tailscale 设备列表，移除陌生设备
 
 轮换时发现的两个既有问题（已随本次修复）：

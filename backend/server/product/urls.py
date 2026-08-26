@@ -70,16 +70,16 @@ urlpatterns = [
     path('sos/<int:so_pk>/chip-containers/', views.so_chip_containers, name='so-chip-containers'),
     path('pallets/<int:pallet_pk>/chip-containers/', views.pallet_chip_container_list, name='pallet-chip-container-list'),
     path('pallets/<int:pallet_pk>/chip-containers/<int:chip_pk>/', views.pallet_chip_container_upsert, name='pallet-chip-container-upsert'),
-
-    # Microsoft Recycling API (Buyback)
-    path('msft/config/', views.msft_config, name='msft-config'),
-    path('msft/meta/', views.msft_meta, name='msft-meta'),
-    path('sos/<int:so_pk>/msft/job/', views.msft_job_info, name='msft-job-info'),
-    path('sos/<int:so_pk>/msft/po-document/', views.msft_po_document, name='msft-po-document'),
-    path('sos/<int:so_pk>/msft/credit-units/', views.msft_credit_units, name='msft-credit-units'),
-    path('sos/<int:so_pk>/msft/credit-units/<int:pk>/', views.msft_credit_unit_detail, name='msft-credit-unit-detail'),
-    path('sos/<int:so_pk>/msft/payment-notices/', views.msft_payment_notices, name='msft-payment-notices'),
-    path('sos/<int:so_pk>/msft/payment-notices/<int:pk>/', views.msft_payment_notice_detail, name='msft-payment-notice-detail'),
-    path('sos/<int:so_pk>/msft/logs/', views.msft_logs, name='msft-logs'),
-    path('sos/<int:so_pk>/msft/push/', views.msft_push, name='msft-push'),
 ]
+
+# The Microsoft Recycling API (Buyback) feature is local-only: its package is
+# gitignored and absent from the production server, which is deliberate - the
+# integration holds Entra ID credentials that must not sit on an
+# internet-facing box. See docs/MSFT_LOCAL.md. Where the package exists the
+# routes are wired in; where it does not, the endpoints simply do not exist.
+try:
+    from .msft.urls import urlpatterns as msft_urlpatterns
+except ImportError:
+    pass
+else:
+    urlpatterns += msft_urlpatterns

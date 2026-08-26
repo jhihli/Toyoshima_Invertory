@@ -83,7 +83,6 @@ import type {
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
   PalletChipContainer, Box, BoxSearchResult, Checklist, ChecklistSearchResult,
-  MsftMeta, MsftJobInfo, MsftCreditUnit, MsftPaymentNotice, MsftApiLog,
 } from '@/interface/IDatatable';
 
 export const api = {
@@ -265,34 +264,5 @@ export const api = {
     saveConfig: (d: Partial<MPNReportConfig>) => apiPut<MPNReportConfig>('/mpn-report/config/', d),
     lastSend:   () => apiGet<MPNReportLastSend>('/mpn-report/last-send/'),
     sendNow:    () => apiPost<MPNReportStatus>('/mpn-report/send-now/', {}),
-  },
-
-  // Microsoft Recycling API (Buyback)
-  msft: {
-    meta:    () => apiGet<MsftMeta>('/msft/meta/'),
-    getJob:  (soId: number) => apiGet<MsftJobInfo>(`/sos/${soId}/msft/job/`),
-    saveJob: (soId: number, d: Partial<MsftJobInfo>) => apiPut<MsftJobInfo>(`/sos/${soId}/msft/job/`, d),
-    uploadPo: async (soId: number, file: File): Promise<MsftJobInfo> => {
-      const form = new FormData();
-      form.append('file', file);
-      return apiPostForm<MsftJobInfo>(`/sos/${soId}/msft/po-document/`, form);
-    },
-    deletePo: (soId: number) => apiDelete(`/sos/${soId}/msft/po-document/`),
-    creditUnits: {
-      list:   (soId: number) => apiGet<MsftCreditUnit[]>(`/sos/${soId}/msft/credit-units/`),
-      create: (soId: number, d: Partial<MsftCreditUnit>) => apiPost<MsftCreditUnit>(`/sos/${soId}/msft/credit-units/`, d),
-      update: (soId: number, id: number, d: Partial<MsftCreditUnit>) => apiPut<MsftCreditUnit>(`/sos/${soId}/msft/credit-units/${id}/`, d),
-      delete: (soId: number, id: number) => apiDelete(`/sos/${soId}/msft/credit-units/${id}/`),
-    },
-    paymentNotices: {
-      list:   (soId: number) => apiGet<MsftPaymentNotice[]>(`/sos/${soId}/msft/payment-notices/`),
-      create: (soId: number, d: Partial<MsftPaymentNotice>) => apiPost<MsftPaymentNotice>(`/sos/${soId}/msft/payment-notices/`, d),
-      update: (soId: number, id: number, d: Partial<MsftPaymentNotice>) => apiPut<MsftPaymentNotice>(`/sos/${soId}/msft/payment-notices/${id}/`, d),
-      delete: (soId: number, id: number) => apiDelete(`/sos/${soId}/msft/payment-notices/${id}/`),
-    },
-    logs: (soId: number, report?: string) =>
-      apiGet<MsftApiLog[]>(`/sos/${soId}/msft/logs/${report ? `?report=${report}` : ''}`),
-    push: (soId: number, report: 'credit' | 'podoc' | 'pnr', dry_run: boolean) =>
-      apiPost<MsftApiLog>(`/sos/${soId}/msft/push/`, { report, dry_run }),
   },
 };

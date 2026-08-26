@@ -55,3 +55,12 @@ frontend/.turbo/
 
 # Static files (collectstatic output)
 staticfiles/
+# ─── Microsoft Recycling API (Buyback): local-only ──────────────────────────
+# This feature holds Entra ID credentials (client secret) and must never live on
+# the internet-facing server. Kept on the local machine only; the server and this
+# repo carry the models + migration 0042 (DB schema of record, no secrets) but
+# none of the code that talks to Microsoft. See docs/MSFT_LOCAL.md.
+backend/server/product/msft/
+backend/server/product/management/commands/push_msft_report.py
+backend/server/product/management/commands/seed_msft_master.py
+local-only/
