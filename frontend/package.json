@@ -25,7 +25,7 @@
     "next-auth": "^4.24.8",
     "postcss": "8.5.1",
     "react": "^18.2.0",
-    "react-barcode": "^1.5.3",
+    "react-barcode": "^1.6.1",
     "react-dom": "^18.2.0",
     "tailwind-merge": "^3.0.2",
     "tailwindcss": "3.4.17",
