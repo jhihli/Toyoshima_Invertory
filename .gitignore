@@ -64,3 +64,10 @@ backend/server/product/msft/
 backend/server/product/management/commands/push_msft_report.py
 backend/server/product/management/commands/seed_msft_master.py
 local-only/
+
+# Backup copies of env files. The plain `.env` patterns above do NOT match
+# names like `.env.bak-2026-08-26` or `.env.production.bak-msft-2026-08-26`,
+# so a backup made before editing credentials would otherwise be committable.
+.env.bak*
+.env.*.bak*
+.env*.bak*

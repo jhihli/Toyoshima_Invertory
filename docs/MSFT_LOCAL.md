@@ -103,22 +103,36 @@ export DB_NAME=<生产库名>
 export DB_USER=<生产库用户>
 export DB_PASSWORD=<生产库密码>
 
-export MSFT_ENVIRONMENT=prod           # 只在真的要推生产时才 source 这个文件
 ```
 
 > 原理：`settings.py` 用的 `load_dotenv()` 默认 `override=False`，**不会覆盖**已存在的
 > 环境变量。所以 shell 里 `export` 的值会盖过 `.env` 文件，凭据继续从 `.env` 读，
 > 无需改动任何代码。
 
-**两个必须注意的默认值：**
+### ⚠️ 当前配置状态与唯一的风险点
 
-| 项 | 本地 `.env` 现值 | 为什么要覆盖 |
+本地 `backend/server/.env` 已于 2026-08-26 设为 **`MSFT_ENVIRONMENT=prod`**。
+实测解析结果：
+
+```
+environment : prod
+base_url    : https://supplier-api.microsoft.com/recycling/v1/api/devicerecycling
+missing     : none          （凭据齐全）
+database    : localhost:5432/djapp     ← 本机开发库
+```
+
+**这意味着：端点已经指向微软生产环境，但数据库默认仍是本机开发库。**
+
+所以现在**唯一**能防止「把开发测试数据当成真实报表推给微软」的，就是每次推送前
+记得开隧道并覆盖 DB 设置。请把这条当作硬性步骤：
+
+| 项 | `.env` 现值 | 推送前必须 |
 |---|---|---|
-| `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost:5432` / `djapp` | 这是**本机开发库**。不覆盖的话，推给微软的会是开发测试数据，不是仓库里的真实数据 |
-| `MSFT_ENVIRONMENT` | `test` | 走测试端点 `p2p.azure-api.net`。生产数据必须设成 `prod` |
+| `MSFT_ENVIRONMENT` | `prod` ✅ | 无需处理 |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost:5432` / `djapp` ⚠️ | **必须覆盖为隧道 + 生产库** |
 
-`.env` 里保持 `MSFT_ENVIRONMENT=test` 是**刻意的安全默认值** —— 万一忘记 source
-覆盖文件，最坏结果也只是打到测试环境，不会污染微软的生产数据。
+**自检方法：`--dry-run` 的输出里会打印目标 endpoint，同时核对 JSON 里的 SO 编号、
+PO 号是否是真实业务数据。** 两者都对，才执行正式推送。
 
 > 首次推生产前，顺带确认 `MSFT_PROD_BASE` 是否正确。本地 `.env` 里是
 > `https://supplier-api.microsoft.com/recycling/v1/api/devicerecycling`，而
