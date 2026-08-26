@@ -159,21 +159,72 @@ Job Info、Credit Unit、Payment Notice、Company Code、Unit Type 等进行增�
 > Push 历史（`MsftApiLog`）在 admin 里是**只读**的 —— 它是发给微软内容的审计记录，
 > 由 `push_msft_report` 写入，不应手工编辑。
 
-### 四、推送
+### 四、推送前预检（**每次都要跑，不能省**）
 
 ```bash
-# 先 dry-run：组装并校验 JSON，不发任何网络请求
+bash local-only/msft-preflight.sh
+```
+
+它会一次性检查四件事，并直接给出 `READY` 或 `DO NOT PUSH` 的结论，不需要自己看数值：
+
+| 检查项 | 通过条件 |
+|---|---|
+| `endpoint` | `MSFT_ENVIRONMENT=prod`，指向 `supplier-api.microsoft.com` |
+| `database` | 端口是 **5433**（隧道），不是 5432（本机开发库） |
+| 连接可用性 | 数据库真的连得上（隧道断了在配置上看不出来），并打印 SO 行数 |
+| `credentials` | Entra ID / APIM 凭据齐全 |
+
+**为什么这一步不能省：** `.env` 现在是 `MSFT_ENVIRONMENT=prod`，端点默认就指向微软生产
+环境。唯一防止「把本机开发数据当成真实报表推给微软」的，就是数据库确实指向生产库。
+**而 PUT 出去之后本地无法撤回**，只能联系微软 CDO 团队更正，且会留在供应商账号记录里。
+
+SO 行数也是个直观信号：开发库大约 7 条，生产库十几条以上。
+
+> `local-only/msft-preflight.sh` 与本功能其余部分一样是本地专用文件（`local-only/`
+> 已 gitignore）。若丢失，可用下面这条等效的手工检查重建：
+>
+> ```bash
+> PYTHONIOENCODING=utf-8 python -c "
+> import os, django
+> os.environ.setdefault('DJANGO_SETTINGS_MODULE','server.settings'); django.setup()
+> from django.conf import settings
+> from product.msft.client import MsftClient
+> from product.models import SO
+> c = MsftClient(); d = settings.DATABASES['default']
+> print('endpoint :', c.endpoint('credit'))
+> print('database : %s:%s/%s' % (d['HOST'], d['PORT'], d['NAME']))
+> print('SO count :', SO.objects.count())
+> print('missing  :', c._missing_creds() or 'none')
+> "
+> ```
+
+### 五、推送
+
+```bash
+# dry-run：组装并校验 JSON，不发任何网络请求（熟悉之后可省略）
 python manage.py push_msft_report --report credit --so <SO主键> --dry-run
 
-# 确认无误后正式推送
+# 正式推送
 python manage.py push_msft_report --report credit --so <SO主键>
 ```
 
 `--report` 可选 `credit`（贷记明细）、`podoc`（PO 单据）、`pnr`（付款通知）。
 
-推送完成后 `unset` 环境变量或直接关闭终端。
+`<SO主键>` 从网站 URL 取：打开该 MSFT 订单详情页，地址是 `/sos/123`，`123` 即主键。
 
-### 五、审计记录不受影响
+**预检与 dry-run 的分工：**
+
+| | 验证什么 | 能否省略 |
+|---|---|---|
+| **预检** | 推**去哪里**、数据**从哪来** | ❌ 不能 |
+| **dry-run** | 报表 JSON 的**内容** | ✅ 熟悉后可省 |
+
+> `--dry-run` 也会往 `MsftApiLog` 写一条 `status='dryrun'` 的记录，这是代码本身的设计，
+> 标记清晰，不会与真实推送混淆。
+
+推送完成后关闭终端，或 `unset DB_HOST DB_PORT DB_NAME DB_USER DB_PASSWORD`。
+
+### 六、审计记录不受影响
 
 管理命令会把 correlation_id、endpoint、HTTP 状态、请求负载、成功/失败数写入
 `MsftApiLog` 表。因为连接的就是生产库，**推送历史与改造前完全一致，一条不少**。
