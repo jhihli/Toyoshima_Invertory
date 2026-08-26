@@ -78,8 +78,11 @@
 - [x] 服务器端彻底重建：`rm -rf node_modules .next` → `npm ci` → `npm run build`
 - [x] 前端改用 systemd 托管（`toyoshima-frontend.service`）
 - [x] 轮换核心密钥（`SECRET_KEY`、`NEXTAUTH_SECRET`、admin 密码）
+- [x] 确认 docker 组提权风险 —— **已排除**，见「六、调查结论」
+- [x] 移除 docker / lxd / ollama 组成员资格并停用对应服务
+- [x] 补齐全部系统更新并重启（内核 6.8.0-136 → **6.8.0-138**）
+- [x] 删除失效的 `send_mpn_report` 每分钟 cron（见「六」）
 - [ ] 开启 GitHub Dependabot 监控（需在网页端点击开启）
-- [ ] 确认 docker 组风险（见「六、待确认事项」）
 
 **2026-08-26 恢复上线验证：** 外网 `/login` 返回 200、TTFB 0.033 秒；
 `/account/users/` 正常返回校验错误；攻击者投放的 `njs-bl.html` / `agent.sh` / `zs`
@@ -132,8 +135,8 @@ unset NEW_DJANGO NEW_NEXTAUTH
 
 ### 短期（一到两周内）
 
-- [ ] 安装 `unattended-upgrades`，开启系统自动安全更新
-- [ ] 补齐积压的系统更新（事发时积压 82 个，含 1 个安全更新）
+- [x] ~~安装 `unattended-upgrades`~~ —— 系统原本已安装并在运行（8/26 06:15 自动升级过）
+- [x] 补齐积压的系统更新 —— 已全部应用，`0 updates can be applied`
 - [ ] systemd 服务加固（`NoNewPrivileges` / `ProtectSystem` / `PrivateTmp` 等）
 - [ ] 安装 `fail2ban`
 - [ ] 建立 CPU / 负载告警（load > 3 时通知）
@@ -222,28 +225,87 @@ uptime                          # load average 正常应在 1 以下
 
 ---
 
-## 六、待确认事项
+## 六、调查结论
 
-### docker 组权限（可能影响「是否已提权到 root」的判断）
+### 1. 提权风险 —— 存在路径，但未被使用（已排除）
 
-`.env.production` 等文件的属组显示为 `docker`，说明 `toyoshimagtech` 用户在 docker 组中。
-**docker 组权限等同于 root** —— 组内用户可通过挂载宿主机根目录取得完全控制权（这是
-Docker 的设计特性，非漏洞）。
+事发时 `toyoshimagtech` 同时属于 `docker`(988)、`lxd`(101)、`sudo`(27) 三个组，
+且 Docker 守护进程处于 `active` 状态。**docker / lxd 组权限等同于 root** —— 一条
+`docker run -v /:/host` 即可取得宿主机完全控制权，无需密码。攻击者**具备**一步提权到
+root 的条件。
 
-若事发时 Docker 守护进程正在运行，则本次攻击者**有可能已提权至 root**，届时
-`/root/ir-evidence/` 中的取证材料、以及「持久化排查未发现残留」的结论都需要按
-「root 已失守」重新评估，重装系统的必要性也随之上升。
+但取证结果显示这条路径**没有被使用**：
 
-待执行的确认命令：
+| 检查 | 结果 |
+|---|---|
+| `docker ps -a` | 空 —— 无任何容器，连历史容器都没有 |
+| `docker images` | 空 —— 无任何镜像 |
+| `journalctl -u docker`（入侵时间窗） | `-- No entries --` |
 
-```bash
-id
-which docker
-systemctl is-active docker 2>/dev/null || echo "docker not running"
+用 Docker 提权必然要拉取镜像、创建容器，这些动作一定会留下记录。三项全空，
+因此判定 **root 未失守**，「持久化排查未发现残留」的结论依然成立，**无需重装系统**。
+
+**处置：** 已停用 `docker.socket` / `docker.service` / `containerd.service`，并将该用户
+移出 `docker`、`lxd`、`ollama` 三个组（保留 `sudo`，服务器管理需要）。Ollama 原本仅监听
+`127.0.0.1:11434`，未对外暴露，一并停用。
+
+### 2. PAM 配置被改写 —— 系统自动升级所致（已排除）
+
+`find` 曾发现 `/etc/pam.d/common-{auth,account,password,session}` 在入侵时间窗内被修改。
+PAM 是 Linux 认证核心，向 `common-auth` 注入 `pam_exec.so` 是经典的密码窃取后门。
+
+排除依据：
+
+- 四个文件的修改时间集中在 **06:15:54**，彼此相差不到 0.017 秒 —— 这是
+  `pam-auth-update` 批量重写的特征，而非人为逐个编辑
+- `/var/log/apt/history.log` 显示 `unattended-upgrades` 于 **06:15–06:19** 自动运行，
+  升级了 postgresql-client-16、libpq5、curl、vim、内核 6.8.0-138 等
+- 木马启动于 **00:06**，比 PAM 改动早 6 小时，时间线对不上
+- `grep -E "pam_exec|pam_python|pam_script"` → `no suspicious pam module`
+
+`/etc/ld.so.cache` 的变动同样由 libcurl / libpq5 等库升级触发，属正常现象。
+
+### 3. 每分钟执行的 cron —— 项目自有任务，且早已失效（已移除）
+
+`auth.log` 中每分钟一条的 `CRON session opened for user toyoshimagtech`，来自用户
+crontab 中的一条任务：
+
+```
+* * * * * cd /home/toyoshimagtech/Toyoshima_Inventory/backend/server && \
+          source venv/bin/activate && python manage.py send_mpn_report ...
 ```
 
-- Docker 未安装或守护进程未运行 → 仅为遗留的组配置，风险有限
-- Docker 正在运行 → 需重新评估，并考虑将该用户移出 docker 组
+安装于 **2026-05-25**，远早于入侵，且 `send_mpn_report` 是本项目自有的 Django 管理命令，
+与木马无关。root 无 crontab（`no crontab for root`），`/etc/cron.d/` 内仅有 certbot、
+e2scrub_all、sysstat 等系统自带项。
+
+**但该任务从未成功执行过** —— 路径写成了 `Toyoshima_Inventory`，而实际目录是
+`Toyoshima_Invertory`，`cd` 失败导致整条 `&&` 链中断。业务上现已不需要该功能，
+crontab 已清空（备份于 `~/crontab-backup-2026-08-26.txt`）。管理命令本身仍在代码中，
+需要时可手动执行或按合理频率重新加入。
+
+附带收益：该任务每天向 `auth.log` 写入约 2880 行噪音，清除后日志可读性大幅提升 ——
+排查期间正是这些密集的 CRON 记录一度被误认为木马的复活机制。
+
+### 4. 恢复上线最终验证（2026-08-26 重启后）
+
+```
+id        -> groups=...,4(adm),24(cdrom),27(sudo),30(dip),33(www-data),46(plugdev)
+             (docker / lxd / ollama 均已移除)
+uname -r  -> 6.8.0-138-generic
+crontab -l-> no crontab for toyoshimagtech
+systemctl is-active toyoshima-backend toyoshima-frontend  -> active / active
+systemctl is-active docker docker.socket containerd       -> inactive x3
+uptime    -> load average: 0.70, 0.43, 0.17
+MOTD      -> 0 updates can be applied immediately
+```
+
+外网：`/login` 200、`/api/auth/csrf` 200、`/dashboard` 307（正确跳转登录页）、
+`/account/users/` 返回正常校验错误；攻击者投放的 `njs-bl.html` / `agent.sh` / `zs`
+均已无法访问。
+
+**两个服务在重启后自动恢复** —— 这正是改用 systemd 的目的，`nohup` / `--daemon`
+方式做不到这一点。
 
 ---
 
