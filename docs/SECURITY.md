@@ -74,15 +74,21 @@
 
 ### 立即（重新上线前）
 
-- [ ] 清理攻击者留下的可疑文件（见下）
-- [ ] 服务器端彻底重建：`rm -rf node_modules .next` → `npm ci` → `npm run build`
-- [ ] 前端改用 systemd 托管（`toyoshima-frontend.service`）
-- [ ] **轮换全部密钥**（攻击者有 14 小时可读取 `.env`）
-- [ ] 开启 GitHub Dependabot 监控
+- [x] 清理攻击者留下的可疑文件（见下）
+- [x] 服务器端彻底重建：`rm -rf node_modules .next` → `npm ci` → `npm run build`
+- [x] 前端改用 systemd 托管（`toyoshima-frontend.service`）
+- [x] 轮换核心密钥（`SECRET_KEY`、`NEXTAUTH_SECRET`、admin 密码）
+- [ ] 开启 GitHub Dependabot 监控（需在网页端点击开启）
+- [ ] 确认 docker 组风险（见「六、待确认事项」）
 
-### 需清理的可疑文件
+**2026-08-26 恢复上线验证：** 外网 `/login` 返回 200、TTFB 0.033 秒；
+`/account/users/` 正常返回校验错误；攻击者投放的 `njs-bl.html` / `agent.sh` / `zs`
+均已不可访问。木马运行期间前端 TTFB 为 2.5 秒，现为 0.019 秒（本机）。
 
-`git status --porcelain` 暴露出的未跟踪文件：
+### 需清理的可疑文件（已全部清除）
+
+`git status --porcelain` 暴露出的未跟踪文件 —— 已备份至
+`/root/ir-evidence/dropped-files/` 后删除，现 `git status` 输出为空：
 
 | 文件 | 风险 |
 |---|---|
@@ -96,13 +102,33 @@
 
 ### 需轮换的密钥清单
 
-- [ ] Django `SECRET_KEY`
-- [ ] `NEXTAUTH_SECRET`
-- [ ] `SCANNER_API_KEY` / `NEXT_PUBLIC_API_KEY`（**Zebra 扫描枪 APK 需同步更新**）
+- [x] Django `SECRET_KEY` —— 2026-08-26 已换
+- [x] `NEXTAUTH_SECRET` —— 2026-08-26 已换
+- [x] `admin` 密码 —— 2026-08-26 已换
+- [ ] `SCANNER_API_KEY` / `NEXT_PUBLIC_API_KEY`（**Zebra 扫描枪 APK 需同步更新**，
+      须与 APK 发布同步进行，不可单独修改）
 - [ ] PostgreSQL 数据库密码
-- [ ] 所有用户密码，含 `admin`
+- [ ] 其余用户密码
 - [ ] MSFT Recycling API 订阅密钥
 - [ ] 检查 Tailscale 设备列表，移除陌生设备
+
+轮换时发现的两个既有问题（已随本次修复）：
+
+1. **生产与开发共用同一个 `NEXTAUTH_SECRET`** —— 服务器 `.env.production` 与开发机
+   `.env.local` 中的值完全相同，泄露面被无谓放大。生产密钥必须独立生成。
+2. **原 Django `SECRET_KEY` 含 `#` 字符且未加引号** —— `.env` 解析时 `#` 可能被当作
+   注释起始，导致密钥被截断。现统一改用 `secrets.token_urlsafe(64)`（仅含
+   `A-Za-z0-9-_`）并加单引号。
+
+生成新密钥的正确做法（**不要让密钥显示在屏幕上**，截图或粘贴过的密钥即视为已泄露）：
+
+```bash
+NEW_DJANGO=$(python -c "import secrets; print(secrets.token_urlsafe(64))")
+NEW_NEXTAUTH=$(openssl rand -base64 32)
+sed -i "s|^SECRET_KEY=.*|SECRET_KEY='$NEW_DJANGO'|"             backend/server/.env.production
+sed -i "s|^NEXTAUTH_SECRET=.*|NEXTAUTH_SECRET='$NEW_NEXTAUTH'|" frontend/.env.production
+unset NEW_DJANGO NEW_NEXTAUTH
+```
 
 ### 短期（一到两周内）
 
@@ -182,9 +208,46 @@ uptime                          # load average 正常应在 1 以下
 前端 TTFB 正常应在 **0.05 秒以内**。事发时因 CPU 被木马占满，该值达到 **2.5 秒** ——
 **页面突然变慢是入侵的重要信号**，不要简单归因于「网络卡」。
 
+### 环境变量文件名（开发机与服务器不同）
+
+| 环境 | 后端 | 前端 |
+|---|---|---|
+| 开发机 | `backend/server/.env` | `frontend/.env.local` |
+| **服务器** | **`backend/server/.env.production`** | **`frontend/.env.production`** |
+
+后端的选择逻辑写在 `server/settings.py`：存在 `.env.production` 就优先读它，否则读
+`.env`。前端则由 Next.js 在 `NODE_ENV=production` 下自动优先读 `.env.production`。
+
+**在服务器上改配置时不要找 `.env`，那个文件不存在。**
+
 ---
 
-## 六、服务器实际信息（更正记录）
+## 六、待确认事项
+
+### docker 组权限（可能影响「是否已提权到 root」的判断）
+
+`.env.production` 等文件的属组显示为 `docker`，说明 `toyoshimagtech` 用户在 docker 组中。
+**docker 组权限等同于 root** —— 组内用户可通过挂载宿主机根目录取得完全控制权（这是
+Docker 的设计特性，非漏洞）。
+
+若事发时 Docker 守护进程正在运行，则本次攻击者**有可能已提权至 root**，届时
+`/root/ir-evidence/` 中的取证材料、以及「持久化排查未发现残留」的结论都需要按
+「root 已失守」重新评估，重装系统的必要性也随之上升。
+
+待执行的确认命令：
+
+```bash
+id
+which docker
+systemctl is-active docker 2>/dev/null || echo "docker not running"
+```
+
+- Docker 未安装或守护进程未运行 → 仅为遗留的组配置，风险有限
+- Docker 正在运行 → 需重新评估，并考虑将该用户移出 docker 组
+
+---
+
+## 七、服务器实际信息（更正记录）
 
 `CLAUDE.md` 中的以下信息已过期，以此处为准：
 
@@ -197,7 +260,7 @@ uptime                          # load average 正常应在 1 以下
 
 ---
 
-## 七、经验教训
+## 八、经验教训
 
 1. **错误提示掩盖了真实故障。** 后端 502 时，登录页显示的是
    「Invalid credentials. Please try again.」，导致最初怀疑方向完全错误。
