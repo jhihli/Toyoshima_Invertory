@@ -1,0 +1,32 @@
+# Dependabot — 自动监控依赖漏洞并提 PR
+# 起因：CVE-2025-66478 于 2025-12-11 公布，直到 2026-08-26 服务器被入侵才发现，
+#       中间有 8 个月的窗口期。详见 docs/SECURITY.md
+#
+# 注意：security updates（安全更新）还需要在 GitHub 网页端开启：
+#       Settings → Code security → Dependabot security updates
+
+version: 2
+updates:
+  # 前端 —— Next.js / React 及其依赖
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    # 刻意不加 ignore 规则：dependabot.yml 里的 ignore 对 security updates 同样生效，
+    # 若屏蔽 major 版本，遇到只能靠大版本升级修复的高危漏洞时就收不到提醒了。
+
+  # 后端 —— Django 及其依赖
+  - package-ecosystem: "pip"
+    directory: "/backend/server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "backend"
