@@ -131,8 +131,7 @@ database    : localhost:5432/djapp     ← 本机开发库
 | `MSFT_ENVIRONMENT` | `prod` ✅ | 无需处理 |
 | `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost:5432` / `djapp` ⚠️ | **必须覆盖为隧道 + 生产库** |
 
-**自检方法：`--dry-run` 的输出里会打印目标 endpoint，同时核对 JSON 里的 SO 编号、
-PO 号是否是真实业务数据。** 两者都对，才执行正式推送。
+**自检方法见下面「四、推送前预检」** —— 一条命令给出 `READY` / `DO NOT PUSH` 结论。
 
 > 首次推生产前，顺带确认 `MSFT_PROD_BASE` 是否正确。本地 `.env` 里是
 > `https://supplier-api.microsoft.com/recycling/v1/api/devicerecycling`，而
