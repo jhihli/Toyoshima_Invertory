@@ -89,7 +89,10 @@ else:
 
 ## 本地操作流程
 
-### 一、准备凭据文件（只在你自己的电脑上，且不要放进项目目录）
+### 一、准备一个覆盖文件（只在你自己的电脑上，不要放进项目目录）
+
+MSFT 凭据本来就已经在本地 `backend/server/.env` 里了，**不需要重复填写**。要覆盖的
+只有两样东西：**数据库指向**和**环境**。
 
 `~/msft-push.env`：
 
@@ -100,16 +103,27 @@ export DB_NAME=<生产库名>
 export DB_USER=<生产库用户>
 export DB_PASSWORD=<生产库密码>
 
-export MSFT_ENVIRONMENT=prod
-export MSFT_TENANT_ID=...
-export MSFT_CLIENT_ID=...
-export MSFT_CLIENT_SECRET=...
-export MSFT_RESOURCE_SCOPE=...
-export MSFT_PROD_SUBSCRIPTION_KEY=...
+export MSFT_ENVIRONMENT=prod           # 只在真的要推生产时才 source 这个文件
 ```
 
 > 原理：`settings.py` 用的 `load_dotenv()` 默认 `override=False`，**不会覆盖**已存在的
-> 环境变量。所以 shell 里 `export` 的值会盖过 `.env` 文件，无需改动任何代码。
+> 环境变量。所以 shell 里 `export` 的值会盖过 `.env` 文件，凭据继续从 `.env` 读，
+> 无需改动任何代码。
+
+**两个必须注意的默认值：**
+
+| 项 | 本地 `.env` 现值 | 为什么要覆盖 |
+|---|---|---|
+| `DB_HOST` / `DB_PORT` / `DB_NAME` | `localhost:5432` / `djapp` | 这是**本机开发库**。不覆盖的话，推给微软的会是开发测试数据，不是仓库里的真实数据 |
+| `MSFT_ENVIRONMENT` | `test` | 走测试端点 `p2p.azure-api.net`。生产数据必须设成 `prod` |
+
+`.env` 里保持 `MSFT_ENVIRONMENT=test` 是**刻意的安全默认值** —— 万一忘记 source
+覆盖文件，最坏结果也只是打到测试环境，不会污染微软的生产数据。
+
+> 首次推生产前，顺带确认 `MSFT_PROD_BASE` 是否正确。本地 `.env` 里是
+> `https://supplier-api.microsoft.com/recycling/v1/api/devicerecycling`，而
+> `settings.py` 的代码默认值是 `https://supplier.azure-api.net/...` —— 两者不同。
+> `.env` 的值优先生效，但值得和微软 CDO 团队核对一次哪个才是当前正确的生产地址。
 
 ### 二、建立到生产数据库的隧道（终端 1，保持开着）
 
