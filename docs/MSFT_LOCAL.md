@@ -277,15 +277,81 @@ shred -u .env.production.bak-msft-*
 
 ---
 
+## 已完成的核查（2026-08-27）
+
+### 服务器端凭据已清空
+
+```
+MSFT_CLIENT_SECRET          len=0
+MSFT_CLIENT_ID              len=0
+MSFT_TENANT_ID              len=0
+MSFT_RESOURCE_SCOPE         len=0
+MSFT_PROD_SUBSCRIPTION_KEY  len=0
+MSFT_SUBSCRIPTION_KEY       len=0
+```
+
+（`MSFT_TEST_SUBSCRIPTION_KEY` 在 `.env.production` 中本就不存在。）
+服务器上现在既无 MSFT 代码（10 个接口全 404），也无 MSFT 凭据。
+
+### 应用注册归属：自有租户
+
+Azure Portal → App registrations 中确认：
+
+| 项 | 值 |
+|---|---|
+| Display name | `Toyoshima-MSFT-RecyclingAPI` |
+| Application (client) ID | `cacea5e8-8cd7-4e26-928f-b62579f2381d` |
+| Created on | 2026-07-22 |
+| 租户 | Default Directory（`toyoshimausa.com`，自有） |
+
+**应用在自己的租户里，可随时自主轮换密钥，不依赖微软。**
+
+### 本地推送能力：已实测
+
+`get_token()` 返回长度 1467 的真实 JWT，证明 tenant / client id / client secret
+三者有效，credit / podoc / pnr 均可推送。
+
+> 排查中发现的坑：本地 venv 缺少 `requests`。`client.py` 采用延迟导入，所以
+> `--dry-run` 一路正常，**只有真正联网的那一刻才会报 `ModuleNotFoundError`**。
+> 已通过 `pip install -r requirements.txt` 修复。
+> **教训：`--dry-run` 成功不代表推送能力正常，必须用 `get_token()` 单独验证。**
+
+### 登录日志核查：无法定论
+
+Sign-in logs → Service principal sign-ins，最近 7 天 **零记录**；
+随后主动执行一次成功的 `get_token()` 作为对照测试，**该次登录同样未出现**。
+
+两种解释无法区分：日志延迟，或 service principal 登录日志需要 Entra ID P1/P2
+授权（免费版显示该标签页但恒为空）。同页面的 User sign-ins (non-interactive)
+有数据，但那些是浏览 Azure Portal 产生的，与 MSFT API 无关。
+
+**结论：无法证明凭据被盗用，也无法证明未被盗用。**
+
+---
+
 ## 仍需完成
 
-- [ ] **在 Entra ID 轮换 client secret** —— 移走凭据不等于旧凭据失效。
-      Azure Portal → App registrations → 该应用 → Certificates & secrets →
-      新建 secret → 更新到 `~/msft-push.env` → 删除旧 secret
+- [ ] **在 Entra ID 轮换 client secret** —— ⏸ **2026-08-27 知情推迟**
+
+      决策依据与已知风险，如实记录如下：
+
+      - **旧凭据依然有效。** 攻击者有 14 小时可读 `.env.production`；
+        `MSFT_CLIENT_SECRET` 可从互联网上任意机器使用，**不需要接触本服务器**。
+        因此「服务器已清空凭据」和「日后改为内网 only」都**不能**消除这个风险 ——
+        它们防的是未来的入侵，管不了已经流出的凭据。
+      - **无法自证清白**（见上，日志核查无法定论）。
+      - **风险被评估为较低**：木马全部行为特征指向商业化自动挖矿程序（具备 docker
+        提权路径却未使用、无横向移动、纯耗算力），这类程序通常不翻业务凭据。
+      - **一旦被利用的后果**：可以供应商 0003072650（豊島）的身份向微软提交伪造的
+        贷记明细、PO 单据、付款通知，引发付款纠纷与审计问题。
+
+      轮换只需约 10 分钟且风险很低（应用自有 + 换完可立即用 `get_token()` 验证）：
+      App registrations → `Toyoshima-MSFT-RecyclingAPI` → Certificates & secrets
+      → New client secret → **立刻复制 Value 列（仅显示一次）** → 更新本机
+      `backend/server/.env` 的 `MSFT_CLIENT_SECRET` → 重跑 `get_token()` 验证
+      → **验证通过后回 Azure 删除旧 secret（不删则旧的一直有效）**
+
 - [ ] **联系微软 CDO 团队更换 subscription key**
-- [ ] **检查 Entra ID 登录日志** —— Sign-in logs → Service principal sign-ins，
-      按 `MSFT_CLIENT_ID` 过滤，时间从 2026-08-26 00:00 起，确认来源 IP 是否只有
-      服务器的公网地址。出现陌生 IP（尤其 `107.167.83.34`）即表示凭据已被利用
 - [ ] **检查该应用注册的 API permissions** —— 若除 Recycling API 外还有
       Microsoft Graph / Directory 等权限，影响范围需重新评估
 - [ ] **考虑主动告知微软** —— 供应商凭据存在暴露可能，便于对方核查

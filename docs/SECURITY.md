@@ -130,9 +130,11 @@
         -H "Content-Type: application/json" -d '{"username":"x","password":"x"}'
       ```
 - [ ] 其余用户密码
-- [ ] MSFT Recycling API 凭据 —— **该功能已整体改为本地专用**，服务器上不再存放任何
-      MSFT 凭据，详见 [MSFT_LOCAL.md](MSFT_LOCAL.md)。但旧凭据仍需轮换（Entra ID
-      client secret 自行更换，subscription key 联系微软 CDO 团队）
+- [x] MSFT Recycling API 凭据 —— 该功能已整体改为本地专用，2026-08-27 确认服务器
+      `.env.production` 中全部 MSFT 项已清空（`len=0`），且 10 个接口全部返回 404
+- [ ] MSFT Entra ID client secret 轮换 —— ⏸ **知情推迟**。旧凭据仍然有效且可从任意
+      机器使用，服务器清空与日后内网化都不能使其失效；Entra 登录日志因授权限制无法
+      定论。决策依据、风险与操作步骤详见 [MSFT_LOCAL.md](MSFT_LOCAL.md)
 - [ ] 检查 Tailscale 设备列表，移除陌生设备
 
 轮换时发现的两个既有问题（已随本次修复）：
