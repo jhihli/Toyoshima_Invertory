@@ -82,7 +82,8 @@
 - [x] 移除 docker / lxd / ollama 组成员资格并停用对应服务
 - [x] 补齐全部系统更新并重启（内核 6.8.0-136 → **6.8.0-138**）
 - [x] 删除失效的 `send_mpn_report` 每分钟 cron（见「六」）
-- [ ] 开启 GitHub Dependabot 监控（需在网页端点击开启）
+- [x] 开启 GitHub Dependabot 监控 —— 2026-08-27 已启用 Dependency graph、
+      Dependabot alerts、Dependabot security updates、Dependabot malware alerts
 
 **2026-08-26 恢复上线验证：** 外网 `/login` 返回 200、TTFB 0.033 秒；
 `/account/users/` 正常返回校验错误；攻击者投放的 `njs-bl.html` / `agent.sh` / `zs`
@@ -163,6 +164,56 @@ unset NEW_DJANGO NEW_NEXTAUTH
 - [ ] 安装 `fail2ban`
 - [ ] 建立 CPU / 负载告警（load > 3 时通知）
 - [ ] 每日定时执行 `git status --porcelain`，有输出即告警
+
+### 依赖漏洞分类（2026-08-27 复核）
+
+**背景：** 本地 `npm audit` 报告 **14 个漏洞（4 moderate、8 high、2 critical）**，而
+GitHub Dependabot 页面显示 **0 条告警**（`resolution:auto-dismissed` 查询同样为空，
+说明不是被自动忽略）。逐条复核后的结论是：**没有一条需要处理。**
+
+写下来是为了避免下次看到「2 个 critical」再紧张一次。
+
+| 包 | npm audit 等级 | 实际风险 | 判定理由 |
+|---|---|---|---|
+| `next` 15.1.12 | critical | ⚪ **不适用** | 公告针对 **dev server**（`next dev`）的信息泄露；生产运行的是 `next start` |
+| `next-auth` 4.24.11 | critical | ⚪ **不适用** | 公告针对 **Email provider** 的邮件误投递；`auth.ts` 只使用 `CredentialsProvider`，未启用 Email provider |
+| `xlsx` 0.18.5 | high | 🟡 有限 | 见下 |
+| `postcss` 8.5.1 | high | ⚪ 极低 | 构建期工具（Tailwind），不进入运行时 |
+| `sharp` 0.33.5 | high | 🟡 低 | Next 图片优化器，需处理恶意图片方可触发 |
+| `glob` / `minimatch` / `brace-expansion` / `picomatch` / `nanoid` | high | ⚪ 极低 | 构建工具链的传递依赖 |
+| `yaml` / `uuid` / `exceljs` / `@babel/runtime` | moderate | ⚪ 极低 | 同上 |
+
+**两个 critical 都不适用于本项目的配置**，这也是 Dependabot 可能不报的原因之一
+（GitHub Advisory Database 的版本范围判定比 npm audit 更精确，例如能识别
+`next@15.1.12` 已含回溯修复）。另一种可能是首次启用后索引尚未完成 ——
+**建议隔天再看一次 Dependabot 页面**，若仍为 0 即属前者。
+
+#### 关于 `xlsx`（唯一的长期隐患）
+
+代码中确实调用了 `XLSX.read`，位于
+`frontend/app/(main)/sos/[id]/page.tsx` 的批量条码导入功能：
+
+```tsx
+'use client';                                    // 客户端组件
+const reader = new FileReader();                 // 浏览器 FileReader
+const wb = XLSX.read(ev.target?.result, ...);    // 在用户浏览器内解析
+```
+
+风险有限：解析发生在**用户自己的浏览器**中、针对**用户自己选择**的文件。攻击者需先
+诱使仓管人员打开恶意 xlsx，得手后影响范围也仅限该浏览器标签页的原型链，触及不到
+服务器与数据库。
+
+**但 npm 上的 `xlsx` 已停止维护** —— SheetJS 官方已将分发迁至自有 CDN，npm 版本永久
+停留在 `0.18.5`，**不存在修复版本**，因此 `npm audit fix` 永远无法消除这一条。彻底
+解决需改用其他方案（例如统一由已在使用的 `exceljs` 承担读取），属重构工作，不紧急。
+
+#### 处理原则
+
+- **只处理带 CVE 编号 / `security` 标签的 Dependabot PR 与邮件告警**
+- 标题仅为 `Bump X from a.b.c to d.e.f` 的是例行版本更新，可忽略或关闭
+- **切勿执行 `npm audit fix --force`** —— 它会做跨大版本升级，可能一次性替换
+  `xlsx`、`antd`、`exceljs` 等，导致构建失败；在刚经历供应链风险后，一次性引入大量
+  未经验证的新版本本身即是风险
 
 ---
 
