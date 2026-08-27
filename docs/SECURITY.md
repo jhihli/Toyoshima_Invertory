@@ -110,7 +110,25 @@
 - [x] `admin` 密码 —— 2026-08-26 已换
 - [ ] `SCANNER_API_KEY` / `NEXT_PUBLIC_API_KEY`（**Zebra 扫描枪 APK 需同步更新**，
       须与 APK 发布同步进行，不可单独修改）
-- [ ] PostgreSQL 数据库密码
+- [x] PostgreSQL 数据库密码 —— 2026-08-27 已换。**原密码是 `1234`，用户是 `postgres`
+      超级用户**，攻击者能读 `.env.production` 就等于拿到了它；而 postgres 超级用户可用
+      `COPY ... FROM PROGRAM` 执行任意命令，等于又一条提权通道
+- [ ] **再换一次数据库密码**（低优先级）—— 2026-08-27 设置的那个在操作过程中被截图，
+      应视为已知。风险有限：已确认 PostgreSQL 只监听 `127.0.0.1`，外网无法直连 5432，
+      要用这个密码得先拿到服务器 shell。换的时候全程不要显示：
+      ```bash
+      cd ~/Toyoshima_Invertory/backend/server
+      NEWPW=$(openssl rand -hex 24)
+      sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '$NEWPW';"
+      sed -i "s|^DB_PASSWORD=.*|DB_PASSWORD=$NEWPW|" .env.production
+      sudo systemctl restart toyoshima-backend
+      ```
+      改完记得同步更新本机的 `~/msft-push.env`，否则 MSFT 推送会连不上生产库。
+      验证方法（返回 `Invalid credentials` 而非 500 即为成功）：
+      ```bash
+      curl -s -X POST http://127.0.0.1:8000/account/users/ \
+        -H "Content-Type: application/json" -d '{"username":"x","password":"x"}'
+      ```
 - [ ] 其余用户密码
 - [ ] MSFT Recycling API 凭据 —— **该功能已整体改为本地专用**，服务器上不再存放任何
       MSFT 凭据，详见 [MSFT_LOCAL.md](MSFT_LOCAL.md)。但旧凭据仍需轮换（Entra ID
