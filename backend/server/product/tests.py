@@ -1,9 +1,10 @@
 from datetime import date, datetime
 import json
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from product.models import Vendor, SO, Pallet, Box, Checklist
+from product.models import Vendor, SO, Pallet, Box, Checklist, MPN
 
 
 def make_pallet(so_number='SO112750', licence='hdh77', gateload='1'):
@@ -494,3 +495,80 @@ class DeletionSemanticsTests(TestCase):
         pallet.delete()
         self.assertEqual(Box.objects.count(), 0)
         self.assertEqual(Checklist.objects.count(), 0)
+
+
+class MpnStatusTests(TestCase):
+    """Current / Finished lifecycle on MPN: the ?status= filter and the bulk move."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        User = get_user_model()
+        self.user = User.objects.create_user(username='u', password='p')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user)
+
+    def test_list_filters_by_status(self):
+        MPN.objects.create(name='CUR')
+        MPN.objects.create(name='FIN', is_finished=True)
+        # No param → everything (unchanged, backward compatible)
+        resp = self.client.get('/product/mpns/')
+        self.assertEqual({m['name'] for m in resp.json()}, {'CUR', 'FIN'})
+        # Current only
+        resp = self.client.get('/product/mpns/', {'status': 'current'})
+        self.assertEqual({m['name'] for m in resp.json()}, {'CUR'})
+        # Finished only
+        resp = self.client.get('/product/mpns/', {'status': 'finished'})
+        self.assertEqual({m['name'] for m in resp.json()}, {'FIN'})
+
+    def test_serializer_exposes_is_finished(self):
+        MPN.objects.create(name='X', is_finished=True)
+        row = self.client.get('/product/mpns/', {'status': 'finished'}).json()[0]
+        self.assertTrue(row['is_finished'])
+
+    def test_bulk_status_moves_only_the_named_ids(self):
+        a = MPN.objects.create(name='A')
+        b = MPN.objects.create(name='B')
+        c = MPN.objects.create(name='C')
+        resp = self.client.post(
+            '/product/mpns/bulk-status/',
+            {'ids': [a.id, b.id], 'is_finished': True}, format='json',
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json()['updated'], 2)
+        a.refresh_from_db(); b.refresh_from_db(); c.refresh_from_db()
+        self.assertTrue(a.is_finished)
+        self.assertTrue(b.is_finished)
+        self.assertFalse(c.is_finished)
+
+    def test_bulk_status_moves_back_to_current(self):
+        a = MPN.objects.create(name='A', is_finished=True)
+        self.client.post(
+            '/product/mpns/bulk-status/',
+            {'ids': [a.id], 'is_finished': False}, format='json',
+        )
+        a.refresh_from_db()
+        self.assertFalse(a.is_finished)
+
+    def test_bulk_status_requires_auth(self):
+        a = MPN.objects.create(name='A')
+        self.client.force_authenticate(user=None)
+        resp = self.client.post(
+            '/product/mpns/bulk-status/',
+            {'ids': [a.id], 'is_finished': True}, format='json',
+        )
+        self.assertIn(resp.status_code, (401, 403))
+
+    def test_bulk_status_rejects_empty_ids(self):
+        resp = self.client.post(
+            '/product/mpns/bulk-status/',
+            {'ids': [], 'is_finished': True}, format='json',
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_bulk_status_rejects_non_boolean_flag(self):
+        a = MPN.objects.create(name='A')
+        resp = self.client.post(
+            '/product/mpns/bulk-status/',
+            {'ids': [a.id], 'is_finished': 'yes'}, format='json',
+        )
+        self.assertEqual(resp.status_code, 400)

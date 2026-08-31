@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import * as XLSX from 'xlsx-js-style';
 import {
-  Button, Modal, Breadcrumbs, Input, Empty,
+  Button, Modal, Input, Empty,
   Field, useToast, thS, tdS, ghostBtn,
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
@@ -22,6 +22,11 @@ export default function MPNsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMpn, setModalMpn] = useState<MPN | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  // Current / Finished lifecycle
+  const [tab, setTab] = useState<'current' | 'finished'>('current');
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [moving, setMoving] = useState(false);
 
   const [reportStatus, setReportStatus] = useState<MPNReportStatus | null>(null);
   const [reportConfig, setReportConfig] = useState<MPNReportConfig | null>(null);
@@ -268,81 +273,106 @@ export default function MPNsPage() {
     } catch { toast('Failed to save settings'); }
   };
 
+  const inTab = mpns.filter(m => (tab === 'finished' ? !!m.is_finished : !m.is_finished));
   const filtered = search.trim()
-    ? mpns.filter(m =>
+    ? inTab.filter(m =>
         m.name.toLowerCase().includes(search.toLowerCase()) ||
         (m.part_type ?? '').toLowerCase().includes(search.toLowerCase()))
-    : mpns;
+    : inTab;
+
+  const currentCount = mpns.reduce((n, m) => n + (m.is_finished ? 0 : 1), 0);
+  const finishedCount = mpns.length - currentCount;
+
+  const switchTab = (t: 'current' | 'finished') => { setTab(t); setSelected(new Set()); };
+  const toggleSelect = (id: number) =>
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const allVisibleSelected = filtered.length > 0 && filtered.every(m => selected.has(m.id));
+  const toggleSelectAll = () =>
+    setSelected(() => allVisibleSelected ? new Set() : new Set(filtered.map(m => m.id)));
+
+  const handleMove = async (toFinished: boolean) => {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    setMoving(true);
+    try {
+      await api.mpns.bulkStatus(ids, toFinished);
+      setMpns(ms => ms.map(m => selected.has(m.id) ? { ...m, is_finished: toFinished } : m));
+      setSelected(new Set());
+      toast(toFinished ? `Moved ${ids.length} to Finished` : `Moved ${ids.length} to Current`);
+    } catch { toast('Failed to move MPNs'); }
+    finally { setMoving(false); }
+  };
 
   return (
     <div className="fade-in page-pad">
-      <Breadcrumbs items={[
-        { label: 'Home', onClick: () => router.push('/dashboard') },
-        { label: 'MPNs' },
-      ]} />
-
       {isMobile ? (
-        <div style={{ margin: '14px 0 16px' }}>
-          <h1 style={{ margin: 0, fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>MPNs</h1>
-          <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4, marginBottom: 10 }}>
-            <span className="num">{mpns.length}</span> part numbers
-          </div>
-          <Input value={search} onChange={setSearch} placeholder="Search name or part type…" style={{ width: '100%' }} />
+        <div style={{ margin: '4px 0 14px' }}>
+          <Input value={search} onChange={setSearch} placeholder="Search name or part type…" size="sm" style={{ width: '100%' }} />
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
             {!reportLoading && (
               <>
-                <Button variant="outline" onClick={handleSendNow} disabled={sending}>
+                <Button variant="outline" size="sm" onClick={handleSendNow} disabled={sending}>
                   {sending ? 'Sending…' : 'Send Now'}
                 </Button>
                 <button
                   onClick={() => setConfigOpen(true)}
                   title="Email report settings"
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: '1px solid var(--hair)', borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0 }}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: '1px solid var(--hair-strong)', borderRadius: 3, cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0 }}
                 >
                   <GearIcon />
                 </button>
               </>
             )}
             <div style={{ flex: 1 }} />
-            <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport} disabled={exporting || mpns.length === 0}>
+            <Button variant="outline" size="sm" icon={<DownloadIcon />} onClick={handleExport} disabled={exporting || mpns.length === 0}>
               {exporting ? 'Exporting…' : 'Export'}
             </Button>
-            <Button variant="primary" icon={<PlusIcon />} onClick={openNew}>New MPN</Button>
+            <Button variant="primary" size="sm" icon={<PlusIcon />} onClick={openNew}>New MPN</Button>
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: '14px 0 20px', gap: 12 }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 22, fontWeight: 400, letterSpacing: '-0.015em' }}>MPNs</h1>
-            <div style={{ fontSize: 12, color: 'var(--ink-3)', marginTop: 4 }}>
-              <span className="num">{mpns.length}</span> part numbers
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <Input value={search} onChange={setSearch} placeholder="Search name or part type…" />
-            {!reportLoading && (
-              <>
-                <ReportStatusBadge record={reportStatus} />
-                <Button variant="outline" onClick={handleSendNow} disabled={sending}>
-                  {sending ? 'Sending…' : 'Send Now'}
-                </Button>
-                <button
-                  onClick={() => setConfigOpen(true)}
-                  title="Email report settings"
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: '1px solid var(--hair)', borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0 }}
-                >
-                  <GearIcon />
-                </button>
-                <div style={{ width: 1, height: 20, background: 'var(--hair)', flexShrink: 0 }} />
-              </>
-            )}
-            <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport} disabled={exporting || mpns.length === 0}>
-              {exporting ? 'Exporting…' : 'Export'}
-            </Button>
-            <Button variant="primary" icon={<PlusIcon />} onClick={openNew}>New MPN</Button>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 14px' }}>
+          <Input value={search} onChange={setSearch} placeholder="Search name or part type…" size="sm" style={{ width: 260 }} />
+          <div style={{ flex: 1 }} />
+          {!reportLoading && (
+            <>
+              <ReportStatusBadge record={reportStatus} />
+              <Button variant="outline" size="sm" onClick={handleSendNow} disabled={sending}>
+                {sending ? 'Sending…' : 'Send Now'}
+              </Button>
+              <button
+                onClick={() => setConfigOpen(true)}
+                title="Email report settings"
+                style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, background: 'transparent', border: '1px solid var(--hair-strong)', borderRadius: 3, cursor: 'pointer', color: 'var(--ink-3)', flexShrink: 0 }}
+              >
+                <GearIcon />
+              </button>
+              <div style={{ width: 1, height: 18, background: 'var(--hair)', flexShrink: 0, margin: '0 2px' }} />
+            </>
+          )}
+          <Button variant="outline" size="sm" icon={<DownloadIcon />} onClick={handleExport} disabled={exporting || mpns.length === 0}>
+            {exporting ? 'Exporting…' : 'Export'}
+          </Button>
+          <Button variant="primary" size="sm" icon={<PlusIcon />} onClick={openNew}>New MPN</Button>
         </div>
       )}
+
+      {/* Current / Finished tabs — bulk-move controls fold into the same row's empty space when rows are selected */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginBottom: 14, borderBottom: '1px solid var(--hair)', flexWrap: 'wrap', rowGap: 0 }}>
+        <TabBtn active={tab === 'current'} onClick={() => switchTab('current')} label="Current" count={currentCount} />
+        <TabBtn active={tab === 'finished'} onClick={() => switchTab('finished')} label="Finished" count={finishedCount} />
+        {selected.size > 0 && (
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, paddingBottom: 5 }}>
+            <span style={{ fontSize: 12.5, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>
+              <span className="num" style={{ color: 'var(--accent-2)', fontWeight: 600 }}>{selected.size}</span> selected
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+            <Button variant="primary" size="sm" onClick={() => handleMove(tab === 'current')} disabled={moving}>
+              {moving ? 'Moving…' : (tab === 'current' ? 'Mark Finished' : 'Move to Current')}
+            </Button>
+          </div>
+        )}
+      </div>
 
       <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)' }}>
         {isMobile ? (
@@ -350,28 +380,34 @@ export default function MPNsPage() {
             {loading && <Empty label="Loading…" />}
             {!loading && filtered.length === 0 && (
               <Empty
-                label={search ? 'No matching MPNs' : 'No MPNs yet'}
-                sub={search ? 'Try a different search.' : "Click 'New MPN' to add one."}
+                label={search ? 'No matching MPNs' : `No ${tab === 'finished' ? 'Finished' : 'Current'} MPNs`}
+                sub={search ? 'Try a different search.' : (tab === 'finished' ? 'Move MPNs here when you finish harvesting them.' : "Click 'New MPN' to add one.")}
               />
             )}
             {!loading && filtered.map(m => {
               const bc = m.board_count ?? 0;
+              const sel = selected.has(m.id);
               return (
-                <div key={m.id} style={{ borderBottom: '1px solid var(--hair)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div key={m.id} style={{ borderBottom: '1px solid var(--hair)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, background: sel ? 'var(--accent-light)' : undefined }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <button
-                      onClick={() => router.push(`/mpns/${m.id}`)}
-                      className="mono"
-                      style={{
-                        background: '#ddeef8', border: '1px solid #afd2ea', borderRadius: 3,
-                        cursor: 'pointer', padding: '2px 8px', fontSize: 12,
-                        color: '#1a5f8b', fontFamily: 'inherit', letterSpacing: '0.02em',
-                        lineHeight: 1.6, whiteSpace: 'nowrap', overflow: 'hidden',
-                        textOverflow: 'ellipsis', maxWidth: '60%', flexShrink: 1,
-                      }}
-                    >
-                      {m.name}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flexShrink: 1 }}>
+                      <input type="checkbox" checked={sel} onChange={() => toggleSelect(m.id)}
+                        aria-label={`Select ${m.name}`}
+                        style={{ cursor: 'pointer', accentColor: 'var(--accent)', flexShrink: 0 }} />
+                      <button
+                        onClick={() => router.push(`/mpns/${m.id}`)}
+                        className="mono"
+                        style={{
+                          background: '#ddeef8', border: '1px solid #afd2ea', borderRadius: 3,
+                          cursor: 'pointer', padding: '2px 8px', fontSize: 12,
+                          color: '#1a5f8b', fontFamily: 'inherit', letterSpacing: '0.02em',
+                          lineHeight: 1.6, whiteSpace: 'nowrap', overflow: 'hidden',
+                          textOverflow: 'ellipsis', flexShrink: 1,
+                        }}
+                      >
+                        {m.name}
+                      </button>
+                    </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {m.part_type && (
                         <span style={{ fontSize: 11, color: 'var(--ink-3)', whiteSpace: 'nowrap' }}>{m.part_type}</span>
@@ -406,6 +442,7 @@ export default function MPNsPage() {
           <div className="table-scroll">
             <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 720 }}>
               <colgroup>
+                <col style={{ width: 40 }} />
                 <col style={{ width: '13%' }} />
                 <col style={{ width: '7%' }} />
                 <col style={{ width: '9%' }} />
@@ -418,6 +455,11 @@ export default function MPNsPage() {
               </colgroup>
               <thead>
                 <tr>
+                  <th style={{ ...thS, textAlign: 'center', paddingLeft: 0, paddingRight: 0 }}>
+                    <input type="checkbox" checked={allVisibleSelected}
+                      onChange={toggleSelectAll} aria-label="Select all"
+                      style={{ cursor: 'pointer', accentColor: 'var(--accent)' }} />
+                  </th>
                   <th style={thS}>Name</th>
                   <th style={thS}>Part Type</th>
                   <th style={{ ...thS, textAlign: 'right' }}>Beforecut Weight</th>
@@ -430,19 +472,25 @@ export default function MPNsPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading && <tr><td colSpan={9}><Empty label="Loading…" /></td></tr>}
+                {loading && <tr><td colSpan={10}><Empty label="Loading…" /></td></tr>}
                 {!loading && filtered.length === 0 && (
-                  <tr><td colSpan={9}>
+                  <tr><td colSpan={10}>
                     <Empty
-                      label={search ? 'No matching MPNs' : 'No MPNs yet'}
-                      sub={search ? 'Try a different search.' : "Click 'New MPN' to add one."}
+                      label={search ? 'No matching MPNs' : `No ${tab === 'finished' ? 'Finished' : 'Current'} MPNs`}
+                      sub={search ? 'Try a different search.' : (tab === 'finished' ? 'Move MPNs here when you finish harvesting them.' : "Click 'New MPN' to add one.")}
                     />
                   </td></tr>
                 )}
                 {!loading && filtered.map(m => {
                   const bc = m.board_count ?? 0;
+                  const sel = selected.has(m.id);
                   return (
-                    <tr key={m.id} style={{ borderBottom: '1px solid var(--hair)' }}>
+                    <tr key={m.id} style={{ borderBottom: '1px solid var(--hair)', background: sel ? 'var(--accent-light)' : undefined }}>
+                      <td style={{ ...tdS, textAlign: 'center', paddingLeft: 0, paddingRight: 0 }}>
+                        <input type="checkbox" checked={sel} onChange={() => toggleSelect(m.id)}
+                          aria-label={`Select ${m.name}`}
+                          style={{ cursor: 'pointer', accentColor: 'var(--accent)' }} />
+                      </td>
                       <td style={{ ...tdS }}>
                         <button
                           onClick={() => router.push(`/mpns/${m.id}`)}
@@ -669,6 +717,33 @@ const iconBtn: React.CSSProperties = {
   width: 28, height: 28, background: 'transparent', border: '1px solid var(--hair)',
   borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', padding: 0,
 };
+
+function TabBtn({ active, onClick, label, count }: {
+  active: boolean; onClick: () => void; label: string; count: number;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        background: 'none', border: 'none', cursor: 'pointer',
+        padding: '8px 14px', fontSize: 13, fontFamily: 'inherit',
+        color: active ? 'var(--accent)' : 'var(--ink-3)',
+        fontWeight: active ? 600 : 400,
+        borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`,
+        marginBottom: -1,
+      }}
+    >
+      {label}
+      <span className="num" style={{
+        fontSize: 11, padding: '1px 7px', borderRadius: 10, lineHeight: 1.6,
+        background: active ? 'var(--accent-light)' : 'var(--surface-2)',
+        border: `1px solid ${active ? 'var(--accent-border)' : 'var(--hair)'}`,
+        color: active ? 'var(--accent-2)' : 'var(--ink-4)',
+      }}>{count}</span>
+    </button>
+  );
+}
 
 const EditIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

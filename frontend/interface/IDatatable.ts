@@ -129,6 +129,8 @@ export interface MPN {
   board_count?: number;
   chip_brands: string[];
   note?: string;
+  /** True once we're done harvesting this part number — hidden from the Add-board dropdown. */
+  is_finished?: boolean;
   created_at: string;
   latest_board_date?: string | null;
   chips?: Chip[];

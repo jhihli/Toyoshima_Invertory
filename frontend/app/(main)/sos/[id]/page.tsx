@@ -291,8 +291,11 @@ export default function SODetailPage() {
   const handleOpenAddBoard = async () => {
     setAddBoardOpen(true);
     try {
-      const allMpns = await api.mpns.list();
-      setBoardMpns(allMpns.map(m => m.name));
+      // Only Current MPNs — Finished ones are hidden from the Add-board dropdown.
+      const allMpns = await api.mpns.list({ status: 'current' });
+      // Newest MPN on top (created_at is an ISO string, so desc string compare works).
+      const byNewest = [...allMpns].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+      setBoardMpns(byNewest.map(m => m.name));
     } catch {}
   };
 

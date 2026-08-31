@@ -142,7 +142,7 @@ class MPNSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MPN
-        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'cutboard_cost', 'note', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count', 'chip_brands', 'latest_board_date', 'slot_count', 'chips_per_board']
+        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'cutboard_cost', 'note', 'is_finished', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count', 'chip_brands', 'latest_board_date', 'slot_count', 'chips_per_board']
         read_only_fields = ['created_at']
 
     def get_board_count(self, obj):

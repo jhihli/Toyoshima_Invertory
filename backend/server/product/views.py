@@ -51,15 +51,37 @@ from .serializer import (
 def mpn_list(request):
     if request.method == 'GET':
         q = request.query_params.get('q', '').strip()
+        status_filter = request.query_params.get('status', '').strip()
         qs = MPN.objects.all()
         if q:
             qs = qs.filter(name__icontains=q)
+        if status_filter == 'current':
+            qs = qs.filter(is_finished=False)
+        elif status_filter == 'finished':
+            qs = qs.filter(is_finished=True)
         return Response(MPNSerializer(qs, many=True, context={'request': request}).data)
     serializer = MPNSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mpn_bulk_status(request):
+    """Move a batch of MPNs between Current and Finished.
+
+    Body: { "ids": [1, 2, 3], "is_finished": true }
+    """
+    ids = request.data.get('ids')
+    is_finished = request.data.get('is_finished')
+    if not isinstance(ids, list) or not ids:
+        return Response({'error': 'ids must be a non-empty list'}, status=status.HTTP_400_BAD_REQUEST)
+    if not isinstance(is_finished, bool):
+        return Response({'error': 'is_finished must be a boolean'}, status=status.HTTP_400_BAD_REQUEST)
+    updated = MPN.objects.filter(id__in=ids).update(is_finished=is_finished)
+    return Response({'updated': updated})
 
 
 @api_view(['GET', 'PUT', 'DELETE'])

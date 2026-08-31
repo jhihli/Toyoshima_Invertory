@@ -231,6 +231,9 @@ class MPN(models.Model):
     beforecut_photo = models.ImageField(upload_to='mpn_photos/%Y/%m/', blank=True, null=True)
     aftercut_photo = models.ImageField(upload_to='mpn_photos/%Y/%m/', blank=True, null=True)
     note = models.TextField(blank=True)
+    # True once we're done harvesting this part number. Finished MPNs drop out of
+    # the Add-board dropdown (every SO), but stay in exports/reports as history.
+    is_finished = models.BooleanField(default=False, db_index=True)
     created_at = models.DateTimeField(default=timezone.now, editable=False)
 
     class Meta:

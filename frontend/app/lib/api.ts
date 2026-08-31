@@ -226,6 +226,8 @@ export const api = {
     create: (d: Partial<MPN>) => apiPost<MPN>('/mpns/', d),
     update: (id: number, d: Partial<MPN>) => apiPut<MPN>(`/mpns/${id}/`, d),
     delete: (id: number) => apiDelete(`/mpns/${id}/`),
+    bulkStatus: (ids: number[], is_finished: boolean) =>
+      apiPost<{ updated: number }>('/mpns/bulk-status/', { ids, is_finished }),
     chips: {
       create: (mpnId: number, d: Partial<Chip>) => apiPost<Chip>(`/mpns/${mpnId}/chips/`, d),
       update: (mpnId: number, id: number, d: Partial<Chip>) => apiPut<Chip>(`/mpns/${mpnId}/chips/${id}/`, d),

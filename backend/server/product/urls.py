@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     # MPNs
     path('mpns/', views.mpn_list, name='mpn-list'),
+    path('mpns/bulk-status/', views.mpn_bulk_status, name='mpn-bulk-status'),
     path('mpns/<int:pk>/', views.mpn_detail, name='mpn-detail'),
     path('mpns/<int:mpn_pk>/chips/', views.mpn_chip_create, name='mpn-chip-create'),
     path('mpns/<int:mpn_pk>/chips/<int:pk>/', views.mpn_chip_detail, name='mpn-chip-detail'),
