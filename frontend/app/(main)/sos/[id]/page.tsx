@@ -19,7 +19,7 @@ import {
   type MpnEntry,
 } from '@/app/lib/chipSlots';
 import { WeightRuleField } from '../WeightRuleField';
-import type { SODetail, Pallet, Board, Chip, Vendor } from '@/interface/IDatatable';
+import type { SODetail, Pallet, PalletPhoto, Board, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 function downloadBackup(data: { so_number: string; mpn: string; pallet: string; barcodes: string[] }) {
@@ -195,7 +195,7 @@ export default function SODetailPage() {
     } catch { toast('Failed to delete pallet'); }
   };
 
-  const handleAddPallet = async (data: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string }) => {
+  const handleAddPallet = async (data: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string; board_qty: string; pendingPhotos?: string[] }) => {
     try {
       const created = await api.pallets.create(soId, {
         in_weight_gross: data.in_weight_gross as any,
@@ -209,7 +209,14 @@ export default function SODetailPage() {
         gateload_number: data.gateload_number,
         board_qty: data.board_qty ? +data.board_qty : null,
       });
-      setSo(s => s ? { ...s, pallets: [...s.pallets, created] } : s);
+      const photos = data.pendingPhotos || [];
+      if (created?.id && photos.length) {
+        // Pallet exists now — attach each photo, then reload so the row shows them.
+        await Promise.all(photos.map(url => api.pallets.photos.upload(created.id, url)));
+        await loadSO();
+      } else {
+        setSo(s => s ? { ...s, pallets: [...s.pallets, created] } : s);
+      }
       toast('Pallet added');
     } catch { toast('Failed to add pallet'); }
   };
@@ -1231,6 +1238,153 @@ export default function SODetailPage() {
   );
 }
 
+// ─── Pallet photos: grid (in forms) + multi-image lightbox (viewing) ──
+// Ported from the Sales-Orders pallet screen so MSFT pallets behave identically:
+// scanner- or web-uploaded photos hang off PalletPhoto and are viewed/managed here.
+interface PhotoEntry { id?: number; url: string; }  // id = existing DB photo; no id = pending upload
+
+function MultiPhotoGrid({ photos, onAdd, onRemove }: {
+  photos: PhotoEntry[]; onAdd: (dataUrls: string[]) => void; onRemove: (index: number) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const pick = (files: FileList) => {
+    const readers: Promise<string>[] = Array.from(files).map(file =>
+      new Promise(resolve => {
+        const r = new FileReader();
+        r.onload = e => resolve(e.target?.result as string);
+        r.readAsDataURL(file);
+      })
+    );
+    Promise.all(readers).then(urls => onAdd(urls));
+  };
+  const ThumbSize = 72;
+  return (
+    <div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {photos.map((ph, i) => (
+          <div key={ph.id ?? `p-${i}`} style={{ position: 'relative', width: ThumbSize, height: ThumbSize, borderRadius: 6, overflow: 'hidden', border: '1px solid var(--hair-strong)' }}>
+            <img src={ph.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <button type="button" onClick={() => onRemove(i)}
+              style={{ position: 'absolute', top: 3, right: 3, width: 20, height: 20, borderRadius: 5, background: 'rgba(0,0,0,0.6)', border: 'none', color: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center', lineHeight: 1, fontSize: 12 }}>×</button>
+          </div>
+        ))}
+        <div onClick={() => inputRef.current?.click()}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => { e.preventDefault(); if (e.dataTransfer.files.length) pick(e.dataTransfer.files); }}
+          style={{ width: ThumbSize, height: ThumbSize, borderRadius: 6, border: '1.5px dashed var(--hair-strong)', background: 'var(--surface-2)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--ink-4)', gap: 4 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+          <span style={{ fontSize: 10, fontWeight: 600 }}>Add</span>
+        </div>
+      </div>
+      <input ref={inputRef} type="file" accept="image/*" multiple style={{ display: 'none' }}
+        onChange={e => { if (e.target.files?.length) pick(e.target.files); e.target.value = ''; }} />
+    </div>
+  );
+}
+
+interface PalletLightboxState { images: { src: string; label: string }[]; index: number; }
+
+function PalletLightbox({ state, onClose }: { state: PalletLightboxState | null; onClose: () => void }) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [idx, setIdx] = useState(0);
+  const drag = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => { if (state) { setIdx(state.index); setZoom(1); setPan({ x: 0, y: 0 }); } }, [state]);
+  useEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, [idx]);
+  useEffect(() => {
+    if (!state) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === '+' || e.key === '=') setZoom(z => Math.min(5, +(z + 0.25).toFixed(2)));
+      else if (e.key === '-' || e.key === '_') setZoom(z => { const nz = Math.max(1, +(z - 0.25).toFixed(2)); if (nz === 1) setPan({ x: 0, y: 0 }); return nz; });
+      else if (e.key === '0') { setZoom(1); setPan({ x: 0, y: 0 }); }
+      else if (e.key === 'ArrowLeft') setIdx(i => Math.max(0, i - 1));
+      else if (e.key === 'ArrowRight') setIdx(i => Math.min((state?.images.length ?? 1) - 1, i + 1));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [state, onClose]);
+
+  if (!state) return null;
+  const { images } = state;
+  const cur = images[idx];
+  const zoomBy = (d: number) => setZoom(z => { const nz = Math.min(5, Math.max(1, +(z + d).toFixed(2))); if (nz === 1) setPan({ x: 0, y: 0 }); return nz; });
+  const onWheel = (e: React.WheelEvent) => { e.preventDefault(); zoomBy(e.deltaY < 0 ? 0.2 : -0.2); };
+  const onDown = (e: React.MouseEvent) => { if (zoom <= 1) return; drag.current = { x: e.clientX - pan.x, y: e.clientY - pan.y }; };
+  const onMove = (e: React.MouseEvent) => { if (!drag.current) return; setPan({ x: e.clientX - drag.current.x, y: e.clientY - drag.current.y }); };
+  const onUp = () => { drag.current = null; };
+
+  const Chev = ({ dir }: { dir: 'l' | 'r' }) => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points={dir === 'l' ? '15 18 9 12 15 6' : '9 18 15 12 9 6'} />
+    </svg>
+  );
+  const NavBtn = ({ onClick, disabled, children }: any) => (
+    <button onClick={onClick} disabled={disabled}
+      style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.08)', color: disabled ? 'rgba(255,255,255,0.2)' : '#fff', cursor: disabled ? 'default' : 'pointer', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+      {children}
+    </button>
+  );
+  const ZoomBtn = ({ onClick, disabled, children, title }: any) => (
+    <button onClick={onClick} disabled={disabled} title={title}
+      style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.08)', color: disabled ? 'rgba(255,255,255,0.3)' : '#fff', cursor: disabled ? 'default' : 'pointer', display: 'grid', placeItems: 'center' }}>
+      {children}
+    </button>
+  );
+
+  return createPortal(
+    <div onClick={onClose} onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+      style={{ position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(20,24,20,0.88)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ width: '90vw', maxWidth: 900, height: '90vh', maxHeight: 800, background: '#1a1e1a', borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 80px rgba(0,0,0,0.6)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }}>
+          <span className="mono" style={{ fontSize: 12.5, color: 'rgba(255,255,255,0.7)' }}>{cur.label}</span>
+          {images.length > 1 && <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>{idx + 1} / {images.length}</span>}
+          <div style={{ flex: 1 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <ZoomBtn onClick={() => zoomBy(-0.25)} disabled={zoom <= 1} title="Zoom out (−)">−</ZoomBtn>
+            <span style={{ width: 44, textAlign: 'center', fontSize: 12, color: 'rgba(255,255,255,0.6)', fontVariantNumeric: 'tabular-nums' }}>{Math.round(zoom * 100)}%</span>
+            <ZoomBtn onClick={() => zoomBy(0.25)} disabled={zoom >= 5} title="Zoom in (+)">+</ZoomBtn>
+            <ZoomBtn onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }} disabled={zoom === 1} title="Reset (0)">⟳</ZoomBtn>
+          </div>
+          <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.12)', margin: '0 4px' }} />
+          <button onClick={onClose}
+            style={{ width: 28, height: 28, borderRadius: 6, border: 'none', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', display: 'grid', placeItems: 'center', fontSize: 16, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 0, overflow: 'hidden' }}>
+          {images.length > 1 && <NavBtn onClick={() => setIdx(i => i - 1)} disabled={idx === 0}><Chev dir="l" /></NavBtn>}
+          <div onWheel={onWheel} onMouseDown={onDown}
+            style={{ flex: 1, height: '100%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: zoom > 1 ? (drag.current ? 'grabbing' : 'grab') : 'default' }}>
+            <img src={cur.src} alt={cur.label} draggable={false}
+              style={{ maxWidth: '100%', maxHeight: '100%', userSelect: 'none', transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: 'center', transition: drag.current ? 'none' : 'transform .12s ease' }} />
+          </div>
+          {images.length > 1 && <NavBtn onClick={() => setIdx(i => i + 1)} disabled={idx === images.length - 1}><Chev dir="r" /></NavBtn>}
+        </div>
+        {images.length > 1 && (
+          <div style={{ display: 'flex', gap: 6, padding: '8px 12px', borderTop: '1px solid rgba(255,255,255,0.08)', overflowX: 'auto', flexShrink: 0 }}>
+            {images.map((img, i) => (
+              <img key={i} src={img.src} alt="" onClick={() => setIdx(i)}
+                style={{ width: 48, height: 48, borderRadius: 6, objectFit: 'cover', cursor: 'pointer', opacity: i === idx ? 1 : 0.45, border: i === idx ? '2px solid var(--accent)' : '2px solid transparent', flexShrink: 0 }} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/** Map a pallet's photos to lightbox image entries (image_url, falling back to raw path).
+ *  Prefers the multi-photo PalletPhoto set; if a pallet has none, falls back to the
+ *  legacy single Pallet.photo field so older photos still surface. */
+function palletImgs(p: Pallet) {
+  const label = p.licence_number || `Pallet #${p.pallet_seq}`;
+  const imgs = (p.photos || []).map(ph => ({ src: (ph.image_url || ph.image) as string, label }));
+  if (!imgs.length && (p.photo_url || p.photo)) imgs.push({ src: (p.photo_url || p.photo) as string, label });
+  return imgs;
+}
+
 // ─── Pallets Tab ──────────────────────────────────────────────────
 function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards, onGoToBoxes }: {
   pallets: Pallet[]; effectiveRule: string; ruleIsOverride: boolean; vendorName: string;
@@ -1240,6 +1394,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
   onGoToBoxes: (palletId: number) => void;
 }) {
   const [editingPallet, setEditingPallet] = useState<Pallet | null>(null);
+  const [lightbox, setLightbox] = useState<PalletLightboxState | null>(null);
   const isMobile = useIsMobile();
 
   return (
@@ -1263,9 +1418,24 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
             <div key={p.id} onClick={() => onGoToBoards(p.id)}
               style={{ background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 4, padding: 14, cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <Badge tone="warn" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
-                  {parseFloat(p.in_weight_gross).toFixed(2)} lb
-                </Badge>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+                  {(() => {
+                    const imgs = palletImgs(p);
+                    if (!imgs.length) return null;
+                    return (
+                      <div style={{ position: 'relative', flexShrink: 0, cursor: 'zoom-in', lineHeight: 0 }}
+                        onClick={e => { e.stopPropagation(); setLightbox({ images: imgs, index: 0 }); }}>
+                        <img src={imgs[0].src} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', display: 'block', border: '1px solid var(--hair)' }} />
+                        {imgs.length > 1 && (
+                          <span style={{ position: 'absolute', bottom: -3, right: -3, background: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: 8.5, fontWeight: 700, borderRadius: 4, padding: '0 3px', lineHeight: 1.55 }}>+{imgs.length - 1}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                  <Badge tone="warn" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>
+                    {parseFloat(p.in_weight_gross).toFixed(2)} lb
+                  </Badge>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={ghostBtn} title="Boxes & checklist"><BoxIcon /></button>
                   <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={ghostBtn} title="Edit"><EditIcon /></button>
@@ -1297,6 +1467,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
           <div className="table-scroll">
           <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
             <colgroup>
+              <col style={{ width: 60 }} />
               <col style={{ width: '8%' }} />
               <col style={{ width: '7%' }} />
               <col style={{ width: '9%' }} />
@@ -1312,6 +1483,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
             </colgroup>
             <thead>
               <tr>
+                <th style={thS}>Image</th>
                 <th style={thS}>Licence No</th>
                 <th style={thS}>Gateload No</th>
                 <th style={{ ...thS, textAlign: 'right' }}>In Wt Gross (lb)</th>
@@ -1332,6 +1504,25 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   style={{ borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = 'var(--surface-2)'}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = ''}>
+                  <td style={tdS} onClick={e => e.stopPropagation()}>
+                    {(() => {
+                      const imgs = palletImgs(p);
+                      if (!imgs.length) return (
+                        <div style={{ width: 40, height: 40, borderRadius: 6, background: 'var(--surface-2)', border: '1px dashed var(--hair-strong)', display: 'grid', placeItems: 'center', color: 'var(--ink-5)' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        </div>
+                      );
+                      return (
+                        <div style={{ position: 'relative', display: 'inline-block', cursor: 'zoom-in', lineHeight: 0 }}
+                          onClick={() => setLightbox({ images: imgs, index: 0 })}>
+                          <img src={imgs[0].src} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover', display: 'block' }} />
+                          {imgs.length > 1 && (
+                            <span style={{ position: 'absolute', bottom: 2, right: 2, background: 'rgba(0,0,0,0.65)', color: '#fff', fontSize: 9, fontWeight: 700, borderRadius: 4, padding: '1px 4px', lineHeight: 1.5 }}>+{imgs.length - 1}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </td>
                   <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.licence_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
                   <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.gateload_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(p.in_weight_gross).toFixed(2)}</td>
@@ -1368,7 +1559,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
               ))}
               {pallets.length > 0 && (
                 <tr style={{ background: 'var(--surface-2)' }}>
-                  <td style={{ ...tdS, fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em', textTransform: 'uppercase' }} colSpan={2}>
+                  <td style={{ ...tdS, fontSize: 11, color: 'var(--ink-3)', letterSpacing: '0.06em', textTransform: 'uppercase' }} colSpan={3}>
                     Total
                   </td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.weight.toFixed(2)}</td>
@@ -1386,7 +1577,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 </tr>
               )}
               {pallets.length === 0 && (
-                <tr><td colSpan={12}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
+                <tr><td colSpan={13}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
               )}
             </tbody>
           </table>
@@ -1406,6 +1597,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
           }}
         />
       )}
+      <PalletLightbox state={lightbox} onClose={() => setLightbox(null)} />
     </>
   );
 }
@@ -1427,6 +1619,9 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   const [qty, setQty] = useState(String(pallet.qty));
   const [boardQty, setBoardQty] = useState(pallet.board_qty != null ? String(pallet.board_qty) : '');
   const [saving, setSaving] = useState(false);
+  const [existingPhotos, setExistingPhotos] = useState<PhotoEntry[]>([]);
+  const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
+  const [removedPhotoIds, setRemovedPhotoIds] = useState<number[]>([]);
 
   useEffect(() => {
     if (open) {
@@ -1441,23 +1636,52 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
       setQty(String(pallet.qty));
       setBoardQty(pallet.board_qty != null ? String(pallet.board_qty) : '');
       setSaving(false);
+      setExistingPhotos((pallet.photos || []).map(ph => ({ id: ph.id, url: (ph.image_url || ph.image) as string })));
+      setPendingPhotos([]);
+      setRemovedPhotoIds([]);
     }
   }, [open, pallet]);
 
+  // Grid shows surviving existing photos + pending previews.
+  const gridPhotos: PhotoEntry[] = [
+    ...existingPhotos.filter(ph => !removedPhotoIds.includes(ph.id!)),
+    ...pendingPhotos.map(url => ({ url })),
+  ];
+  const removePhoto = (index: number) => {
+    const ph = gridPhotos[index];
+    if (ph.id !== undefined) {
+      setRemovedPhotoIds(ids => [...ids, ph.id!]);
+    } else {
+      const pendingStart = existingPhotos.filter(e => !removedPhotoIds.includes(e.id!)).length;
+      setPendingPhotos(ps => ps.filter((_, idx) => idx !== index - pendingStart));
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
-    await onSave({
-      licence_number: licence,
-      gateload_number: payload,
-      in_weight_gross: inWeightGross as any,
-      actual_weight: actualWeight ? (actualWeight as any) : null,
-      out_weight_gross: outWeightGross ? (outWeightGross as any) : null,
-      out_weight_net: outWeightNet ? (outWeightNet as any) : null,
-      tantalum_wt: tantalumWt ? (tantalumWt as any) : null,
-      material_type: matType,
-      qty: +qty,
-      board_qty: boardQty !== '' ? +boardQty : null,
-    });
+    try {
+      // Photo ops first, so the pallet returned by onSave() reflects the final photo set.
+      if (removedPhotoIds.length) {
+        await Promise.all(removedPhotoIds.map(pid => api.pallets.photos.delete(pallet.id, pid)));
+      }
+      if (pendingPhotos.length) {
+        await Promise.all(pendingPhotos.map(url => api.pallets.photos.upload(pallet.id, url)));
+      }
+      await onSave({
+        licence_number: licence,
+        gateload_number: payload,
+        in_weight_gross: inWeightGross as any,
+        actual_weight: actualWeight ? (actualWeight as any) : null,
+        out_weight_gross: outWeightGross ? (outWeightGross as any) : null,
+        out_weight_net: outWeightNet ? (outWeightNet as any) : null,
+        tantalum_wt: tantalumWt ? (tantalumWt as any) : null,
+        material_type: matType,
+        qty: +qty,
+        board_qty: boardQty !== '' ? +boardQty : null,
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -1501,6 +1725,18 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
         <Field label="Board Qty" span={2}>
           <Input value={boardQty} onChange={setBoardQty} type="number" placeholder="Optional" />
         </Field>
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 10 }}>
+          Photos <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-4)' }}>
+            {gridPhotos.length > 0 ? `${gridPhotos.length} image${gridPhotos.length > 1 ? 's' : ''}` : 'optional'}
+          </span>
+        </div>
+        <MultiPhotoGrid
+          photos={gridPhotos}
+          onAdd={urls => setPendingPhotos(ps => [...ps, ...urls])}
+          onRemove={removePhoto}
+        />
       </div>
     </Modal>
   );
@@ -1825,7 +2061,7 @@ type PalletRowData = { in_weight_gross: string; actual_weight: string; out_weigh
 
 function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   open: boolean; rule: string; onClose: () => void;
-  onAdd: (data: PalletRowData) => void;
+  onAdd: (data: PalletRowData & { pendingPhotos?: string[] }) => void;
   onAddBulk: (rows: PalletRowData[]) => void;
 }) {
   const aggregated = rule === 'aggregated';
@@ -1833,6 +2069,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
 
   // single
   const [w, setW] = useState('');
+  const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
   const [actualW, setActualW] = useState('');
   const [outWGross, setOutWGross] = useState('');
   const [outWNet, setOutWNet] = useState('');
@@ -1851,6 +2088,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
     if (open) {
       setMode('single');
       setW(''); setActualW(''); setOutWGross(''); setOutWNet(''); setTanWt(''); setMaterialType(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload(''); setBoardQty('');
+      setPendingPhotos([]);
       setRows(Array.from({ length: 10 }, blankRow));
     }
   }, [open, aggregated]);
@@ -1868,7 +2106,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   const dupLicences = new Set(licList.filter((l, i) => licList.indexOf(l) !== i));
 
   const submitSingle = () => {
-    onAdd({ in_weight_gross: w, actual_weight: actualW, out_weight_gross: outWGross, out_weight_net: outWNet, tantalum_wt: tanWt, material_type: materialType, qty: q, licence_number: licence, gateload_number: payload, board_qty: boardQty });
+    onAdd({ in_weight_gross: w, actual_weight: actualW, out_weight_gross: outWGross, out_weight_net: outWNet, tantalum_wt: tanWt, material_type: materialType, qty: q, licence_number: licence, gateload_number: payload, board_qty: boardQty, pendingPhotos });
     onClose();
   };
   const submitBulk = () => {
@@ -1947,6 +2185,18 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
             <Field label="Board Qty" span={2}>
               <Input value={boardQty} onChange={setBoardQty} type="number" placeholder="Optional" />
             </Field>
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 10 }}>
+              Photos <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-4)' }}>
+                {pendingPhotos.length > 0 ? `${pendingPhotos.length} image${pendingPhotos.length > 1 ? 's' : ''}` : 'optional'}
+              </span>
+            </div>
+            <MultiPhotoGrid
+              photos={pendingPhotos.map(url => ({ url }))}
+              onAdd={urls => setPendingPhotos(ps => [...ps, ...urls])}
+              onRemove={i => setPendingPhotos(ps => ps.filter((_, idx) => idx !== i))}
+            />
           </div>
         </>
       )}
