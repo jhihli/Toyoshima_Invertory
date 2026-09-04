@@ -43,13 +43,15 @@ function downloadBackup(data: { so_number: string; mpn: string; pallet: string; 
 
 /** Build pallet dropdown options. Uses gateload_number as the label number when available
  *  (user's mental model: "Pallet 2" = the pallet whose gateload is 2).
- *  Falls back to 1-based sorted position when no gateload_number exists. */
+ *  Falls back to 1-based sorted position when no gateload_number exists.
+ *  Sorted numerically by the number shown to the user (gateload, then pallet_seq),
+ *  so the dropdown reads 1, 2, 3 … not 1, 10, 11, 2 (string order). */
 function sortedPalletOptions(pallets: import('@/interface/IDatatable').Pallet[]) {
-  const sorted = [...pallets].sort((a, b) => {
-    const la = [a.licence_number, a.gateload_number].filter(Boolean).join('-') || `#${String(a.pallet_seq).padStart(2, '0')}`;
-    const lb = [b.licence_number, b.gateload_number].filter(Boolean).join('-') || `#${String(b.pallet_seq).padStart(2, '0')}`;
-    return la.localeCompare(lb);
-  });
+  const sortKey = (p: import('@/interface/IDatatable').Pallet) => {
+    const n = Number(p.gateload_number);
+    return Number.isFinite(n) && p.gateload_number !== '' ? n : p.pallet_seq;
+  };
+  const sorted = [...pallets].sort((a, b) => sortKey(a) - sortKey(b) || a.pallet_seq - b.pallet_seq);
   return sorted.map((p, i) => ({
     value: String(p.id),
     label: p.gateload_number ? `Pallet ${p.gateload_number}` : `Pallet ${i + 1}`,
