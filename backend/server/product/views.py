@@ -52,6 +52,7 @@ def mpn_list(request):
     if request.method == 'GET':
         q = request.query_params.get('q', '').strip()
         status_filter = request.query_params.get('status', '').strip()
+        so_param = request.query_params.get('so', '').strip()
         qs = MPN.objects.all()
         if q:
             qs = qs.filter(name__icontains=q)
@@ -59,7 +60,13 @@ def mpn_list(request):
             qs = qs.filter(is_finished=False)
         elif status_filter == 'finished':
             qs = qs.filter(is_finished=True)
-        return Response(MPNSerializer(qs, many=True, context={'request': request}).data)
+        context = {'request': request}
+        if so_param:
+            try:
+                context['so_id'] = int(so_param)
+            except ValueError:
+                pass  # ignore a non-numeric so param → falls back to all-SO counts
+        return Response(MPNSerializer(qs, many=True, context=context).data)
     serializer = MPNSerializer(data=request.data)
     if serializer.is_valid():
         serializer.save()

@@ -135,18 +135,31 @@ class MPNSerializer(serializers.ModelSerializer):
     beforecut_photo_url = serializers.SerializerMethodField(read_only=True)
     aftercut_photo_url = serializers.SerializerMethodField(read_only=True)
     board_count = serializers.SerializerMethodField(read_only=True)
+    so_board_count = serializers.SerializerMethodField(read_only=True)
     chip_brands = serializers.SerializerMethodField(read_only=True)
     latest_board_date = serializers.SerializerMethodField(read_only=True)
+    so_latest_board_date = serializers.SerializerMethodField(read_only=True)
     slot_count = serializers.IntegerField(read_only=True)
     chips_per_board = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = MPN
-        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'cutboard_cost', 'note', 'is_finished', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count', 'chip_brands', 'latest_board_date', 'slot_count', 'chips_per_board']
+        fields = ['id', 'name', 'part_type', 'beforecut_weight', 'aftercut_weight', 'chip_qty', 'cutboard_cost', 'note', 'is_finished', 'created_at', 'beforecut_photo_url', 'aftercut_photo_url', 'board_count', 'so_board_count', 'chip_brands', 'latest_board_date', 'so_latest_board_date', 'slot_count', 'chips_per_board']
         read_only_fields = ['created_at']
 
     def get_board_count(self, obj):
         return obj.boards.count()
+
+    def get_so_board_count(self, obj):
+        """Boards of this MPN scanned within ONE SO — populated only when the
+        caller scopes the list with ?so=<id>. The same MPN legitimately recurs
+        across SOs, so board_count (all-time, all-SO) reads as a confusing
+        running total; this is the per-shipment count that resets per SO.
+        None when no SO scope was requested."""
+        so_id = self.context.get('so_id')
+        if not so_id:
+            return None
+        return obj.boards.filter(so_id=so_id).count()
 
     def get_chip_brands(self, obj):
         return list(obj.chips.values_list('brand__name', flat=True))
@@ -154,6 +167,18 @@ class MPNSerializer(serializers.ModelSerializer):
     def get_latest_board_date(self, obj):
         from django.db.models import Max
         result = obj.boards.aggregate(latest=Max('scanned_at'))['latest']
+        if result:
+            return result.strftime('%Y-%m-%d')
+        return None
+
+    def get_so_latest_board_date(self, obj):
+        """Latest board scan date for this MPN within ONE SO — the per-SO
+        counterpart to latest_board_date, populated only under ?so=<id>."""
+        so_id = self.context.get('so_id')
+        if not so_id:
+            return None
+        from django.db.models import Max
+        result = obj.boards.filter(so_id=so_id).aggregate(latest=Max('scanned_at'))['latest']
         if result:
             return result.strftime('%Y-%m-%d')
         return None

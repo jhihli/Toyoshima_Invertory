@@ -8,7 +8,7 @@ import {
 } from '@/app/ui/components';
 import { api } from '@/app/lib/api';
 import { slotCount } from '@/app/lib/chipSlots';
-import type { MPN, MPNReportConfig, MPNReportStatus } from '@/interface/IDatatable';
+import type { MPN, MPNReportConfig, MPNReportStatus, SO } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 export default function MPNsPage() {
@@ -22,6 +22,10 @@ export default function MPNsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMpn, setModalMpn] = useState<MPN | null>(null);
   const [exporting, setExporting] = useState(false);
+
+  // Optional SO scope — when set, the Boards column counts only boards scanned
+  // in that SO (a reused MPN starts at 0 per shipment). null = all-SO totals.
+  const [selectedSo, setSelectedSo] = useState<{ id: number; so_number: string } | null>(null);
 
   // Current / Finished lifecycle
   const [tab, setTab] = useState<'current' | 'finished'>('current');
@@ -63,6 +67,24 @@ export default function MPNsPage() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Refetch MPN counts scoped to the selected SO (skip the initial mount —
+  // `load` already fetched the all-SO list).
+  const loadMpns = useCallback(async (soId: number | null) => {
+    setLoading(true);
+    try {
+      const data = await api.mpns.list(soId != null ? { so: String(soId) } : {});
+      setMpns(data);
+    } catch { toast('Failed to load MPNs'); }
+    finally { setLoading(false); }
+  }, []);
+
+  const firstScopeRun = useRef(true);
+  useEffect(() => {
+    if (firstScopeRun.current) { firstScopeRun.current = false; return; }
+    loadMpns(selectedSo?.id ?? null);
+    setSelected(new Set());
+  }, [selectedSo, loadMpns]);
 
   const revokeLocalPreviews = () => {
     if (beforecutPreview) URL.revokeObjectURL(beforecutPreview);
@@ -188,13 +210,26 @@ export default function MPNsPage() {
   };
 
   const handleExport = async () => {
+    // Follow the on-screen SO scope: when an SO is selected, export that SO's
+    // own per-shipment counts (and only the MPNs actually scanned in it),
+    // not the all-time all-SO totals.
+    const so = selectedSo;
     setExporting(true);
     try {
-      const details = await Promise.all(mpns.map(m => api.mpns.get(m.id)));
+      const soCountById = new Map(mpns.map(m => [m.id, m.so_board_count ?? 0]));
+      const soDateById = new Map(mpns.map(m => [m.id, m.so_latest_board_date ?? '']));
+      const sourceMpns = so ? mpns.filter(m => (m.so_board_count ?? 0) > 0) : mpns;
+
+      if (so && sourceMpns.length === 0) {
+        toast(`No boards scanned for ${so.so_number}`);
+        return;
+      }
+
+      const details = await Promise.all(sourceMpns.map(m => api.mpns.get(m.id)));
 
       const aoa: any[][] = [[
         'MPN', 'Date Processed', 'Chip MPN',
-        'BOARDS (Scanned)', 'CUTBOARD COST', 'CHIP COST',
+        so ? `BOARDS (${so.so_number})` : 'BOARDS (Scanned)', 'CUTBOARD COST', 'CHIP COST',
       ]];
 
       const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
@@ -207,17 +242,18 @@ export default function MPNsPage() {
         const chipCost = mpn.cutboard_cost != null && nSlots > 0
           ? parseFloat((Number(mpn.cutboard_cost) / nSlots).toFixed(4))
           : null;
-        const boardCount = mpn.board_count ?? 0;
+        const boardCount = so ? (soCountById.get(mpn.id) ?? 0) : (mpn.board_count ?? 0);
+        const dateProcessed = so ? (soDateById.get(mpn.id) ?? '') : (mpn.latest_board_date ?? '');
         const startRow = currentRow;
 
         if (chips.length === 0) {
-          aoa.push([mpn.name, mpn.latest_board_date ?? '', '', boardCount, mpn.cutboard_cost ?? '', '']);
+          aoa.push([mpn.name, dateProcessed, '', boardCount, mpn.cutboard_cost ?? '', '']);
           currentRow++;
         } else {
           for (const chip of chips) {
             aoa.push([
               mpn.name,
-              mpn.latest_board_date ?? '',
+              dateProcessed,
               chip.chip_mpn || '',
               boardCount,
               mpn.cutboard_cost ?? '',
@@ -250,7 +286,7 @@ export default function MPNsPage() {
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'MPN Export');
-      XLSX.writeFile(wb, `mpn_export_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      XLSX.writeFile(wb, `mpn_export_${so ? so.so_number + '_' : ''}${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch { toast('Export failed'); }
     finally { setExporting(false); }
   };
@@ -308,6 +344,9 @@ export default function MPNsPage() {
       {isMobile ? (
         <div style={{ margin: '4px 0 14px' }}>
           <Input value={search} onChange={setSearch} placeholder="Search name or part type…" size="sm" style={{ width: '100%' }} />
+          <div style={{ marginTop: 10 }}>
+            <SoFilter selected={selectedSo} onSelect={setSelectedSo} fullWidth />
+          </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 }}>
             {!reportLoading && (
               <>
@@ -333,6 +372,7 @@ export default function MPNsPage() {
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0 14px' }}>
           <Input value={search} onChange={setSearch} placeholder="Search name or part type…" size="sm" style={{ width: 260 }} />
+          <SoFilter selected={selectedSo} onSelect={setSelectedSo} />
           <div style={{ flex: 1 }} />
           {!reportLoading && (
             <>
@@ -385,7 +425,8 @@ export default function MPNsPage() {
               />
             )}
             {!loading && filtered.map(m => {
-              const bc = m.board_count ?? 0;
+              const globalCount = m.board_count ?? 0;
+              const bc = selectedSo ? (m.so_board_count ?? 0) : globalCount;
               const sel = selected.has(m.id);
               return (
                 <div key={m.id} style={{ borderBottom: '1px solid var(--hair)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8, background: sel ? 'var(--accent-light)' : undefined }}>
@@ -415,8 +456,8 @@ export default function MPNsPage() {
                       <button onClick={() => openEdit(m)} style={iconBtn} title="Edit"><EditIcon /></button>
                       <button
                         onClick={() => handleDelete(m)}
-                        style={{ ...iconBtn, color: bc > 0 ? 'var(--ink-4)' : 'var(--err)' }}
-                        title={bc > 0 ? `${bc} board${bc !== 1 ? 's' : ''} using this MPN` : 'Delete'}
+                        style={{ ...iconBtn, color: globalCount > 0 ? 'var(--ink-4)' : 'var(--err)' }}
+                        title={globalCount > 0 ? `${globalCount} board${globalCount !== 1 ? 's' : ''} using this MPN` : 'Delete'}
                       ><TrashIcon /></button>
                     </div>
                   </div>
@@ -428,7 +469,7 @@ export default function MPNsPage() {
                       background: bc > 0 ? '#e6f4ea' : 'var(--surface-2)',
                       border: `1px solid ${bc > 0 ? '#a8d5b0' : 'var(--hair)'}`,
                       borderRadius: 3, color: bc > 0 ? '#2e7d32' : 'var(--ink-4)',
-                    }}>{bc} boards</span>
+                    }}>{bc} {selectedSo ? `in ${selectedSo.so_number}` : 'boards'}</span>
                     <span style={{ color: 'var(--ink-5)' }}>{m.created_at?.slice(0, 10) || '—'}</span>
                   </div>
                   {m.note && (
@@ -465,7 +506,7 @@ export default function MPNsPage() {
                   <th style={{ ...thS, textAlign: 'right' }}>Beforecut Weight</th>
                   <th style={{ ...thS, textAlign: 'right' }}>Aftercut Weight</th>
                   <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
-                  <th style={{ ...thS, textAlign: 'right' }}>Boards (Scanned)</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>{selectedSo ? `Boards (${selectedSo.so_number})` : 'Boards (Scanned)'}</th>
                   <th style={thS}>Created</th>
                   <th style={thS}>Note</th>
                   <th style={{ ...thS, textAlign: 'right' }}></th>
@@ -482,7 +523,8 @@ export default function MPNsPage() {
                   </td></tr>
                 )}
                 {!loading && filtered.map(m => {
-                  const bc = m.board_count ?? 0;
+                  const globalCount = m.board_count ?? 0;
+                  const bc = selectedSo ? (m.so_board_count ?? 0) : globalCount;
                   const sel = selected.has(m.id);
                   return (
                     <tr key={m.id} style={{ borderBottom: '1px solid var(--hair)', background: sel ? 'var(--accent-light)' : undefined }}>
@@ -528,8 +570,8 @@ export default function MPNsPage() {
                           <button onClick={() => openEdit(m)} style={iconBtn} title="Edit"><EditIcon /></button>
                           <button
                             onClick={() => handleDelete(m)}
-                            style={{ ...iconBtn, color: bc > 0 ? 'var(--ink-4)' : 'var(--err)' }}
-                            title={bc > 0 ? `${bc} board${bc !== 1 ? 's' : ''} using this MPN` : 'Delete'}
+                            style={{ ...iconBtn, color: globalCount > 0 ? 'var(--ink-4)' : 'var(--err)' }}
+                            title={globalCount > 0 ? `${globalCount} board${globalCount !== 1 ? 's' : ''} using this MPN` : 'Delete'}
                           ><TrashIcon /></button>
                         </div>
                       </td>
@@ -624,6 +666,99 @@ export default function MPNsPage() {
           </div>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+/** Searchable SO picker. When an SO is chosen, the MPN list's Boards column
+ * counts only boards scanned in that SO — so a reused MPN reads 0 per shipment
+ * instead of its confusing all-time, all-SO running total. */
+function SoFilter({ selected, onSelect, fullWidth }: {
+  selected: { id: number; so_number: string } | null;
+  onSelect: (so: { id: number; so_number: string } | null) => void;
+  fullWidth?: boolean;
+}) {
+  const [query, setQuery] = useState('');
+  const [options, setOptions] = useState<SO[]>([]);
+  const [open, setOpen] = useState(false);
+  const boxRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const t = setTimeout(async () => {
+      try {
+        const q = query.trim();
+        const res = await api.sos.list(q ? { q, page_size: 20 } : { page_size: 20 });
+        setOptions(res.results);
+      } catch { /* leave options as-is on a failed search */ }
+    }, 250);
+    return () => clearTimeout(t);
+  }, [query, open]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => {
+      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  if (selected) {
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        background: 'var(--accent-tint)', border: '1px solid #afd2ea', borderRadius: 3,
+        padding: '4px 6px 4px 10px', fontSize: 12.5, color: '#1a5f8b',
+        whiteSpace: 'nowrap', height: 32, boxSizing: 'border-box',
+      }}>
+        <span style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#5a9cbf' }}>SO</span>
+        <span className="mono">{selected.so_number}</span>
+        <button
+          onClick={() => onSelect(null)}
+          title="Clear SO filter"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#5a9cbf', padding: 0, display: 'inline-flex', lineHeight: 1, fontSize: 16 }}
+        >×</button>
+      </span>
+    );
+  }
+
+  return (
+    <div ref={boxRef} style={{ position: 'relative', width: fullWidth ? '100%' : 200 }}>
+      <input
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Count by SO…"
+        style={{
+          width: '100%', boxSizing: 'border-box', height: 32, padding: '0 10px',
+          fontSize: 13, fontFamily: 'inherit', border: '1px solid var(--hair)',
+          borderRadius: 4, background: 'var(--surface)', color: 'var(--ink)', outline: 'none',
+        }}
+      />
+      {open && options.length > 0 && (
+        <div style={{
+          position: 'absolute', zIndex: 30, top: 'calc(100% + 4px)', left: 0, right: 0,
+          background: 'var(--surface)', border: '1px solid var(--hair)', borderRadius: 4,
+          maxHeight: 260, overflowY: 'auto', boxShadow: '0 6px 18px rgba(0,0,0,0.10)',
+        }}>
+          {options.map(so => (
+            <button
+              key={so.id}
+              onClick={() => { onSelect({ id: so.id, so_number: so.so_number }); setOpen(false); setQuery(''); }}
+              style={{
+                display: 'flex', alignItems: 'baseline', gap: 8, width: '100%', textAlign: 'left',
+                padding: '7px 10px', background: 'transparent', border: 'none', cursor: 'pointer',
+                fontSize: 13, color: 'var(--ink)', fontFamily: 'inherit',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+            >
+              <span className="mono">{so.so_number}</span>
+              <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>{so.vendor_name}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

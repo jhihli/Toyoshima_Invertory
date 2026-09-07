@@ -127,6 +127,12 @@ export interface MPN {
   beforecut_photo_url?: string | null;
   aftercut_photo_url?: string | null;
   board_count?: number;
+  /** Boards of this MPN scanned within ONE SO. Present only when the list was
+   * fetched with a `so` scope; null/undefined otherwise. */
+  so_board_count?: number | null;
+  /** Latest board scan date within the scoped SO — the per-SO counterpart to
+   * latest_board_date. Present only under a `so` scope. */
+  so_latest_board_date?: string | null;
   chip_brands: string[];
   note?: string;
   /** True once we're done harvesting this part number — hidden from the Add-board dropdown. */
