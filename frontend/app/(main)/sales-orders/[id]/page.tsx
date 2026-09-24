@@ -6,6 +6,8 @@ import type { SODetail, Pallet, PalletPhoto } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 import { crumbCache, palletCrumb } from '@/app/lib/crumbCache';
 import { printLabels } from '@/app/lib/printLabels';
+import ExcelJS from 'exceljs';
+import { saveAs } from 'file-saver';
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 const IPlus = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>;
@@ -549,6 +551,69 @@ export default function SODetailPage() {
     }));
   };
 
+  // Export this SO's pallets to an .xlsx — an SO header block + the pallets
+  // table (matching the on-screen columns) with In-WT / Qty totals.
+  const handleExport = async () => {
+    if (!so) return;
+    const rows = [...pallets].sort((a, b) => a.pallet_seq - b.pallet_seq);
+    if (!rows.length) { showToast('Nothing to export', 'err'); return; }
+    showToast('Preparing export…');
+    try {
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Pallets');
+      ws.columns = [
+        { width: 10 }, { width: 20 }, { width: 14 }, { width: 16 },
+        { width: 14 }, { width: 18 }, { width: 18 }, { width: 12 },
+      ];
+
+      // SO header block
+      const title = ws.addRow([`Sales Order ${so.so_number}`]);
+      title.font = { bold: true, size: 14 };
+      ws.addRow(['Vendor', so.vendor_name || '']);
+      ws.addRow(['Inbound', so.inbound_date || '']);
+      ws.addRow(['Outbound', so.outbound_date || '']);
+      ws.addRow(['Pallets', so.total_pallet_count ?? so.pallet_record_count ?? rows.length]);
+      ws.addRow([]);
+
+      // Table header (teal, matching the MSFT export style)
+      const HDR_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF156082' } };
+      const HDR_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' } };
+      const hdr = ws.addRow(['Pallet #', 'Barcode', 'Date', 'Location', 'Gateload No', 'Material Type', 'In WT Gross (lb)', 'Pallet Qty']);
+      hdr.eachCell(c => { c.fill = HDR_FILL; c.font = HDR_FONT; });
+
+      const firstDataRow = hdr.number + 1;
+      for (const p of rows) {
+        const inWt = p.in_weight_gross != null && p.in_weight_gross !== '' ? parseFloat(p.in_weight_gross) : '';
+        const r = ws.addRow([
+          p.pallet_seq,
+          p.licence_number || '',
+          p.created_at ? new Date(p.created_at).toLocaleDateString('en-CA') : '',
+          p.location || '',
+          p.gateload_number || '',
+          p.material_type || '',
+          inWt,
+          p.qty ?? '',
+        ]);
+        r.getCell(7).numFmt = '0.0000';
+      }
+      const lastDataRow = ws.lastRow!.number;
+
+      // Totals row (In-WT gross + pallet qty), matching the on-screen footer
+      const totals = ws.addRow([]);
+      totals.getCell(6).value = 'Total';
+      totals.getCell(6).font = { bold: true };
+      totals.getCell(7).value = { formula: `SUM(G${firstDataRow}:G${lastDataRow})` };
+      totals.getCell(7).numFmt = '0.0000';
+      totals.getCell(7).font = { bold: true };
+      totals.getCell(8).value = { formula: `SUM(H${firstDataRow}:H${lastDataRow})` };
+      totals.getCell(8).font = { bold: true };
+
+      const buf = await wb.xlsx.writeBuffer();
+      saveAs(new Blob([buf], { type: 'application/octet-stream' }), `${so.so_number}-pallets-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      showToast('Export ready');
+    } catch { showToast('Export failed', 'err'); }
+  };
+
   if (loading) return <div style={{ padding: 40, color: 'var(--ink-4)' }}>Loading…</div>;
   if (!so) return <div style={{ padding: 40, color: '#b91c1c' }}>Order not found.</div>;
 
@@ -605,7 +670,7 @@ export default function SODetailPage() {
                     </div>
                   ))}
                 </div>
-                <button style={{ ...BtnGhost, width: '100%', justifyContent: 'center' }}><IExport /> Export</button>
+                <button onClick={handleExport} style={{ ...BtnGhost, width: '100%', justifyContent: 'center' }}><IExport /> Export</button>
               </>
             )}
           </div>
@@ -635,7 +700,7 @@ export default function SODetailPage() {
             {/* Action buttons */}
             <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
               <button onClick={() => router.push('/sales-orders')} style={BtnGhost}><IChevL /> Back</button>
-              <button style={BtnGhost}><IExport /> Export</button>
+              <button onClick={handleExport} style={BtnGhost}><IExport /> Export</button>
             </div>
           </div>
         )}
