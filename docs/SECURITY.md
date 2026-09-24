@@ -215,6 +215,31 @@ const wb = XLSX.read(ev.target?.result, ...);    // 在用户浏览器内解析
   `xlsx`、`antd`、`exceljs` 等，导致构建失败；在刚经历供应链风险后，一次性引入大量
   未经验证的新版本本身即是风险
 
+### 依赖漏洞复核（2026-09-24）
+
+**背景：** Dependabot 升至 **18 条（6 critical、10 high、2 低）**，本地 `npm audit` 为
+16 条（2 critical）。与 8/27 不同，本次的 `next` 公告是**生产相关**的，因此处理。
+
+**前端已处理（`npm run build` 验证通过）：**
+
+| 包 | 动作 | 说明 |
+|---|---|---|
+| `next` 15.1.12 → **15.5.26** | 升级（v15 内小版本，非跨大版本） | 清除 critical：Image Optimization 内容注入 + 缓存键混淆（**非** dev-only，生产 `/_next/image` 暴露）；顺带清除 `sharp` high |
+| `next-auth` → patched | `npm audit fix` | 清除 critical：`getToken()` 遇畸形 Bearer 头抛未捕获异常（DoS，与是否用 Email provider 无关） |
+| `postcss` 8.5.1 → **8.5.28** | 升级 | 清除 Tailwind 链上的 postcss high（XSS/任意文件读） |
+| 传递依赖 | `npm audit fix`（非 force） | brace-expansion / browserslist / glob / minimatch / nanoid / picomatch / yaml / @babel/runtime / postcss-selector-parser |
+
+结果：**16 → 5 条，critical 2 → 0**。
+
+**仍保留（低风险，刻意不处理）：**
+- `next` **内置的** `postcss@8.4.31`（high）—— 构建期、仅处理本项目自有 CSS，唯一修复路径是 `next@16` 大版本，违反「勿一次性引入未验证大版本」原则。
+- `xlsx@0.18.5`（high）—— 见上节，npm 无修复版本，需重构到 `exceljs`。
+- `exceljs → uuid`（moderate）—— 修复需把 `exceljs` 降到 3.x（破坏性），且 `uuid` 的 buf 越界路径本项目从不触发。
+
+**后端待办：** `requirements.txt` 里 `Django==5.1.6` 被 Dependabot 标记（GitHub 多出的 critical 基本来自这里）。Django **5.1 系列已 EOL**（安全支持约 2025-12 结束）。
+- 即时、低风险：`Django==5.1.15`（同特性线补丁升级，Django 稳定性策略保证无 API 变更，清除现有告警）。
+- 正确的长期方案：升到 **5.2.x LTS（5.2.17，支持到 2028-04）** —— 属特性升级，须 `manage.py check` + `migrate` + 冒烟测试后再上线。
+
 ---
 
 ## 四、网络隔离计划（**搬迁到仓库后执行**）
