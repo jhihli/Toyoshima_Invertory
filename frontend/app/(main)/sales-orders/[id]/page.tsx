@@ -603,7 +603,7 @@ export default function SODetailPage() {
       const ws = wb.addWorksheet('Pallets');
       ws.columns = [
         { width: 8 },   // Pallet #
-        { width: 10 },  // Image
+        { width: 28 },  // Image — wide enough for the ~190px inline photo
         { width: 18 },  // Barcode
         { width: 13 },  // Date
         { width: 14 },  // Location
@@ -644,19 +644,19 @@ export default function SODetailPage() {
           inWt,
           p.qty ?? '',
         ]);
-        r.height = 42;                              // room for the ~50px thumbnail
+        r.height = 146;                            // room for the ~190px inline photo
         r.alignment = { vertical: 'middle' };
         r.getCell(8).numFmt = '0.0000';            // In WT Gross column
 
         const t = thumbs.get(p.id);
         if (t) {
-          // Compact inline display (~50px) regardless of the embedded pixels —
-          // Excel keeps the full 1400px, so resizing the picture stays sharp.
-          const box = 50;
+          // Larger inline display (~190px) so the photo reads without zooming;
+          // the embedded pixels stay 1400px, so it's crisp and still zoomable.
+          const box = 190;
           const s = Math.min(box / t.w, box / t.h);
           const imageId = wb.addImage({ base64: t.dataUrl.replace(/^data:[^,]+,/, ''), extension: 'jpeg' });
           ws.addImage(imageId, {
-            tl: { col: 1.1, row: (r.number - 1) + 0.12 },
+            tl: { col: 1.05, row: (r.number - 1) + 0.06 },
             ext: { width: Math.round(t.w * s), height: Math.round(t.h * s) },
             editAs: 'oneCell',
           });
