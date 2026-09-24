@@ -458,16 +458,18 @@ function PalletModal({ open, mode, initial, onClose, onSubmit }: {
 }
 
 // ── Main Page ───────────────────────────────────────────────────────────────────
-/** Load an image URL and return a small JPEG thumbnail (data URL) + its
- * dimensions, for embedding in the Excel export. Downscaling keeps the .xlsx
- * from ballooning (raw phone photos are multi-MB each). Returns null if the
- * image can't load or the canvas is tainted (cross-origin without CORS). */
+/** Load an image URL and return a JPEG (data URL) + its dimensions, for
+ * embedding in the Excel export. We cap the longest edge at 1400px (down from
+ * the multi-MB phone original) so the .xlsx stays a few MB, but keep it high
+ * enough that Excel's own zoom (放大) on the embedded picture is sharp enough
+ * to read the pallet label. Returns null if the image can't load or the canvas
+ * is tainted (cross-origin without CORS). */
 async function loadExcelThumb(url: string): Promise<{ dataUrl: string; w: number; h: number } | null> {
   return new Promise(resolve => {
     const img = new window.Image();
     img.crossOrigin = 'anonymous';
     img.onload = () => {
-      const max = 160;
+      const max = 1400;
       const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
       const w = Math.max(1, Math.round(img.naturalWidth * scale));
       const h = Math.max(1, Math.round(img.naturalHeight * scale));
@@ -476,7 +478,7 @@ async function loadExcelThumb(url: string): Promise<{ dataUrl: string; w: number
       const ctx = canvas.getContext('2d');
       if (!ctx) { resolve(null); return; }
       ctx.drawImage(img, 0, 0, w, h);
-      try { resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.72), w, h }); }
+      try { resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.82), w, h }); }
       catch { resolve(null); }   // tainted canvas
     };
     img.onerror = () => resolve(null);
@@ -648,12 +650,15 @@ export default function SODetailPage() {
 
         const t = thumbs.get(p.id);
         if (t) {
+          // Compact inline display (~50px) regardless of the embedded pixels —
+          // Excel keeps the full 1400px, so resizing the picture stays sharp.
           const box = 50;
           const s = Math.min(box / t.w, box / t.h);
           const imageId = wb.addImage({ base64: t.dataUrl.replace(/^data:[^,]+,/, ''), extension: 'jpeg' });
           ws.addImage(imageId, {
             tl: { col: 1.1, row: (r.number - 1) + 0.12 },
             ext: { width: Math.round(t.w * s), height: Math.round(t.h * s) },
+            editAs: 'oneCell',
           });
         }
       }
