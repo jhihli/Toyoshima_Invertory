@@ -603,7 +603,7 @@ export default function SODetailPage() {
       const ws = wb.addWorksheet('Pallets');
       ws.columns = [
         { width: 8 },   // Pallet #
-        { width: 28 },  // Image — wide enough for the ~190px inline photo
+        { width: 29 },  // Image — wider than the ~185px photo so it can't overflow
         { width: 18 },  // Barcode
         { width: 13 },  // Date
         { width: 14 },  // Location
@@ -644,19 +644,21 @@ export default function SODetailPage() {
           inWt,
           p.qty ?? '',
         ]);
-        r.height = 146;                            // room for the ~190px inline photo
+        r.height = 150;                            // ~200px — keeps headroom over the ~185px photo
         r.alignment = { vertical: 'middle' };
         r.getCell(8).numFmt = '0.0000';            // In WT Gross column
 
         const t = thumbs.get(p.id);
         if (t) {
-          // Larger inline display (~190px) so the photo reads without zooming;
+          // Larger inline display (~185px) so the photo reads without zooming;
           // the embedded pixels stay 1400px, so it's crisp and still zoomable.
-          const box = 190;
+          // The box is kept safely under the row height / column width (with only
+          // a tiny anchor offset) so the picture never spills past its cell.
+          const box = 185;
           const s = Math.min(box / t.w, box / t.h);
           const imageId = wb.addImage({ base64: t.dataUrl.replace(/^data:[^,]+,/, ''), extension: 'jpeg' });
           ws.addImage(imageId, {
-            tl: { col: 1.05, row: (r.number - 1) + 0.06 },
+            tl: { col: 1.03, row: (r.number - 1) + 0.03 },
             ext: { width: Math.round(t.w * s), height: Math.round(t.h * s) },
             editAs: 'oneCell',
           });
