@@ -458,6 +458,32 @@ function PalletModal({ open, mode, initial, onClose, onSubmit }: {
 }
 
 // ── Main Page ───────────────────────────────────────────────────────────────────
+/** Load an image URL and return a small JPEG thumbnail (data URL) + its
+ * dimensions, for embedding in the Excel export. Downscaling keeps the .xlsx
+ * from ballooning (raw phone photos are multi-MB each). Returns null if the
+ * image can't load or the canvas is tainted (cross-origin without CORS). */
+async function loadExcelThumb(url: string): Promise<{ dataUrl: string; w: number; h: number } | null> {
+  return new Promise(resolve => {
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const max = 160;
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(null); return; }
+      ctx.drawImage(img, 0, 0, w, h);
+      try { resolve({ dataUrl: canvas.toDataURL('image/jpeg', 0.72), w, h }); }
+      catch { resolve(null); }   // tainted canvas
+    };
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
 export default function SODetailPage() {
   const { id } = useParams<{ id: string }>();
   const soId = Number(id);
@@ -552,18 +578,37 @@ export default function SODetailPage() {
   };
 
   // Export this SO's pallets to an .xlsx — an SO header block + the pallets
-  // table (matching the on-screen columns) with In-WT / Qty totals.
+  // table (matching the on-screen columns, with each pallet's photo embedded)
+  // and In-WT / Qty totals.
   const handleExport = async () => {
     if (!so) return;
     const rows = [...pallets].sort((a, b) => a.pallet_seq - b.pallet_seq);
     if (!rows.length) { showToast('Nothing to export', 'err'); return; }
     showToast('Preparing export…');
     try {
+      // Fetch + downscale each pallet's first photo in parallel; failures are
+      // skipped so the export still succeeds without them.
+      const thumbs = new Map<number, { dataUrl: string; w: number; h: number }>();
+      await Promise.all(rows.map(async p => {
+        const ph = (p.photos || [])[0];
+        const url = ph?.image_url || ph?.image;
+        if (!url) return;
+        const t = await loadExcelThumb(url);
+        if (t) thumbs.set(p.id, t);
+      }));
+
       const wb = new ExcelJS.Workbook();
       const ws = wb.addWorksheet('Pallets');
       ws.columns = [
-        { width: 10 }, { width: 20 }, { width: 14 }, { width: 16 },
-        { width: 14 }, { width: 18 }, { width: 18 }, { width: 12 },
+        { width: 8 },   // Pallet #
+        { width: 10 },  // Image
+        { width: 18 },  // Barcode
+        { width: 13 },  // Date
+        { width: 14 },  // Location
+        { width: 13 },  // Gateload No
+        { width: 16 },  // Material Type
+        { width: 16 },  // In WT Gross (lb)
+        { width: 11 },  // Pallet Qty
       ];
 
       // SO header block
@@ -578,14 +623,17 @@ export default function SODetailPage() {
       // Table header (teal, matching the MSFT export style)
       const HDR_FILL: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF156082' } };
       const HDR_FONT: Partial<ExcelJS.Font> = { bold: true, color: { argb: 'FFFFFFFF' } };
-      const hdr = ws.addRow(['Pallet #', 'Barcode', 'Date', 'Location', 'Gateload No', 'Material Type', 'In WT Gross (lb)', 'Pallet Qty']);
+      const hdr = ws.addRow(['Pallet #', 'Image', 'Barcode', 'Date', 'Location', 'Gateload No', 'Material Type', 'In WT Gross (lb)', 'Pallet Qty']);
       hdr.eachCell(c => { c.fill = HDR_FILL; c.font = HDR_FONT; });
 
-      const firstDataRow = hdr.number + 1;
+      let totalInWt = 0, totalQty = 0;
       for (const p of rows) {
         const inWt = p.in_weight_gross != null && p.in_weight_gross !== '' ? parseFloat(p.in_weight_gross) : '';
+        if (typeof inWt === 'number') totalInWt += inWt;
+        totalQty += Number(p.qty || 0);
         const r = ws.addRow([
           p.pallet_seq,
+          '',   // Image — filled by the anchored picture below
           p.licence_number || '',
           p.created_at ? new Date(p.created_at).toLocaleDateString('en-CA') : '',
           p.location || '',
@@ -594,19 +642,32 @@ export default function SODetailPage() {
           inWt,
           p.qty ?? '',
         ]);
-        r.getCell(7).numFmt = '0.0000';
-      }
-      const lastDataRow = ws.lastRow!.number;
+        r.height = 42;                              // room for the ~50px thumbnail
+        r.alignment = { vertical: 'middle' };
+        r.getCell(8).numFmt = '0.0000';            // In WT Gross column
 
-      // Totals row (In-WT gross + pallet qty), matching the on-screen footer
+        const t = thumbs.get(p.id);
+        if (t) {
+          const box = 50;
+          const s = Math.min(box / t.w, box / t.h);
+          const imageId = wb.addImage({ base64: t.dataUrl.replace(/^data:[^,]+,/, ''), extension: 'jpeg' });
+          ws.addImage(imageId, {
+            tl: { col: 1.1, row: (r.number - 1) + 0.12 },
+            ext: { width: Math.round(t.w * s), height: Math.round(t.h * s) },
+          });
+        }
+      }
+
+      // Totals row — computed literals so the value always shows, even in
+      // viewers that don't recalculate formulas.
       const totals = ws.addRow([]);
-      totals.getCell(6).value = 'Total';
-      totals.getCell(6).font = { bold: true };
-      totals.getCell(7).value = { formula: `SUM(G${firstDataRow}:G${lastDataRow})` };
-      totals.getCell(7).numFmt = '0.0000';
+      totals.getCell(7).value = 'Total';
       totals.getCell(7).font = { bold: true };
-      totals.getCell(8).value = { formula: `SUM(H${firstDataRow}:H${lastDataRow})` };
+      totals.getCell(8).value = Number(totalInWt.toFixed(4));
+      totals.getCell(8).numFmt = '0.0000';
       totals.getCell(8).font = { bold: true };
+      totals.getCell(9).value = totalQty;
+      totals.getCell(9).font = { bold: true };
 
       const buf = await wb.xlsx.writeBuffer();
       saveAs(new Blob([buf], { type: 'application/octet-stream' }), `${so.so_number}-pallets-${new Date().toISOString().slice(0, 10)}.xlsx`);
