@@ -101,35 +101,42 @@ Frontend config at `frontend/.env.local`:
 
 The server runs bare Python + native Postgres (no Docker). Stack:
 - **nginx** — reverse proxy (port 80/443 → internal services)
-- **gunicorn** — serves Django on port 8000
-- **Next.js** — serves frontend on port 3000
+- **gunicorn** — serves Django on port 8000 (managed by the `toyoshima-backend` systemd unit)
+- **Next.js** — serves frontend on port 3000 (managed by the `toyoshima-frontend` systemd unit)
 - **PostgreSQL** — database
 - **Let's Encrypt** — SSL cert (auto-renews via certbot)
+
+**Services run under systemd** (`toyoshima-backend`, `toyoshima-frontend`) — start/stop/restart
+with `systemctl`. **Never** use `nohup` or `gunicorn --daemon` — that spawns duplicate, unmanaged
+processes alongside the systemd-owned ones. This is deliberate hardening after the 2026-08 incident;
+see `docs/SECURITY.md`. The deploy directory is `~/Toyoshima_Invertory` (misspelled, matching the repo name).
 
 ### Update procedure
 
 ```bash
-cd ~/Toyoshima_Inventory
+cd ~/Toyoshima_Invertory      # note: repo/dir name is misspelled "Invertory"
 git pull origin main
 
-# Backend
+# Backend — only if backend/ changed
 cd backend/server
 source venv/bin/activate
-pip install -r requirements.txt
-python manage.py migrate
-pkill -f gunicorn
-gunicorn server.wsgi:application --bind 0.0.0.0:8000 --workers 3 --daemon --log-file /tmp/gunicorn.log
+pip install -r requirements.txt      # only when requirements.txt changed
+python manage.py migrate             # only when there are new migrations
+sudo systemctl restart toyoshima-backend
+sudo systemctl status toyoshima-backend    # confirm active (running)
 
-# Frontend
+# Frontend — only if frontend/ changed
 cd ../../frontend
-npm install
+npm install                          # only when package.json / lockfile changed
 npm run build
-pkill -f "next start"
-nohup npm run start -- -p 3000 > /tmp/nextjs.log 2>&1 &
+sudo systemctl restart toyoshima-frontend
+sudo systemctl status toyoshima-frontend   # confirm active (running)
 
-# Reload nginx if config changed
+# Reload nginx only if its config changed
 sudo nginx -t && sudo systemctl reload nginx
 ```
+
+Logs: `journalctl -u toyoshima-frontend -n 100` (or `-u toyoshima-backend`), `-f` to follow.
 
 ### nginx config location
 `/etc/nginx/sites-enabled/toyoshimainventory` — proxies:
@@ -139,7 +146,7 @@ sudo nginx -t && sudo systemctl reload nginx
 - `/` → Next.js on port 3000
 
 ### Server network notes
-- Server LAN IP: `192.168.0.15` (may change on reboot — router port forwarding must match)
+- Server LAN IP: `192.168.1.196` (may change on reboot — router port forwarding must match)
 - Router public IP: `72.183.39.29` (domain `toyoshimainventory.com` points here)
 - Port forwarding on router: 80, 443 → server LAN IP
 - **Hairpin NAT limitation:** devices on the same WiFi band as the server cannot access via domain name. Use the 5GHz band (`toyoshima-5G`) when accessing the site from within the office.
