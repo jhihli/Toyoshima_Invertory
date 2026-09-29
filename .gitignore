@@ -71,3 +71,6 @@ local-only/
 .env.bak*
 .env.*.bak*
 .env*.bak*
+
+# Frontend MSFT panel - local-only, restored for local push UI; never deploy (see docs/MSFT_LOCAL.md)
+MsftReportPanel.tsx

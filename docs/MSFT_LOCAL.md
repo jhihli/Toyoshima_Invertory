@@ -2,6 +2,7 @@
 
 > 生效日期：2026-08-26
 > 背景：见 [SECURITY.md](SECURITY.md)
+> 端到端上报流程 + 字段映射 + 实战坑：见 [MSFT_API_WORKFLOW.md](MSFT_API_WORKFLOW.md)
 
 ---
 
