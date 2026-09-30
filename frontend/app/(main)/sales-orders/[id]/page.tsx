@@ -21,6 +21,7 @@ const IImage = () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
 const IClose = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>;
 const IPrint = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>;
 const IBox = () => <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
+const IBoxSm = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>;
 const IChevD = () => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"/></svg>;
 const IKebab = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>;
 
@@ -928,6 +929,7 @@ export default function SODetailPage() {
                 <div onClick={() => setMenu(null)} style={{ position: 'fixed', inset: 0, zIndex: 190 }} />
                 <div onClick={e => e.stopPropagation()}
                   style={{ position: 'fixed', top: menu.top, right: menu.right, zIndex: 200, minWidth: 168, background: 'var(--surface)', border: '1px solid var(--hair-strong)', borderRadius: 11, boxShadow: '0 12px 32px rgba(20,30,20,0.18)', padding: 5 }}>
+                  <MenuItem icon={<IBoxSm />} label="Boxes & checklist" onClick={() => { const p = menu.p; setMenu(null); router.push(`/sales-orders/${soId}/pallets/${p.id}`); }} />
                   <MenuItem icon={<IEdit />} label="Edit" onClick={() => { const p = menu.p; setMenu(null); setPalletModal({ mode: 'edit', item: p }); }} />
                   <MenuItem icon={<ITrash />} label="Delete" danger onClick={() => { const p = menu.p; setMenu(null); setDeleteConfirm(p); }} />
                 </div>
@@ -957,7 +959,7 @@ export default function SODetailPage() {
                   <th style={Th}>Material Type</th>
                   <th style={ThR}>In WT Gross (lb)</th>
                   <th style={ThR}>Pallet Qty</th>
-                  <th style={{ ...Th, width: 72 }}></th>
+                  <th style={{ ...Th, width: 108 }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -1025,6 +1027,10 @@ export default function SODetailPage() {
                     {/* Actions */}
                     <td style={TdR} onClick={e => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: 5, justifyContent: 'flex-end' }}>
+                        <button title="Boxes & checklist" onClick={() => router.push(`/sales-orders/${soId}/pallets/${p.id}`)}
+                          style={{ width: 30, height: 30, borderRadius: 7, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
+                          <IBoxSm />
+                        </button>
                         <button title="Edit" onClick={() => setPalletModal({ mode: 'edit', item: p })}
                           style={{ width: 30, height: 30, borderRadius: 7, background: 'var(--surface-2)', border: '1px solid var(--hair)', color: 'var(--ink-3)', display: 'grid', placeItems: 'center', cursor: 'pointer' }}>
                           <IEdit />
