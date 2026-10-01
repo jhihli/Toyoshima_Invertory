@@ -32,7 +32,8 @@ export default function ChecklistView() {
   return (
     <div style={{ padding: isMobile ? '12px 12px 40px' : '22px 28px 40px' }}>
       <ChecklistCard palletId={pId} soNumber={soNumber} palletLabel={palletLabel}
-        palletBarcode={palletBarcode} isMobile={isMobile} showToast={showToast} />
+        palletBarcode={palletBarcode} isMobile={isMobile} showToast={showToast}
+        chipMode={base === 'sos'} boardsHref={`/sos/${soId}?tab=boards&pallet=${pId}`} />
 
       <button onClick={() => router.push(`/${base}/${soId}/pallets/${pId}`)} style={{ ...BtnGhost, marginTop: 18 }}>
         <IBack /> Back to {palletLabel}

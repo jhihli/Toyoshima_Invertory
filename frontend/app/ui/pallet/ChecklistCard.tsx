@@ -1,7 +1,8 @@
 'use client';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { api } from '@/app/lib/api';
-import type { Checklist } from '@/interface/IDatatable';
+import Link from 'next/link';
+import { api, apiErrorMessage } from '@/app/lib/api';
+import type { Checklist, ChipOptionGroup } from '@/interface/IDatatable';
 import { printLabels } from '@/app/lib/printLabels';
 import {
   IPlus, IEdit, ITrash, IPrint,
@@ -28,20 +29,56 @@ function parseQty(raw: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+// ── Chip picker (MSFT orders) ───────────────────────────────────────────────────
+/** One dropdown, grouped by the pallet's boards (MPNs). Picking a chip sets both the
+ *  brand and the model — the server copies them from the chip. */
+function ChipSelect({ groups, value, onChange, boardsHref }: {
+  groups: ChipOptionGroup[]; value: string; onChange: (v: string) => void; boardsHref?: string;
+}) {
+  if (groups.length === 0) {
+    return (
+      <div style={{ ...InputSty, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, color: 'var(--ink-4)', fontSize: 13, height: 'auto', minHeight: 40 }}>
+        No boards assigned to this pallet yet.
+        {boardsHref && <Link href={boardsHref} style={{ color: 'var(--accent-2)', fontWeight: 600 }}>Add them on the Boards tab</Link>}
+      </div>
+    );
+  }
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)} style={{ ...InputSty, cursor: 'pointer' }}>
+      <option value="">— Select a chip —</option>
+      {groups.map(g => (
+        <optgroup key={g.mpn_id} label={g.mpn_name}>
+          {g.chips.map(c => (
+            <option key={c.id} value={String(c.id)}>
+              {[c.brand_name, c.chip_mpn].filter(Boolean).join(' · ') || `Chip #${c.id}`}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </select>
+  );
+}
+
 // ── Add modal ───────────────────────────────────────────────────────────────────
-function AddModal({ open, palletBarcode, nextSeq, onClose, onSubmit }: {
-  open: boolean; palletBarcode: string; nextSeq: number; onClose: () => void;
-  onSubmit: (d: { count: number; brand: string; model: string; qty: number | null }) => Promise<void>;
+type AddPayload = { count: number; brand: string; model: string; chip: number | null; qty: number | null };
+
+function AddModal({ open, palletBarcode, nextSeq, chipGroups, boardsHref, onClose, onSubmit }: {
+  open: boolean; palletBarcode: string; nextSeq: number;
+  /** null = free-text Brand/Model (Sales Orders); an array = chip dropdown (MSFT). */
+  chipGroups: ChipOptionGroup[] | null; boardsHref?: string;
+  onClose: () => void;
+  onSubmit: (d: AddPayload) => Promise<void>;
 }) {
   const [count, setCount] = useState('1');
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
+  const [chip, setChip] = useState('');
   const [qty, setQty] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (open) { setCount('1'); setBrand(''); setModel(''); setQty(''); setError(''); }
+    if (open) { setCount('1'); setBrand(''); setModel(''); setChip(''); setQty(''); setError(''); }
   }, [open]);
 
   const n = clampCount(count);
@@ -52,9 +89,11 @@ function AddModal({ open, palletBarcode, nextSeq, onClose, onSubmit }: {
   const handleSubmit = async () => {
     setSaving(true); setError('');
     try {
-      await onSubmit({ count: n, brand: brand.trim(), model: model.trim(), qty: parseQty(qty) });
+      await onSubmit(chipGroups !== null
+        ? { count: n, brand: '', model: '', chip: chip ? +chip : null, qty: parseQty(qty) }
+        : { count: n, brand: brand.trim(), model: model.trim(), chip: null, qty: parseQty(qty) });
       onClose();
-    } catch (e: any) { setError(e.message || 'Failed to save'); }
+    } catch (e: any) { setError(apiErrorMessage(e) || e.message || 'Failed to save'); }
     finally { setSaving(false); }
   };
 
@@ -72,16 +111,23 @@ function AddModal({ open, palletBarcode, nextSeq, onClose, onSubmit }: {
               Numbering continues across the whole pallet — next up is <b className="mono" style={{ color: 'var(--ink-3)' }}>{nextSeq}</b>.
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-            <div style={{ flex: 1 }}>
-              <div style={FieldLabel}>Brand <span style={OptionalSty}>optional</span></div>
-              <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="Dell" style={InputSty} />
+          {chipGroups !== null ? (
+            <div style={{ marginBottom: 14 }}>
+              <div style={FieldLabel}>Chip <span style={OptionalSty}>optional</span></div>
+              <ChipSelect groups={chipGroups} value={chip} onChange={setChip} boardsHref={boardsHref} />
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={FieldLabel}>Model <span style={OptionalSty}>optional</span></div>
-              <input value={model} onChange={e => setModel(e.target.value)} placeholder="OptiPlex 7010" style={InputSty} />
+          ) : (
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+              <div style={{ flex: 1 }}>
+                <div style={FieldLabel}>Brand <span style={OptionalSty}>optional</span></div>
+                <input value={brand} onChange={e => setBrand(e.target.value)} placeholder="Dell" style={InputSty} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={FieldLabel}>Model <span style={OptionalSty}>optional</span></div>
+                <input value={model} onChange={e => setModel(e.target.value)} placeholder="OptiPlex 7010" style={InputSty} />
+              </div>
             </div>
-          </div>
+          )}
           <div style={{ marginBottom: 14 }}>
             <div style={FieldLabel}>Qty <span style={OptionalSty}>optional</span></div>
             <input type="number" value={qty} onChange={e => setQty(e.target.value)} placeholder="Applied to all created rows…" style={InputSty} />
@@ -101,19 +147,26 @@ function AddModal({ open, palletBarcode, nextSeq, onClose, onSubmit }: {
 }
 
 // ── Edit modal ──────────────────────────────────────────────────────────────────
-function EditModal({ row, onClose, onSubmit }: {
-  row: Checklist | null; onClose: () => void;
-  onSubmit: (d: { brand: string; model: string; qty: number | null }) => Promise<void>;
+type EditPayload = { brand?: string; model?: string; chip?: number | null; qty: number | null };
+
+function EditModal({ row, chipGroups, boardsHref, onClose, onSubmit }: {
+  row: Checklist | null;
+  /** null = free-text Brand/Model (Sales Orders); an array = chip dropdown (MSFT). */
+  chipGroups: ChipOptionGroup[] | null; boardsHref?: string;
+  onClose: () => void; onSubmit: (d: EditPayload) => Promise<void>;
 }) {
   const [brand, setBrand] = useState('');
   const [model, setModel] = useState('');
+  const [chip, setChip] = useState('');
   const [qty, setQty] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const chipMode = chipGroups !== null;
 
   useEffect(() => {
     if (row) {
       setBrand(row.brand || ''); setModel(row.model || '');
+      setChip(row.chip == null ? '' : String(row.chip));
       setQty(row.qty == null ? '' : String(row.qty)); setError('');
     }
   }, [row]);
@@ -121,9 +174,12 @@ function EditModal({ row, onClose, onSubmit }: {
   const handleSubmit = async () => {
     setSaving(true); setError('');
     try {
-      await onSubmit({ brand: brand.trim(), model: model.trim(), qty: parseQty(qty) });
+      await onSubmit(chipMode
+        // No chip picked: send nothing for it, so a legacy row keeps its text.
+        ? { ...(chip ? { chip: +chip } : {}), qty: parseQty(qty) }
+        : { brand: brand.trim(), model: model.trim(), qty: parseQty(qty) });
       onClose();
-    } catch (e: any) { setError(e.message || 'Failed to save'); }
+    } catch (e: any) { setError(apiErrorMessage(e) || e.message || 'Failed to save'); }
     finally { setSaving(false); }
   };
 
@@ -138,16 +194,28 @@ function EditModal({ row, onClose, onSubmit }: {
             <div style={FieldLabel}>Barcode</div>
             <div className="mono" style={{ padding: '10px 12px', borderRadius: 9, background: 'var(--surface-2)', border: '1px solid var(--hair)', fontSize: 12.5, color: 'var(--ink-3)', fontWeight: 600, wordBreak: 'break-all' }}>{row.barcode}</div>
           </div>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
-            <div style={{ flex: 1 }}>
-              <div style={FieldLabel}>Brand</div>
-              <input value={brand} onChange={e => setBrand(e.target.value)} autoFocus style={InputSty} />
+          {chipMode ? (
+            <div style={{ marginBottom: 14 }}>
+              <div style={FieldLabel}>Chip (brand · model)</div>
+              {row.chip == null && (row.brand || row.model) && (
+                <div style={{ marginBottom: 6, fontSize: 11.5, color: 'var(--ink-4)' }}>
+                  Original: {[row.brand, row.model].filter(Boolean).join(' / ')}
+                </div>
+              )}
+              <ChipSelect groups={chipGroups!} value={chip} onChange={setChip} boardsHref={boardsHref} />
             </div>
-            <div style={{ flex: 1 }}>
-              <div style={FieldLabel}>Model</div>
-              <input value={model} onChange={e => setModel(e.target.value)} style={InputSty} />
+          ) : (
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+              <div style={{ flex: 1 }}>
+                <div style={FieldLabel}>Brand</div>
+                <input value={brand} onChange={e => setBrand(e.target.value)} autoFocus style={InputSty} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={FieldLabel}>Model</div>
+                <input value={model} onChange={e => setModel(e.target.value)} style={InputSty} />
+              </div>
             </div>
-          </div>
+          )}
           <div>
             <div style={FieldLabel}>Qty</div>
             <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={InputSty} />
@@ -161,9 +229,13 @@ function EditModal({ row, onClose, onSubmit }: {
 }
 
 // ── Card ────────────────────────────────────────────────────────────────────────
-export default function ChecklistCard({ palletId, soNumber, palletLabel, palletBarcode, isMobile, showToast }: {
+export default function ChecklistCard({ palletId, soNumber, palletLabel, palletBarcode, isMobile, showToast, chipMode = false, boardsHref }: {
   palletId: number; soNumber: string; palletLabel: string; palletBarcode: string;
   isMobile: boolean; showToast: ToastFn;
+  /** MSFT orders: brand/model come from a chip of the pallet's boards, not free text. */
+  chipMode?: boolean;
+  /** Where "add boards" points when the pallet has none (MSFT Boards tab). */
+  boardsHref?: string;
 }) {
   const [rows, setRows] = useState<Checklist[]>([]);
   const [addOpen, setAddOpen] = useState(false);
@@ -171,15 +243,17 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
   const [deleteTarget, setDeleteTarget] = useState<Checklist | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [chipGroups, setChipGroups] = useState<ChipOptionGroup[] | null>(null);
 
   const load = useCallback(async () => {
     try {
       setRows((await api.pallets.checklists.list(palletId)) || []);
       setSelected(new Set());
+      if (chipMode) setChipGroups(await api.pallets.chipOptions(palletId));
     } catch { showToast('Failed to load checklist', 'err'); }
     // showToast is recreated every render by the parent; depending on it would reload in a loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [palletId]);
+  }, [palletId, chipMode]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -193,15 +267,15 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
     return mx + 1;
   }, [rows]);
 
-  const handleAdd = async (d: { count: number; brand: string; model: string; qty: number | null }) => {
-    const items = Array.from({ length: d.count }, () => ({ brand: d.brand, model: d.model, qty: d.qty }));
+  const handleAdd = async (d: AddPayload) => {
+    const items = Array.from({ length: d.count }, () => ({ brand: d.brand, model: d.model, chip: d.chip, qty: d.qty }));
     const created = await api.pallets.checklists.create(palletId, { items });
     const n = created?.length ?? d.count;
     await load();
     showToast(`Added ${n} checklist label${n > 1 ? 's' : ''}`);
   };
 
-  const handleEdit = async (d: { brand: string; model: string; qty: number | null }) => {
+  const handleEdit = async (d: EditPayload) => {
     if (!editTarget) return;
     await api.pallets.checklists.update(palletId, editTarget.id, d);
     await load(); showToast('Checklist line saved');
@@ -329,8 +403,10 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
       )}
 
       <AddModal open={addOpen} palletBarcode={palletBarcode} nextSeq={nextSeq}
+        chipGroups={chipMode ? (chipGroups ?? []) : null} boardsHref={boardsHref}
         onClose={() => setAddOpen(false)} onSubmit={handleAdd} />
-      <EditModal row={editTarget} onClose={() => setEditTarget(null)} onSubmit={handleEdit} />
+      <EditModal row={editTarget} chipGroups={chipMode ? (chipGroups ?? []) : null} boardsHref={boardsHref}
+        onClose={() => setEditTarget(null)} onSubmit={handleEdit} />
       <ConfirmDelete open={!!deleteTarget} title="Delete checklist line?"
         body={<><b className="mono">{deleteTarget?.barcode}</b> will be permanently removed.</>}
         onClose={() => setDeleteTarget(null)} onConfirm={handleDelete} />
