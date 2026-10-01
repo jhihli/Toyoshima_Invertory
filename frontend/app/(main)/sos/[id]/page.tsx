@@ -311,7 +311,7 @@ export default function SODetailPage() {
         // slot, so a 5-alternate DRAM slot still yields 1 chip per board, not 5.
         const row = wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.partQty * bomTotalQty(e.chips)]);
         // Chips on this board MPN = Chip Total Qty / Part Qty.
-        row.getCell(7).value = { formula: `F${row.number}/E${row.number}` };
+        row.getCell(7).value = { formula: `IF(E${row.number}>0,F${row.number}/E${row.number},0)` };
         if (!pcbFirstDataRow) pcbFirstDataRow = row.number;
         pcbLastDataRow = row.number;
       }
@@ -320,7 +320,7 @@ export default function SODetailPage() {
         const totalRow = wsPCB.addRow([]);
         totalRow.getCell(5).value = { formula: `SUM(E${pcbFirstDataRow}:E${pcbLastDataRow})` };
         totalRow.getCell(6).value = { formula: `SUM(F${pcbFirstDataRow}:F${pcbLastDataRow})` };
-        totalRow.getCell(7).value = { formula: `F${totalRow.number}/E${totalRow.number}` };
+        totalRow.getCell(7).value = { formula: `IF(E${totalRow.number}>0,F${totalRow.number}/E${totalRow.number},0)` };
       }
 
       // ── Sheet 4: Processing chips ─────────────────────────────────

@@ -122,6 +122,10 @@ source venv/bin/activate
 pip install -r requirements.txt      # only when requirements.txt changed
 # before migrations that drop tables (e.g. 0048_delete_board), back up first:
 #   pg_dump -U $DB_USER -h $DB_HOST $DB_NAME > ~/backup_$(date +%F).sql
+# 0047 cannot place boards that have no pallet or no MPN — count them first and decide
+# whether to assign them in the old UI before migrating:
+#   psql -U $DB_USER -h $DB_HOST $DB_NAME -c "SELECT so_id, count(*) FROM board
+#     WHERE pallet_id IS NULL OR mpn_id IS NULL GROUP BY so_id;"
 python manage.py migrate             # only when there are new migrations
 # after 0048_delete_board: rm -rf /var/www/toyoshima/media/boards   (old board photos)
 sudo systemctl restart toyoshima-backend
