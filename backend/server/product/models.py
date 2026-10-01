@@ -61,12 +61,14 @@ class SO(models.Model):
 
     @property
     def total_board_count(self):
-        return self.boards.count()
+        """Sum of every pallet's effective_board_qty (legacy pallets included).
+        Iterates .all() so a 'pallets__pallet_mpns' prefetch is reused."""
+        return sum(p.effective_board_qty or 0 for p in self.pallets.all())
 
     @property
     def total_board_qty(self):
-        result = self.pallets.aggregate(total=Sum('board_qty'))['total']
-        return result
+        """Same number as total_board_count — kept so existing API readers don't break."""
+        return self.total_board_count
 
     def save(self, *args, **kwargs):
         if not self.weight_rule and self.vendor_id:
@@ -304,6 +306,21 @@ class MPN(models.Model):
     def chips_per_board(self):
         """Chips harvested from ONE board — the sum of each slot's per-board qty."""
         return sum(self._slots().values())
+
+    def board_total(self, so_id=None):
+        """Boards of this MPN across every pallet (optionally one SO). Blank qty = 0."""
+        qs = self.pallet_mpns.all()
+        if so_id:
+            qs = qs.filter(pallet__so_id=so_id)
+        return qs.aggregate(t=Sum('board_qty'))['t'] or 0
+
+    def latest_board_added(self, so_id=None):
+        """When this MPN was last added to a pallet (optionally within one SO)."""
+        from django.db.models import Max
+        qs = self.pallet_mpns.all()
+        if so_id:
+            qs = qs.filter(pallet__so_id=so_id)
+        return qs.aggregate(t=Max('created_at'))['t']
 
 
 class PalletMPN(models.Model):

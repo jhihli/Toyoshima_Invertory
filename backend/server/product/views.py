@@ -106,11 +106,10 @@ def mpn_detail(request, pk):
     try:
         mpn.delete()
     except ProtectedError:
-        count = mpn.boards.count()
-        return Response(
-            {'error': f'Cannot delete: {count} board(s) are still assigned to this MPN. Reassign them first.'},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        n = mpn.pallet_mpns.count()
+        msg = (f'Cannot delete: this MPN is assigned to {n} pallet(s). Remove it from those pallets first.'
+               if n else 'Cannot delete: checklist lines still reference chips of this MPN.')
+        return Response({'error': msg}, status=status.HTTP_400_BAD_REQUEST)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -189,7 +188,7 @@ def vendor_detail(request, pk):
 @permission_classes([IsAuthenticated])
 def so_list(request):
     if request.method == 'GET':
-        qs = SO.objects.select_related('vendor').all()
+        qs = SO.objects.select_related('vendor').prefetch_related('pallets__pallet_mpns').all()
         q = request.query_params.get('q', '').strip()
         vendor_id = request.query_params.get('vendor', '').strip()
         date_from = request.query_params.get('date_from', '').strip()
@@ -222,7 +221,7 @@ def so_list(request):
 @permission_classes([IsAuthenticated])
 def so_detail(request, pk):
     so = get_object_or_404(
-        SO.objects.select_related('vendor').prefetch_related('pallets__boards', 'photos'),
+        SO.objects.select_related('vendor').prefetch_related('pallets__pallet_mpns', 'pallets__photos', 'photos'),
         pk=pk
     )
     if request.method == 'GET':
@@ -266,7 +265,7 @@ def so_photo_delete(request, so_pk, pk):
 def pallet_list(request, so_pk):
     so = get_object_or_404(SO, pk=so_pk)
     if request.method == 'GET':
-        return Response(PalletSerializer(so.pallets.all(), many=True).data)
+        return Response(PalletSerializer(so.pallets.prefetch_related('pallet_mpns', 'photos'), many=True).data)
     data = request.data.copy()
     data['so'] = so.pk
     if 'pallet_seq' not in data:

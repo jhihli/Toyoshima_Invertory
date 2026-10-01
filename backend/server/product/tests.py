@@ -693,3 +693,50 @@ class BackfillTests(TestCase):
         created, _ = backfill_pallet_mpns(Board, PalletMPN)
         self.assertEqual(created, 0)
         self.assertEqual(PalletMPN.objects.count(), 1)
+
+
+class BoardCountApiTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.so, (self.p1, self.p2) = make_so_with_pallets()
+        self.m = MPN.objects.create(name='DCS-7060CX-32S')
+        PalletMPN.objects.create(pallet=self.p1, mpn=self.m, board_qty=20)
+        PalletMPN.objects.create(pallet=self.p2, mpn=self.m, board_qty=18)
+
+    def test_so_total_sums_every_pallet(self):
+        self.assertEqual(self.so.total_board_count, 38)
+        self.assertEqual(self.so.total_board_qty, 38)
+
+    def test_so_total_includes_legacy_pallet(self):
+        Pallet.objects.create(so=self.so, pallet_seq=3, qty=1, board_qty=7)
+        self.assertEqual(self.so.total_board_count, 45)
+
+    def test_so_detail_pallet_fields(self):
+        data = self.client.get(f'/product/sos/{self.so.id}/').json()
+        self.assertEqual(data['total_board_count'], 38)
+        p = next(x for x in data['pallets'] if x['id'] == self.p1.id)
+        self.assertEqual(p['board_qty'], 20)
+        self.assertFalse(p['board_qty_is_legacy'])
+        self.assertNotIn('board_count', p)
+
+    def test_pallet_board_qty_is_read_only(self):
+        self.client.put(f'/product/sos/{self.so.id}/pallets/{self.p1.id}/', {'board_qty': 99}, format='json')
+        self.p1.refresh_from_db()
+        self.assertIsNone(self.p1.board_qty)
+
+    def test_mpn_board_count_across_pallets_and_sos(self):
+        _, (other,) = make_so_with_pallets(1, so_number='S05-OTHER')
+        PalletMPN.objects.create(pallet=other, mpn=self.m, board_qty=5)
+        self.assertEqual(self.m.board_total(), 43)
+        self.assertEqual(self.m.board_total(so_id=self.so.id), 38)
+        row = self.client.get('/product/mpns/', {'so': self.so.id}).json()[0]
+        self.assertEqual(row['board_count'], 43)
+        self.assertEqual(row['so_board_count'], 38)
+        self.assertIsNotNone(row['latest_board_date'])
+
+    def test_mpn_delete_blocked_while_on_a_pallet(self):
+        resp = self.client.delete(f'/product/mpns/{self.m.id}/')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('2 pallet', resp.json()['error'])

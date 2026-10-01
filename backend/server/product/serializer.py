@@ -59,7 +59,8 @@ class PalletPhotoSerializer(serializers.ModelSerializer):
 
 
 class PalletSerializer(serializers.ModelSerializer):
-    board_count = serializers.SerializerMethodField(read_only=True)
+    board_qty = serializers.SerializerMethodField(read_only=True)
+    board_qty_is_legacy = serializers.SerializerMethodField(read_only=True)
     box_count = serializers.SerializerMethodField(read_only=True)
     checklist_count = serializers.SerializerMethodField(read_only=True)
     photo_url = serializers.SerializerMethodField(read_only=True)
@@ -67,11 +68,14 @@ class PalletSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_count', 'box_count', 'checklist_count', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_qty_is_legacy', 'box_count', 'checklist_count', 'created_at']
         read_only_fields = ['created_at', 'photo_url', 'photos']
 
-    def get_board_count(self, obj):
-        return obj.boards.count()
+    def get_board_qty(self, obj):
+        return obj.effective_board_qty
+
+    def get_board_qty_is_legacy(self, obj):
+        return obj.board_qty_is_legacy
 
     def get_box_count(self, obj):
         return obj.boxes.count()
@@ -148,40 +152,32 @@ class MPNSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at']
 
     def get_board_count(self, obj):
-        return obj.boards.count()
+        return obj.board_total()
 
     def get_so_board_count(self, obj):
-        """Boards of this MPN scanned within ONE SO — populated only when the
-        caller scopes the list with ?so=<id>. The same MPN legitimately recurs
-        across SOs, so board_count (all-time, all-SO) reads as a confusing
-        running total; this is the per-shipment count that resets per SO.
-        None when no SO scope was requested."""
+        """Boards of this MPN within ONE SO — populated only when the caller scopes
+        the list with ?so=<id>. The same MPN legitimately recurs across SOs, so
+        board_count (all-time, all-SO) reads as a confusing running total; this is
+        the per-shipment count. None when no SO scope was requested."""
         so_id = self.context.get('so_id')
         if not so_id:
             return None
-        return obj.boards.filter(so_id=so_id).count()
+        return obj.board_total(so_id=so_id)
 
     def get_chip_brands(self, obj):
         return list(obj.chips.values_list('brand__name', flat=True))
 
     def get_latest_board_date(self, obj):
-        from django.db.models import Max
-        result = obj.boards.aggregate(latest=Max('scanned_at'))['latest']
-        if result:
-            return result.strftime('%Y-%m-%d')
-        return None
+        d = obj.latest_board_added()
+        return d.strftime('%Y-%m-%d') if d else None
 
     def get_so_latest_board_date(self, obj):
-        """Latest board scan date for this MPN within ONE SO — the per-SO
-        counterpart to latest_board_date, populated only under ?so=<id>."""
+        """When this MPN was last added to a pallet of ONE SO — only under ?so=<id>."""
         so_id = self.context.get('so_id')
         if not so_id:
             return None
-        from django.db.models import Max
-        result = obj.boards.filter(so_id=so_id).aggregate(latest=Max('scanned_at'))['latest']
-        if result:
-            return result.strftime('%Y-%m-%d')
-        return None
+        d = obj.latest_board_added(so_id=so_id)
+        return d.strftime('%Y-%m-%d') if d else None
 
     def get_beforecut_photo_url(self, obj):
         if not obj.beforecut_photo:

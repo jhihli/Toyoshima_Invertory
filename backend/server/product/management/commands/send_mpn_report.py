@@ -16,7 +16,6 @@ import traceback
 from django.conf import settings
 from django.core.mail import EmailMessage
 from django.core.management.base import BaseCommand
-from django.db.models import Max
 from django.utils import timezone
 
 import openpyxl
@@ -134,13 +133,13 @@ class Command(BaseCommand):
         ws.freeze_panes = 'A2'
 
         row_num = 2
-        mpns = MPN.objects.prefetch_related('chips__brand', 'boards').order_by('name')
+        mpns = MPN.objects.prefetch_related('chips__brand').order_by('name')
 
         for mpn in mpns:
             chips = list(mpn.chips.all())
-            board_count = mpn.boards.count()
+            board_count = mpn.board_total()
 
-            latest_result = mpn.boards.aggregate(latest=Max('scanned_at'))['latest']
+            latest_result = mpn.latest_board_added()
             latest_date = latest_result.strftime('%Y-%m-%d') if latest_result else ''
 
             chip_type_count = len(chips)
