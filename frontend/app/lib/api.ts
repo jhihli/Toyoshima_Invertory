@@ -77,9 +77,19 @@ export async function apiDelete(path: string): Promise<void> {
   }
 }
 
+/** The `error` field of a failed request's JSON body, or '' — api* helpers throw
+ *  `Error("<METHOD> <path> failed (<status>): <body>")`. */
+export function apiErrorMessage(e: unknown): string {
+  const msg = e instanceof Error ? e.message : '';
+  const i = msg.indexOf('): ');
+  if (i < 0) return '';
+  try { return JSON.parse(msg.slice(i + 3)).error || ''; } catch { return ''; }
+}
+
 // ─── Typed wrappers ───────────────────────────────────────────────
 import type {
-  Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
+  Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, ChipBrand, Chip, MPN,
+  PalletMPN, ChipOptionGroup, PalletMpnExportRow,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
   PalletChipContainer, Box, BoxSearchResult, Checklist, ChecklistSearchResult,
@@ -105,6 +115,7 @@ export const api = {
     update: (id: number, d: Partial<SO>) => apiPut<SO>(`/sos/${id}/`, d),
     delete: (id: number) => apiDelete(`/sos/${id}/`),
     chipContainers: (soId: number) => apiGet<PalletChipContainer[]>(`/sos/${soId}/chip-containers/`),
+    palletMpns: (soId: number) => apiGet<PalletMpnExportRow[]>(`/sos/${soId}/pallet-mpns/`),
   },
 
   // Pallets
@@ -158,6 +169,15 @@ export const api = {
         apiPut<Checklist>(`/pallets/${palletId}/checklists/${id}/`, d),
       delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/checklists/${id}/`),
     },
+    mpns: {
+      list: (palletId: number) => apiGet<PalletMPN[]>(`/pallets/${palletId}/mpns/`),
+      create: (palletId: number, items: { mpn: number; board_qty: number | null }[]) =>
+        apiPost<PalletMPN[]>(`/pallets/${palletId}/mpns/`, { items }),
+      update: (palletId: number, id: number, d: { board_qty: number | null }) =>
+        apiPut<PalletMPN>(`/pallets/${palletId}/mpns/${id}/`, d),
+      delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/mpns/${id}/`),
+    },
+    chipOptions: (palletId: number) => apiGet<ChipOptionGroup[]>(`/pallets/${palletId}/chip-options/`),
   },
 
   // Box (cross-SO barcode search)
@@ -180,32 +200,6 @@ export const api = {
       return apiPostForm<SOPhoto>(`/sos/${soId}/photos/`, form);
     },
     delete: (soId: number, photoId: number) => apiDelete(`/sos/${soId}/photos/${photoId}/`),
-  },
-
-  // Boards
-  boards: {
-    listBySO: (soId: number, params: Record<string, string | number> = {}) => {
-      const qs = new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)]));
-      return apiGet<PaginatedResult<Board>>(`/sos/${soId}/boards/?${qs}`);
-    },
-    get: (id: number) => apiGet<Board>(`/boards/${id}/`),
-    create: (soId: number, d: Partial<Board>) => apiPost<Board>(`/sos/${soId}/boards/`, d),
-    createBulk: (soId: number, boards: Partial<Board>[]) => apiPost<Board[]>(`/sos/${soId}/boards/bulk/`, boards),
-    update: (id: number, d: Partial<Board>) => apiPut<Board>(`/boards/${id}/`, d),
-    delete: (id: number) => apiDelete(`/boards/${id}/`),
-    uploadPhoto: (id: number, file: File) => {
-      const form = new FormData();
-      form.append('photo', file);
-      return apiPostForm<Board>(`/boards/${id}/photo/`, form);
-    },
-    deletePhoto: (id: number) => apiDelete(`/boards/${id}/photo/`),
-  },
-
-  // Chips
-  chips: {
-    create: (boardId: number, d: Partial<Chip>) => apiPost<Chip>(`/boards/${boardId}/chips/`, d),
-    update: (boardId: number, id: number, d: Partial<Chip>) => apiPut<Chip>(`/boards/${boardId}/chips/${id}/`, d),
-    delete: (boardId: number, id: number) => apiDelete(`/boards/${boardId}/chips/${id}/`),
   },
 
   // Chip Brands

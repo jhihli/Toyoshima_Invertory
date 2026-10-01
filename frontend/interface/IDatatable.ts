@@ -62,8 +62,10 @@ export interface Pallet {
   tantalum_wt: string | null;
   material_type: string;
   qty: number;
+  /** Sum of this pallet's MPN board_qty, or the legacy value. Read-only. */
   board_qty: number | null;
-  board_count: number;
+  /** True when board_qty is the old hand-typed value (the pallet has no MPN rows yet). */
+  board_qty_is_legacy: boolean;
   box_count?: number;
   checklist_count?: number;
   created_at: string;
@@ -93,6 +95,8 @@ export interface Checklist {
   pallet: number;
   /** {pallet barcode}-{n}, composed server-side. */
   barcode: string;
+  /** The chip this line counts (MSFT orders); brand/model are copied from it. */
+  chip: number | null;
   brand: string;
   model: string;
   qty: number | null;
@@ -140,21 +144,6 @@ export interface MPN {
   created_at: string;
   latest_board_date?: string | null;
   chips?: Chip[];
-}
-
-export interface Board {
-  id: number;
-  so: number;
-  pallet: number | null;
-  pallet_label: string | null;
-  barcode: string;
-  qty: number;
-  mpn: MPN | null;
-  photo: string | null;
-  photo_url: string | null;
-  scanned_at: string;
-  chips: Chip[];
-  chip_count: number;
 }
 
 export interface ChipBrand {
@@ -314,4 +303,35 @@ export interface MsftApiLog {
   status: 'ok' | 'error' | 'dryrun';
   error: string;
   created_at: string;
+}
+
+/** One board type (MPN) on one pallet, with how many of it. */
+export interface PalletMPN {
+  id: number;
+  pallet: number;
+  mpn: number;
+  mpn_name: string;
+  part_type: string;
+  chips_per_board: number;
+  board_qty: number | null;
+  /** Checklist lines on this pallet naming a chip of this MPN — removal is blocked while > 0. */
+  checklist_use_count: number;
+  created_at: string;
+}
+
+/** Chips a checklist line may pick, grouped by the pallet's MPNs. */
+export interface ChipOptionGroup {
+  mpn_id: number;
+  mpn_name: string;
+  chips: { id: number; brand_name: string; chip_mpn: string; slot_group: string }[];
+}
+
+/** SO export row: one (pallet, MPN) with its chip BOM. */
+export interface PalletMpnExportRow {
+  id: number;
+  pallet: number;
+  board_qty: number | null;
+  created_at: string;
+  mpn: Pick<MPN, 'id' | 'name' | 'part_type' | 'cutboard_cost' | 'created_at' | 'chips_per_board'>;
+  chips: Chip[];
 }
