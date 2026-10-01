@@ -105,9 +105,19 @@ class BoxSerializer(serializers.ModelSerializer):
 class ChecklistSerializer(serializers.ModelSerializer):
     class Meta:
         model = Checklist
-        fields = ['id', 'pallet', 'barcode', 'brand', 'model', 'qty', 'created_at']
+        fields = ['id', 'pallet', 'barcode', 'chip', 'brand', 'model', 'qty', 'created_at']
         # barcode is composed server-side; a client editing it would break next_index().
         read_only_fields = ['pallet', 'barcode', 'created_at']
+
+    def validate(self, attrs):
+        # Only used for edits (creation goes through views._create_checklists), so
+        # self.instance is always set here.
+        chip = attrs.get('chip')
+        if chip is not None:
+            if not Checklist.chip_allowed(self.instance.pallet, chip):
+                raise serializers.ValidationError({'chip': 'This chip is not on a board assigned to this pallet.'})
+            attrs['brand'], attrs['model'] = Checklist.text_from_chip(chip)
+        return attrs
 
 
 class ChipSerializer(serializers.ModelSerializer):

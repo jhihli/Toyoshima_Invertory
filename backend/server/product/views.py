@@ -395,8 +395,13 @@ def box_search(request):
 
 
 # ─────────────────────────────────────────────────── Checklist
-def _clean_checklist_rows(items):
-    """Normalise client-supplied checklist items. Returns (rows, error_message)."""
+def _clean_checklist_rows(items, pallet=None):
+    """Normalise client-supplied checklist items. Returns (rows, error_message).
+
+    With `pallet` (the web UI), an item may name a `chip`: it must belong to an MPN on
+    that pallet, and its brand / part number replace any typed text. The scanner calls
+    without `pallet`, so a `chip` it sends is ignored and its text is stored as before.
+    """
     rows = []
     for item in items:
         if not isinstance(item, dict):
@@ -405,10 +410,17 @@ def _clean_checklist_rows(items):
         model = item.get('model') or ''
         if not isinstance(brand, str) or not isinstance(model, str):
             return None, 'brand and model must be strings'
+        chip = None
+        if pallet is not None and item.get('chip') not in (None, ''):
+            chip = Chip.objects.select_related('brand').filter(pk=_as_int(item.get('chip'), 0)).first()
+            if chip is None or not Checklist.chip_allowed(pallet, chip):
+                return None, 'chip is not on a board assigned to this pallet'
+            brand, model = Checklist.text_from_chip(chip)
         rows.append({
             'brand': brand.strip()[:100],
             'model': model.strip()[:100],
             'qty': _as_int(item.get('qty'), None),
+            'chip': chip,
         })
     return rows, None
 
@@ -430,6 +442,7 @@ def _create_checklists(pallet, rows):
                 brand=row['brand'],
                 model=row['model'],
                 qty=row['qty'],
+                chip=row.get('chip'),
             )
             for offset, row in enumerate(rows)
         ]
@@ -446,7 +459,7 @@ def checklist_list(request, pallet_pk):
     # to pre-fill the rows, or {"count": N} for blank ones to be filled in later.
     items = request.data.get('items')
     if isinstance(items, list):
-        rows, error = _clean_checklist_rows(items[:500])
+        rows, error = _clean_checklist_rows(items[:500], pallet=pallet)
         if error:
             return Response({'error': error}, status=status.HTTP_400_BAD_REQUEST)
     else:
@@ -731,7 +744,11 @@ def mpn_chip_detail(request, mpn_pk, pk):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    chip.delete()
+    try:
+        chip.delete()
+    except ProtectedError:
+        n = chip.checklists.count()
+        return Response({'error': f'Chip is used by {n} checklist line(s)'}, status=status.HTTP_400_BAD_REQUEST)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 

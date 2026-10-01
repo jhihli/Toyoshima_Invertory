@@ -846,3 +846,70 @@ class PalletMpnApiTests(TestCase):
         self.assertEqual(data[0]['mpn']['name'], 'DCS-7060CX-32S')
         self.assertIn('cutboard_cost', data[0]['mpn'])
         self.assertEqual(data[0]['chips'][0]['chip_mpn'], 'X1')
+
+
+class ChecklistChipApiTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.so, (self.p24, self.p2) = make_so_with_pallets()
+        self.board = MPN.objects.create(name='DCS-7060CX-32S')
+        self.chip = Chip.objects.create(mpn=self.board, brand=ChipBrand.objects.create(name='Broadcom'),
+                                        chip_mpn='BCM56960B1KFSBG')
+        PalletMPN.objects.create(pallet=self.p24, mpn=self.board, board_qty=25)
+        self.row = Checklist.objects.create(pallet=self.p24, barcode='S05-000617-LP1-1')
+        self.url = f'/product/pallets/{self.p24.id}/checklists/{self.row.id}/'
+
+    def test_pick_chip_and_qty(self):
+        resp = self.client.put(self.url, {'chip': self.chip.id, 'qty': 40}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual((resp.json()['brand'], resp.json()['model'], resp.json()['qty'], resp.json()['chip']),
+                         ('Broadcom', 'BCM56960B1KFSBG', 40, self.chip.id))
+
+    def test_client_text_is_overridden_by_chip(self):
+        resp = self.client.put(self.url, {'chip': self.chip.id, 'brand': 'Junk', 'model': 'Junk'}, format='json')
+        self.assertEqual(resp.json()['brand'], 'Broadcom')
+
+    def test_chip_from_another_pallets_mpn_rejected(self):
+        other = MPN.objects.create(name='MPN2')
+        PalletMPN.objects.create(pallet=self.p2, mpn=other)
+        foreign = Chip.objects.create(mpn=other, chip_mpn='OTHER')
+        resp = self.client.put(self.url, {'chip': foreign.id}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('chip', resp.json())
+
+    def test_text_only_edit_still_works(self):
+        """Sales Orders keeps free-text checklist editing."""
+        resp = self.client.put(self.url, {'brand': 'Dell', 'model': 'OptiPlex', 'qty': 3}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.row.refresh_from_db()
+        self.assertEqual((self.row.brand, self.row.model, self.row.chip_id), ('Dell', 'OptiPlex', None))
+
+    def test_web_create_with_chip(self):
+        resp = self.client.post(f'/product/pallets/{self.p24.id}/checklists/',
+                                {'items': [{'chip': self.chip.id, 'qty': 40}] * 2}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual([r['brand'] for r in resp.json()], ['Broadcom', 'Broadcom'])
+        self.assertEqual(Checklist.objects.filter(chip=self.chip).count(), 2)
+
+    def test_web_create_with_foreign_chip_rejected(self):
+        foreign = Chip.objects.create(mpn=MPN.objects.create(name='X'), chip_mpn='X1')
+        resp = self.client.post(f'/product/pallets/{self.p24.id}/checklists/',
+                                {'items': [{'chip': foreign.id}]}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(Checklist.objects.count(), 1)
+
+    def test_chip_delete_blocked_when_referenced(self):
+        Checklist.objects.filter(pk=self.row.pk).update(chip=self.chip)
+        resp = self.client.delete(f'/product/mpns/{self.board.id}/chips/{self.chip.id}/')
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(Chip.objects.filter(pk=self.chip.pk).exists())
+
+    @override_settings(SCANNER_API_KEY='k')
+    def test_scanner_bulk_ignores_chip(self):
+        resp = self.client.post(f'/product/scanner/pallets/{self.p24.id}/checklists/bulk/',
+                                {'items': [{'brand': 'B', 'model': 'M', 'chip': self.chip.id}]},
+                                format='json', HTTP_X_API_KEY='k')
+        self.assertEqual(resp.status_code, 200)
+        self.assertFalse(Checklist.objects.filter(chip=self.chip).exists())
