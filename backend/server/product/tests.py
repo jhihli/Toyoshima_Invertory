@@ -4,7 +4,7 @@ import json
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from product.models import Vendor, SO, Pallet, Box, Checklist, MPN
+from product.models import Vendor, SO, Pallet, Box, Checklist, MPN, Chip, ChipBrand, PalletMPN, Board
 
 
 def make_pallet(so_number='SO112750', licence='hdh77', gateload='1'):
@@ -572,3 +572,124 @@ class MpnStatusTests(TestCase):
             {'ids': [a.id], 'is_finished': 'yes'}, format='json',
         )
         self.assertEqual(resp.status_code, 400)
+
+
+def make_so_with_pallets(n=2, so_number='S05-000617'):
+    vendor, _ = Vendor.objects.get_or_create(name='MSFT')
+    so = SO.objects.create(so_number=so_number, vendor=vendor, inbound_date=date(2026, 9, 28))
+    pallets = [
+        Pallet.objects.create(so=so, pallet_seq=i + 1, licence_number=f'LP{i + 1}', qty=1)
+        for i in range(n)
+    ]
+    return so, pallets
+
+
+class EffectiveBoardQtyTests(TestCase):
+    def test_sum_of_mpn_rows(self):
+        _, (p, _) = make_so_with_pallets()
+        PalletMPN.objects.create(pallet=p, mpn=MPN.objects.create(name='A'), board_qty=20)
+        PalletMPN.objects.create(pallet=p, mpn=MPN.objects.create(name='B'), board_qty=15)
+        self.assertEqual(p.effective_board_qty, 35)
+        self.assertFalse(p.board_qty_is_legacy)
+
+    def test_mpn_rows_override_legacy_value(self):
+        _, (p, _) = make_so_with_pallets()
+        p.board_qty = 40
+        p.save()
+        PalletMPN.objects.create(pallet=p, mpn=MPN.objects.create(name='A'), board_qty=35)
+        self.assertEqual(p.effective_board_qty, 35)
+        self.assertFalse(p.board_qty_is_legacy)
+
+    def test_blank_qty_rows_count_as_zero(self):
+        _, (p, _) = make_so_with_pallets()
+        p.board_qty = 40
+        p.save()
+        PalletMPN.objects.create(pallet=p, mpn=MPN.objects.create(name='A'), board_qty=None)
+        self.assertEqual(p.effective_board_qty, 0)
+
+    def test_no_rows_falls_back_to_legacy(self):
+        _, (p, _) = make_so_with_pallets()
+        p.board_qty = 40
+        p.save()
+        self.assertEqual(p.effective_board_qty, 40)
+        self.assertTrue(p.board_qty_is_legacy)
+
+    def test_no_rows_no_legacy_is_none_and_not_flagged(self):
+        _, (p, _) = make_so_with_pallets()
+        self.assertIsNone(p.effective_board_qty)
+        self.assertFalse(p.board_qty_is_legacy)
+
+    def test_same_mpn_on_two_pallets_kept_separate(self):
+        _, (p1, p2) = make_so_with_pallets()
+        m = MPN.objects.create(name='DCS-7060CX-32S')
+        PalletMPN.objects.create(pallet=p1, mpn=m, board_qty=20)
+        PalletMPN.objects.create(pallet=p2, mpn=m, board_qty=18)
+        self.assertEqual(p1.effective_board_qty, 20)
+        self.assertEqual(p2.effective_board_qty, 18)
+
+    def test_pallet_mpn_unique(self):
+        from django.db import IntegrityError
+        _, (p, _) = make_so_with_pallets()
+        m = MPN.objects.create(name='A')
+        PalletMPN.objects.create(pallet=p, mpn=m)
+        with self.assertRaises(IntegrityError):
+            PalletMPN.objects.create(pallet=p, mpn=m)
+
+
+class ChecklistChipRuleTests(TestCase):
+    def test_chip_allowed_only_when_its_mpn_is_on_the_pallet(self):
+        _, (p1, p2) = make_so_with_pallets()
+        m = MPN.objects.create(name='A')
+        chip = Chip.objects.create(mpn=m, chip_mpn='BCM56960B1KFSBG')
+        PalletMPN.objects.create(pallet=p1, mpn=m)
+        self.assertTrue(Checklist.chip_allowed(p1, chip))
+        self.assertFalse(Checklist.chip_allowed(p2, chip))
+
+    def test_text_from_chip(self):
+        brand = ChipBrand.objects.create(name='Broadcom')
+        chip = Chip.objects.create(mpn=MPN.objects.create(name='A'), brand=brand, chip_mpn='BCM56960B1KFSBG')
+        self.assertEqual(Checklist.text_from_chip(chip), ('Broadcom', 'BCM56960B1KFSBG'))
+
+    def test_text_from_chip_without_brand(self):
+        chip = Chip.objects.create(mpn=MPN.objects.create(name='A'), chip_mpn='X1')
+        self.assertEqual(Checklist.text_from_chip(chip), ('', 'X1'))
+
+    def test_checklist_use_count(self):
+        _, (p, _) = make_so_with_pallets()
+        m = MPN.objects.create(name='A')
+        chip = Chip.objects.create(mpn=m, chip_mpn='X1')
+        row = PalletMPN.objects.create(pallet=p, mpn=m)
+        Checklist.objects.create(pallet=p, barcode='b-1', chip=chip)
+        Checklist.objects.create(pallet=p, barcode='b-2', chip=chip)
+        Checklist.objects.create(pallet=p, barcode='b-3')
+        self.assertEqual(row.checklist_use_count(), 2)
+
+
+class BackfillTests(TestCase):
+    """Removed in Task 5 together with the Board model."""
+
+    def test_groups_by_pallet_and_mpn(self):
+        from product.pallet_mpn_backfill import backfill_pallet_mpns
+        so, (p1, p2) = make_so_with_pallets()
+        m = MPN.objects.create(name='DCS-7060CX-32S')
+        for i in range(3):
+            Board.objects.create(so=so, pallet=p1, mpn=m, barcode=f'a{i}', qty=1)
+        Board.objects.create(so=so, pallet=p2, mpn=m, barcode='b0', qty=2)
+        Board.objects.create(so=so, pallet=None, mpn=m, barcode='orphan')
+        Board.objects.create(so=so, pallet=p1, mpn=None, barcode='nompn')
+
+        created, skipped = backfill_pallet_mpns(Board, PalletMPN)
+
+        self.assertEqual((created, skipped), (2, 2))
+        self.assertEqual(PalletMPN.objects.get(pallet=p1, mpn=m).board_qty, 3)
+        self.assertEqual(PalletMPN.objects.get(pallet=p2, mpn=m).board_qty, 2)
+
+    def test_is_idempotent(self):
+        from product.pallet_mpn_backfill import backfill_pallet_mpns
+        so, (p1, _) = make_so_with_pallets()
+        m = MPN.objects.create(name='A')
+        Board.objects.create(so=so, pallet=p1, mpn=m, barcode='a')
+        backfill_pallet_mpns(Board, PalletMPN)
+        created, _ = backfill_pallet_mpns(Board, PalletMPN)
+        self.assertEqual(created, 0)
+        self.assertEqual(PalletMPN.objects.count(), 1)

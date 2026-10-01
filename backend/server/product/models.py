@@ -126,6 +126,24 @@ class Pallet(models.Model):
             segs.append(self.gateload_number)
         return '-'.join(segs)
 
+    @property
+    def effective_board_qty(self):
+        """The pallet's board count — the ONE place it is computed.
+
+        With any MPN rows: the sum of their board_qty (blank counts as 0).
+        Without: the legacy hand-typed board_qty from before boards were assigned per MPN.
+        Iterates .all() so a prefetch of 'pallet_mpns' is reused instead of re-queried.
+        """
+        rows = list(self.pallet_mpns.all())
+        if rows:
+            return sum(r.board_qty or 0 for r in rows)
+        return self.board_qty
+
+    @property
+    def board_qty_is_legacy(self):
+        """True when the number shown is the old hand-typed value, not an MPN sum."""
+        return self.board_qty is not None and not list(self.pallet_mpns.all())
+
 
 class PalletPhoto(models.Model):
     pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='photos')
@@ -191,6 +209,11 @@ class Checklist(models.Model):
     brand = models.CharField(max_length=100, blank=True)
     model = models.CharField(max_length=100, blank=True)
     qty = models.IntegerField(null=True, blank=True)
+    chip = models.ForeignKey(
+        'Chip', on_delete=models.PROTECT, null=True, blank=True, related_name='checklists',
+        help_text="The chip this line counts. brand/model are copied from it on save; rows "
+                  "from before chips were selectable keep free text and a null chip."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -219,6 +242,17 @@ class Checklist(models.Model):
             if tail.isdigit():
                 mx = max(mx, int(tail))
         return mx + 1
+
+    @staticmethod
+    def chip_allowed(pallet, chip):
+        """A line may only name a chip from a board (MPN) assigned to its own pallet."""
+        return chip.mpn_id is not None and pallet.pallet_mpns.filter(mpn_id=chip.mpn_id).exists()
+
+    @staticmethod
+    def text_from_chip(chip):
+        """(brand, model) text written into the row, so label printing, search and exports
+        that read the text columns keep working unchanged."""
+        return (chip.brand.name if chip.brand_id else ''), (chip.chip_mpn or '')
 
 
 class MPN(models.Model):
@@ -270,6 +304,31 @@ class MPN(models.Model):
     def chips_per_board(self):
         """Chips harvested from ONE board — the sum of each slot's per-board qty."""
         return sum(self._slots().values())
+
+
+class PalletMPN(models.Model):
+    """Which board types (MPNs) sit on a pallet, and how many of each.
+
+    Replaces barcode-scanned Board rows. One row per (pallet, MPN), so the same MPN on
+    several pallets keeps a separate count per pallet. Its board_qty values are what
+    Pallet.effective_board_qty sums.
+    """
+    pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='pallet_mpns')
+    mpn = models.ForeignKey(MPN, on_delete=models.PROTECT, related_name='pallet_mpns')
+    board_qty = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = 'pallet_mpn'
+        unique_together = [('pallet', 'mpn')]
+        ordering = ['pallet', 'mpn__name']
+
+    def __str__(self):
+        return f"{self.pallet} · {self.mpn} ×{self.board_qty}"
+
+    def checklist_use_count(self):
+        """Checklist lines on this pallet that name a chip of this MPN."""
+        return Checklist.objects.filter(pallet_id=self.pallet_id, chip__mpn_id=self.mpn_id).count()
 
 
 class Board(models.Model):
