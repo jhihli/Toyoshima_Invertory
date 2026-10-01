@@ -88,18 +88,18 @@ export default function SOListPage() {
       const all = await api.sos.list({ q, vendor: vendorFilter, date_from: dateFrom, date_to: dateTo, page: 1, page_size: 9999 });
       const palletsPerSO = await Promise.all(all.results.map(s => api.pallets.list(s.id)));
 
-      const COL_WIDTHS = [{ wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 10 }];
-      const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-      const HEADER = ['SO Number', 'Vendor', 'Date', 'Pallet #', 'Licence No', 'Gateload No', 'Weight (lb)', 'Pallet Qty', 'Boards(REAL)', 'Boards(Scan)'];
+      const COL_WIDTHS = [{ wch: 18 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 10 }];
+      const COLS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+      const HEADER = ['SO Number', 'Vendor', 'Date', 'Pallet #', 'Licence No', 'Gateload No', 'Weight (lb)', 'Pallet Qty', 'Boards'];
 
       // ── Sheet 1: Sales Orders (flat pallet rows, no styling needed) ──
       const rows: Record<string, string | number>[] = [];
       all.results.forEach((s, idx) => {
         const pallets = palletsPerSO[idx];
         if (pallets.length === 0) {
-          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.inbound_date, 'Pallet #': '', 'Licence No': '', 'Gateload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards(REAL)': '', 'Boards(Scan)': s.total_board_count });
+          rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.inbound_date, 'Pallet #': '', 'Licence No': '', 'Gateload No': '', 'Weight (lb)': '', 'Pallet Qty': '', 'Boards': s.total_board_count });
         } else {
-          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.inbound_date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Gateload No': p.gateload_number || '', 'Weight (lb)': parseFloat(p.in_weight_gross), 'Pallet Qty': p.qty, 'Boards(REAL)': p.board_qty ?? '', 'Boards(Scan)': s.total_board_count }));
+          pallets.forEach(p => rows.push({ 'SO Number': s.so_number, 'Vendor': s.vendor_name, 'Date': s.inbound_date, 'Pallet #': p.pallet_seq, 'Licence No': p.licence_number || '', 'Gateload No': p.gateload_number || '', 'Weight (lb)': parseFloat(p.in_weight_gross), 'Pallet Qty': p.qty, 'Boards': p.board_qty ?? '' }));
         }
       });
       const ws1 = XLSX.utils.json_to_sheet(rows);
@@ -116,12 +116,12 @@ export default function SOListPage() {
         pallets.forEach(p => {
           totalW += parseFloat(p.in_weight_gross);
           totalQ += p.qty;
-          aoaData.push([s.so_number, s.vendor_name, s.inbound_date, p.pallet_seq, p.licence_number || '', p.gateload_number || '', parseFloat(p.in_weight_gross), p.qty, p.board_qty ?? '', s.total_board_count]);
+          aoaData.push([s.so_number, s.vendor_name, s.inbound_date, p.pallet_seq, p.licence_number || '', p.gateload_number || '', parseFloat(p.in_weight_gross), p.qty, p.board_qty ?? '']);
           rowPtr++;
         });
-        // Subtotal row for this SO — includes Boards(REAL) and Boards(Scan) totals
+        // Subtotal row for this SO — includes the board total
         summaryRowIndices.push(rowPtr);
-        aoaData.push([s.so_number, '', '', '', '', '', totalW, totalQ, s.total_board_qty ?? 0, s.total_board_count]);
+        aoaData.push([s.so_number, '', '', '', '', '', totalW, totalQ, s.total_board_count]);
         rowPtr++;
       });
 
@@ -252,17 +252,16 @@ export default function SOListPage() {
                 <Th label="Outbound Date" w="11%" />
                 <Th label="Pallets" align="right" w="7%" />
                 <Th label="Total Wt Gross" align="right" w="13%" />
-                <Th label="Boards(Real)" align="right" w="11%" />
-                <Th label="Boards(Scan)" align="right" w="11%" />
+                <Th label="Boards" align="right" w="11%" />
                 <Th label="" w="6%" />
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan={9}><Empty label="Loading…" /></td></tr>
+                <tr><td colSpan={8}><Empty label="Loading…" /></td></tr>
               )}
               {!loading && sos.length === 0 && (
-                <tr><td colSpan={9}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
+                <tr><td colSpan={8}><Empty label="No matching SOs" sub="Try clearing filters or a different search." /></td></tr>
               )}
               {!loading && sos.map(s => (
                 <SORow key={s.id} so={s} onClick={() => router.push(`/sos/${s.id}`)} />
@@ -326,7 +325,6 @@ function SORow({ so, onClick }: { so: SO; onClick: () => void }) {
       <td style={{ ...tdS, fontSize: 12.5, color: so.outbound_date ? 'var(--ink)' : 'var(--ink-5)' }} className="num">{so.outbound_date ?? '—'}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_pallet_count}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(so.total_pallet_weight).toFixed(2)}</td>
-      <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_board_qty ?? '—'}</td>
       <td style={{ ...tdS, textAlign: 'right' }} className="num">{so.total_board_count}</td>
       <td style={{ ...tdS, textAlign: 'right', color: 'var(--ink-4)' }}>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"

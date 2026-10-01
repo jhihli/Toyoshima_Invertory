@@ -16,7 +16,7 @@ They communicate via JWT-authenticated REST calls. The frontend is **not** Djang
 | App | Purpose |
 |-----|---------|
 | `account` | CustomUser (AbstractUser + `role`), JWT auth, user registration |
-| `product` | All business models: Vendor, SO, Pallet, Board, MPN, Chip, ChipBrand, SOPhoto |
+| `product` | All business models: Vendor, SO, Pallet, PalletMPN, MPN, Chip, ChipBrand, Box, Checklist, SOPhoto |
 
 ### Key URL prefixes
 
@@ -24,7 +24,7 @@ They communicate via JWT-authenticated REST calls. The frontend is **not** Djang
 /api/token/          POST — get JWT access+refresh tokens
 /api/token/refresh/  POST — refresh access token
 /account/            User management
-/product/            All business endpoints (vendors, sos, pallets, boards, chips, mpns, scanner, dashboard)
+/product/            All business endpoints (vendors, sos, pallets, pallet mpns, checklists, mpns, scanner, dashboard)
 /admin/              Django admin
 ```
 
@@ -34,8 +34,7 @@ They communicate via JWT-authenticated REST calls. The frontend is **not** Djang
 |-------|------|
 | `/` | Dashboard — KPI cards, charts, recent scans |
 | `/sos/` | SO list with search/filter/pagination |
-| `/sos/[id]/` | SO detail — pallets & boards tabs |
-| `/sos/[id]/boards/[boardId]/` | Board detail with chips |
+| `/sos/[id]/` | MSFT order detail — Pallets & Boards tabs (`?tab=boards&pallet=<id>` deep-links) |
 | `/vendors/` | Vendor management |
 | `/chipbrands/` | Chip brand management |
 | `/login/` | Authentication |
@@ -121,7 +120,10 @@ git pull origin main
 cd backend/server
 source venv/bin/activate
 pip install -r requirements.txt      # only when requirements.txt changed
+# before migrations that drop tables (e.g. 0048_delete_board), back up first:
+#   pg_dump -U $DB_USER -h $DB_HOST $DB_NAME > ~/backup_$(date +%F).sql
 python manage.py migrate             # only when there are new migrations
+# after 0048_delete_board: rm -rf /var/www/toyoshima/media/boards   (old board photos)
 sudo systemctl restart toyoshima-backend
 sudo systemctl status toyoshima-backend    # confirm active (running)
 
@@ -172,7 +174,7 @@ Always use these SO properties — never `count()` on the queryset directly:
 | `so.total_pallet_count` | `Sum('qty')` — physical pallets |
 | `so.pallet_record_count` | `count()` — table rows (tab badge) |
 | `so.total_pallet_weight` | `Sum('weight')` |
-| `so.total_board_count` | Board record count |
+| `so.total_board_count` | Sum of every pallet's `effective_board_qty` (`total_board_qty` is the same number) |
 | `so.effective_weight_rule` | SO's own rule or vendor default |
 
 When `pallet_record_count != total_pallet_count`, the UI must show "X records · Y physical pallets total" above the pallets table.
@@ -180,14 +182,21 @@ When `pallet_record_count != total_pallet_count`, the UI must show "X records ·
 ### Model relationships
 
 ```
-Vendor → SO → Pallet → Board → Chip → ChipBrand
-                               Board → MPN (FK, nullable)
+Vendor → SO → Pallet → PalletMPN → MPN → Chip → ChipBrand
+              Pallet → Checklist → Chip (FK, nullable)
+              Pallet → Box
          SO → SOPhoto
 ```
 
 Key field notes:
-- `Board.mpn` — FK to `MPN` model (nullable), replaces old free-text MPN field
-- `Board.pallet` — FK to `Pallet` (nullable), links boards to a specific pallet
+- `PalletMPN` — which board types (MPNs) sit on a pallet: (pallet, mpn) unique, `board_qty`.
+  Replaced barcode-scanned `Board` rows (removed 2026-10; backfilled by migration 0047).
+- `Pallet.effective_board_qty` is the ONLY place a pallet's board count is computed: sum of its
+  PalletMPN `board_qty` (blank = 0), or the legacy hand-typed `Pallet.board_qty` when the pallet
+  has no rows (`board_qty_is_legacy`). The Pallet API's `board_qty` is this value, read-only.
+- `Checklist.chip` — FK to `Chip` (nullable, PROTECT). Must belong to an MPN on the line's pallet
+  (`Checklist.chip_allowed`); the server copies brand/model text from it (`text_from_chip`).
+  MSFT checklists pick a chip; Sales Orders checklists stay free text.
 - `Pallet.board_qty` — total board count for this pallet row
 - `Chip.mpn` — FK to `MPN` (nullable)
 - `Box.pallet` — FK to `Pallet` (`related_name='boxes'`), DB table `box`
@@ -296,6 +305,10 @@ The Zebra scanner app calls `/product/scanner/` endpoints using `SCANNER_API_KEY
 { "success": true, "data": { ... } }
 { "success": false, "error": "reason" }
 ```
+
+Board scanning was retired in 2026-10: the `board_inbound` action and
+`scanner/boards/<pk>/photo/` are gone (boards are assigned per pallet on the MSFT order's
+Boards tab instead).
 
 Label endpoints (renamed from `cargo` in a hard cutover — old clients get 404):
 - `GET  scanner/pallets/lookup/?barcode=` → `pallet_barcode`, `existing_box_count`,

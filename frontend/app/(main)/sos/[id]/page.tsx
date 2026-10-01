@@ -237,7 +237,8 @@ export default function SODetailPage() {
       const pmRows = await api.sos.palletMpns(soId);
       // One row per (pallet, MPN) carrying its board qty — replaces per-scan Board rows.
       const allBoardData = pmRows.map(r => ({
-        pallet: r.pallet, mpn: r.mpn, chips: r.chips, qty: r.board_qty ?? 0, scanned_at: r.created_at,
+        pallet: r.pallet, mpn: r.mpn, chips: r.chips, qty: r.board_qty ?? 0,
+        date: r.created_at,   // when this MPN was added to the pallet = "Date processed"
       }));
       const workbook = new ExcelJS.Workbook();
       const palletMap = new Map(so.pallets.map(p => [p.id, p]));
@@ -253,7 +254,7 @@ export default function SODetailPage() {
         if (!mpnMap.has(b.mpn.id)) mpnMap.set(b.mpn.id, { mpn: b.mpn, chips: b.chips, boardCount: 0, latestDate: '' });
         const entry = mpnMap.get(b.mpn.id)!;
         entry.boardCount += b.qty;
-        if (b.scanned_at > entry.latestDate) entry.latestDate = b.scanned_at;
+        if (b.date > entry.latestDate) entry.latestDate = b.date;
       }
 
 
@@ -297,10 +298,10 @@ export default function SODetailPage() {
         const pallet = b.pallet ? palletMap.get(b.pallet) : null;
         const lpNo = pallet?.licence_number || '';
         const key = `${lpNo}||${b.mpn.id}`;
-        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: b.scanned_at?.slice(0, 10) || '', partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chips: b.chips ?? [] });
+        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: b.date?.slice(0, 10) || '', partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chips: b.chips ?? [] });
         const entry = pcbMap.get(key)!;
         entry.partQty += b.qty;
-        if ((b.scanned_at || '') > (entry.date + 'T')) entry.date = b.scanned_at?.slice(0, 10) || '';
+        if ((b.date || '') > (entry.date + 'T')) entry.date = b.date?.slice(0, 10) || '';
       }
       const pcbRows = [...pcbMap.values()].sort((a, b) => a.lpNo.localeCompare(b.lpNo));
       let pcbFirstDataRow = 0;

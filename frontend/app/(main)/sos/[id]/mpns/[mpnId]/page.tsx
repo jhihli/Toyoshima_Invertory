@@ -105,7 +105,7 @@ export default function SOContextMPNDetailPage() {
                 { label: 'After Cut Wt',  value: mpn.aftercut_weight ?? '—',  flex: '0 0 112px' },
                 { label: 'Slots',          value: nSlots,                       flex: '0 0 70px'  },
                 { label: 'Cutboard Cost',  value: mpn.cutboard_cost ?? '—',     flex: '0 0 110px' },
-                { label: 'Boards (Scanned)', value: mpn.board_count ?? 0,       flex: '0 0 120px' },
+                { label: 'Boards', value: mpn.board_count ?? 0,       flex: '0 0 120px' },
                 { label: 'Part Type',      value: mpn.part_type || '—',         flex: '0 0 120px' },
               ].map(item => (
                 <div key={item.label} style={{ flex: item.flex, padding: '8px 14px', borderRight: '1px solid var(--hair)' }}>

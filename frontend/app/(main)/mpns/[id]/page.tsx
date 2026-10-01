@@ -167,7 +167,7 @@ export default function MPNDetailPage() {
                   { label: 'Slots', value: nSlots, mono: false },
                   { label: 'Chips / Board', value: chipsPerBoard, mono: false },
                   { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false },
-                  { label: 'Boards (Scanned)', value: mpn.board_count ?? 0, mono: false },
+                  { label: 'Boards', value: mpn.board_count ?? 0, mono: false },
                   { label: 'Part Type', value: mpn.part_type || '—', mono: true },
                   { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false },
                 ].map((item, i) => (
@@ -195,7 +195,7 @@ export default function MPNDetailPage() {
                   { label: 'Slots', value: nSlots, mono: false, flex: '0 0 70px' },
                   { label: 'Chips / Board', value: chipsPerBoard, mono: false, flex: '0 0 96px' },
                   { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false, flex: '0 0 110px' },
-                  { label: 'Boards (Scanned)', value: mpn.board_count ?? 0, mono: false, flex: '0 0 120px' },
+                  { label: 'Boards', value: mpn.board_count ?? 0, mono: false, flex: '0 0 120px' },
                   { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false, flex: '0 0 100px' },
                   { label: 'Part Type', value: mpn.part_type || '—', mono: true, flex: '0 0 120px' },
                 ].map((item, i) => (
