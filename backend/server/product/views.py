@@ -33,7 +33,7 @@ class IsAdminOrManager(BasePermission):
         return bool(user and user.is_authenticated and getattr(user, 'is_admin_or_manager', False))
 from .models import (
     Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
-    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist,
+    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist, PalletMPN,
 )
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
@@ -41,7 +41,7 @@ from .serializer import (
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
     PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer,
-    BoxSerializer, ChecklistSerializer,
+    BoxSerializer, ChecklistSerializer, PalletMPNSerializer, PalletMPNExportSerializer,
 )
 
 
@@ -495,6 +495,85 @@ def checklist_search(request):
         'so_number': c.pallet.so.so_number,
     } for c in qs]
     return Response(data)
+
+
+# ─────────────────────────────────────────────────── Pallet MPNs (boards on a pallet)
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def pallet_mpn_list(request, pallet_pk):
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    if request.method == 'GET':
+        qs = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips')
+        return Response(PalletMPNSerializer(qs, many=True).data)
+
+    # POST {"items": [{"mpn": id, "board_qty": n|null}, ...]} — all or nothing.
+    items = request.data.get('items') if isinstance(request.data, dict) else None
+    if not isinstance(items, list) or not items:
+        return Response({'error': 'items must be a non-empty list'}, status=status.HTTP_400_BAD_REQUEST)
+    existing = set(pallet.pallet_mpns.values_list('mpn_id', flat=True))
+    valid = []
+    for item in items:
+        if not isinstance(item, dict):
+            return Response({'error': 'each item must be an object'}, status=status.HTTP_400_BAD_REQUEST)
+        s = PalletMPNSerializer(data=item)
+        if not s.is_valid():
+            return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+        mpn = s.validated_data['mpn']
+        if mpn.id in existing:
+            return Response({'error': f'{mpn.name} is already on this pallet'}, status=status.HTTP_400_BAD_REQUEST)
+        existing.add(mpn.id)
+        valid.append(s)
+    with transaction.atomic():
+        created = [s.save(pallet=pallet) for s in valid]
+    return Response(PalletMPNSerializer(created, many=True).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['PUT', 'PATCH', 'DELETE'])
+@permission_classes([IsAuthenticated])
+def pallet_mpn_detail(request, pallet_pk, pk):
+    row = get_object_or_404(PalletMPN.objects.select_related('mpn'), pk=pk, pallet_id=pallet_pk)
+    if request.method == 'DELETE':
+        n = row.checklist_use_count()
+        if n:
+            return Response({'error': f'Used by {n} checklist line(s)'}, status=status.HTTP_400_BAD_REQUEST)
+        row.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    # Only the count is editable; changing the MPN is remove + add.
+    data = {'board_qty': request.data['board_qty']} if 'board_qty' in request.data else {}
+    s = PalletMPNSerializer(row, data=data, partial=True)
+    if s.is_valid():
+        s.save()
+        return Response(s.data)
+    return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pallet_chip_options(request, pallet_pk):
+    """Chips a checklist line on this pallet may name, grouped by board (MPN)."""
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    rows = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips__brand')
+    return Response([{
+        'mpn_id': r.mpn_id,
+        'mpn_name': r.mpn.name,
+        'chips': [{
+            'id': c.id,
+            'brand_name': c.brand.name if c.brand_id else '',
+            'chip_mpn': c.chip_mpn,
+            'slot_group': c.slot_group,
+        } for c in r.mpn.chips.all()],
+    } for r in rows])
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def so_pallet_mpns(request, so_pk):
+    """Every (pallet, MPN) row of an SO with chip BOMs — the Excel export's data source."""
+    so = get_object_or_404(SO, pk=so_pk)
+    qs = (PalletMPN.objects.filter(pallet__so=so)
+          .select_related('mpn').prefetch_related('mpn__chips__brand')
+          .order_by('pallet__pallet_seq', 'mpn__name'))
+    return Response(PalletMPNExportSerializer(qs, many=True, context={'request': request}).data)
 
 
 # ─────────────────────────────────────────────────── Boards

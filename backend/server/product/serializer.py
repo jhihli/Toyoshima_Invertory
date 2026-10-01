@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.conf import settings
 from .models import (
     Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
-    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist,
+    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist, PalletMPN,
 )
 import os
 
@@ -303,7 +303,7 @@ class MPNLiteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MPN
-        fields = ['id', 'name', 'part_type', 'created_at', 'chips_per_board']
+        fields = ['id', 'name', 'part_type', 'cutboard_cost', 'created_at', 'chips_per_board']
 
 
 class BoardListSerializer(serializers.ModelSerializer):
@@ -436,3 +436,36 @@ class PalletChipContainerWithChipSerializer(serializers.ModelSerializer):
 
     def get_inventory_qty(self, obj):
         return obj.actual_qty if obj.actual_qty is not None else (obj.chip.qty or 0)
+
+
+class PalletMPNSerializer(serializers.ModelSerializer):
+    mpn_name = serializers.CharField(source='mpn.name', read_only=True)
+    part_type = serializers.CharField(source='mpn.part_type', read_only=True)
+    chips_per_board = serializers.IntegerField(source='mpn.chips_per_board', read_only=True)
+    board_qty = serializers.IntegerField(allow_null=True, required=False, min_value=0)
+    checklist_use_count = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = PalletMPN
+        fields = ['id', 'pallet', 'mpn', 'mpn_name', 'part_type', 'chips_per_board',
+                  'board_qty', 'checklist_use_count', 'created_at']
+        read_only_fields = ['pallet', 'created_at']
+        # (pallet, mpn) uniqueness is checked in the view: pallet is read-only here,
+        # so DRF's auto UniqueTogetherValidator would demand it in the payload.
+        validators = []
+
+    def get_checklist_use_count(self, obj):
+        return obj.checklist_use_count()
+
+
+class PalletMPNExportSerializer(serializers.ModelSerializer):
+    """One (pallet, MPN) row with the MPN's chip BOM, for the SO Excel export."""
+    mpn = MPNLiteSerializer(read_only=True)
+    chips = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = PalletMPN
+        fields = ['id', 'pallet', 'board_qty', 'created_at', 'mpn', 'chips']
+
+    def get_chips(self, obj):
+        return ChipSerializer(obj.mpn.chips.all(), many=True, context=self.context).data

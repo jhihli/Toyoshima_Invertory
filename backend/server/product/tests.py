@@ -740,3 +740,109 @@ class BoardCountApiTests(TestCase):
         resp = self.client.delete(f'/product/mpns/{self.m.id}/')
         self.assertEqual(resp.status_code, 400)
         self.assertIn('2 pallet', resp.json()['error'])
+
+
+class PalletMpnApiTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.so, (self.p1, self.p2) = make_so_with_pallets()
+        self.a = MPN.objects.create(name='DCS-7060CX-32S')
+        self.b = MPN.objects.create(name='MPN2')
+        self.url = f'/product/pallets/{self.p1.id}/mpns/'
+
+    def test_add_several(self):
+        resp = self.client.post(self.url, {'items': [{'mpn': self.a.id, 'board_qty': 20},
+                                                     {'mpn': self.b.id, 'board_qty': None}]}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(len(resp.json()), 2)
+        self.assertEqual(self.p1.effective_board_qty, 20)
+
+    def test_list_fields(self):
+        PalletMPN.objects.create(pallet=self.p1, mpn=self.a, board_qty=20)
+        row = self.client.get(self.url).json()[0]
+        for key in ('id', 'pallet', 'mpn', 'mpn_name', 'part_type', 'chips_per_board',
+                    'board_qty', 'checklist_use_count', 'created_at'):
+            self.assertIn(key, row)
+        self.assertEqual(row['mpn_name'], 'DCS-7060CX-32S')
+
+    def test_already_on_pallet_rejected(self):
+        PalletMPN.objects.create(pallet=self.p1, mpn=self.a)
+        resp = self.client.post(self.url, {'items': [{'mpn': self.a.id}]}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_duplicate_within_batch_rejected_and_nothing_written(self):
+        resp = self.client.post(self.url, {'items': [{'mpn': self.b.id}, {'mpn': self.a.id},
+                                                     {'mpn': self.a.id}]}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(PalletMPN.objects.count(), 0)
+
+    def test_negative_qty_rejected(self):
+        resp = self.client.post(self.url, {'items': [{'mpn': self.a.id, 'board_qty': -1}]}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_non_numeric_qty_rejected(self):
+        resp = self.client.post(self.url, {'items': [{'mpn': self.a.id, 'board_qty': 'ten'}]}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_unknown_mpn_rejected(self):
+        resp = self.client.post(self.url, {'items': [{'mpn': 99999}]}, format='json')
+        self.assertEqual(resp.status_code, 400)
+
+    def test_empty_items_rejected(self):
+        self.assertEqual(self.client.post(self.url, {'items': []}, format='json').status_code, 400)
+
+    def test_same_mpn_allowed_on_another_pallet(self):
+        PalletMPN.objects.create(pallet=self.p2, mpn=self.a, board_qty=18)
+        resp = self.client.post(self.url, {'items': [{'mpn': self.a.id, 'board_qty': 20}]}, format='json')
+        self.assertEqual(resp.status_code, 201)
+
+    def test_update_qty(self):
+        row = PalletMPN.objects.create(pallet=self.p1, mpn=self.a, board_qty=20)
+        resp = self.client.put(f'{self.url}{row.id}/', {'board_qty': 25}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        row.refresh_from_db()
+        self.assertEqual(row.board_qty, 25)
+        self.assertEqual(row.mpn_id, self.a.id)
+
+    def test_update_on_wrong_pallet_404(self):
+        row = PalletMPN.objects.create(pallet=self.p1, mpn=self.a)
+        resp = self.client.put(f'/product/pallets/{self.p2.id}/mpns/{row.id}/', {'board_qty': 1}, format='json')
+        self.assertEqual(resp.status_code, 404)
+
+    def test_delete_unused(self):
+        row = PalletMPN.objects.create(pallet=self.p1, mpn=self.a)
+        self.assertEqual(self.client.delete(f'{self.url}{row.id}/').status_code, 204)
+        self.assertFalse(PalletMPN.objects.exists())
+
+    def test_delete_blocked_when_checklist_uses_it(self):
+        row = PalletMPN.objects.create(pallet=self.p1, mpn=self.a)
+        chip = Chip.objects.create(mpn=self.a, chip_mpn='X1')
+        Checklist.objects.create(pallet=self.p1, barcode='b-1', chip=chip)
+        resp = self.client.delete(f'{self.url}{row.id}/')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('1 checklist', resp.json()['error'])
+        self.assertTrue(PalletMPN.objects.filter(pk=row.pk).exists())
+
+    def test_chip_options_only_this_pallets_mpns(self):
+        brand = ChipBrand.objects.create(name='Broadcom')
+        Chip.objects.create(mpn=self.a, brand=brand, chip_mpn='BCM56960B1KFSBG')
+        Chip.objects.create(mpn=self.b, chip_mpn='OTHER')
+        PalletMPN.objects.create(pallet=self.p1, mpn=self.a)
+        PalletMPN.objects.create(pallet=self.p2, mpn=self.b)
+        data = self.client.get(f'/product/pallets/{self.p1.id}/chip-options/').json()
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['mpn_name'], 'DCS-7060CX-32S')
+        self.assertEqual(data[0]['chips'][0]['brand_name'], 'Broadcom')
+        self.assertEqual(data[0]['chips'][0]['chip_mpn'], 'BCM56960B1KFSBG')
+
+    def test_so_pallet_mpns(self):
+        Chip.objects.create(mpn=self.a, chip_mpn='X1')
+        PalletMPN.objects.create(pallet=self.p1, mpn=self.a, board_qty=20)
+        PalletMPN.objects.create(pallet=self.p2, mpn=self.a, board_qty=18)
+        data = self.client.get(f'/product/sos/{self.so.id}/pallet-mpns/').json()
+        self.assertEqual(sorted(r['board_qty'] for r in data), [18, 20])
+        self.assertEqual(data[0]['mpn']['name'], 'DCS-7060CX-32S')
+        self.assertIn('cutboard_cost', data[0]['mpn'])
+        self.assertEqual(data[0]['chips'][0]['chip_mpn'], 'X1')

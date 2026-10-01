@@ -32,6 +32,10 @@ urlpatterns = [
     path('pallets/<int:pallet_pk>/checklists/', views.checklist_list, name='checklist-list'),
     path('pallets/<int:pallet_pk>/checklists/<int:pk>/', views.checklist_detail, name='checklist-detail'),
     path('checklists/search/', views.checklist_search, name='checklist-search'),
+    path('pallets/<int:pallet_pk>/mpns/', views.pallet_mpn_list, name='pallet-mpn-list'),
+    path('pallets/<int:pallet_pk>/mpns/<int:pk>/', views.pallet_mpn_detail, name='pallet-mpn-detail'),
+    path('pallets/<int:pallet_pk>/chip-options/', views.pallet_chip_options, name='pallet-chip-options'),
+    path('sos/<int:so_pk>/pallet-mpns/', views.so_pallet_mpns, name='so-pallet-mpns'),
     path('sos/<int:so_pk>/boards/', views.board_list_by_so, name='board-list-by-so'),
     path('sos/<int:so_pk>/boards/bulk/', views.board_bulk_create, name='board-bulk-create'),
 
