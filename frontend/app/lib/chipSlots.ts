@@ -103,7 +103,8 @@ export const bomTotalQty = (chips: Chip[] | null | undefined) =>
   buildSlots(chips).reduce((n, s) => n + s.qtyPerBoard, 0);
 
 export interface MpnEntry {
-  mpn: MPN;
+  /** Only these fields are read; the export passes the lite MPN from /pallet-mpns/. */
+  mpn: Pick<MPN, 'id' | 'name' | 'part_type' | 'cutboard_cost'>;
   chips: Chip[];
   /** Boards of this MPN in the SO being exported. */
   boardCount: number;
