@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.conf import settings
 from .models import (
-    Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
+    Vendor, SO, SOPhoto, Pallet, PalletPhoto, ChipBrand, Chip, MPN,
     MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist, PalletMPN,
 )
 import os
@@ -219,125 +219,17 @@ class MPNDetailSerializer(MPNSerializer):
         fields = MPNSerializer.Meta.fields + ['chips']
 
 
-class MPNField(serializers.Field):
-    """Serializes Board.mpn as a full MPN object; accepts a string name or {id, name} dict on write."""
-
-    def to_representation(self, value):
-        if not value:
-            return None
-        return MPNSerializer(value).data
-
-    def to_internal_value(self, data):
-        if data is None or data == '':
-            return None
-        if isinstance(data, int):
-            try:
-                return MPN.objects.get(pk=data)
-            except MPN.DoesNotExist:
-                raise serializers.ValidationError(f'MPN with id {data} not found.')
-        if isinstance(data, dict):
-            mpn_id = data.get('id')
-            if mpn_id:
-                try:
-                    return MPN.objects.get(pk=mpn_id)
-                except MPN.DoesNotExist:
-                    pass
-            name = str(data.get('name', '')).strip()
-            if name:
-                mpn, _ = MPN.objects.get_or_create(name=name)
-                return mpn
-            return None
-        name = str(data).strip()
-        if not name:
-            return None
-        mpn, _ = MPN.objects.get_or_create(name=name)
-        return mpn
-
-
-class BoardSerializer(serializers.ModelSerializer):
-    mpn = MPNField(allow_null=True, required=False, default=None)
-    chips = serializers.SerializerMethodField(read_only=True)
-    chip_count = serializers.SerializerMethodField(read_only=True)
-    photo_url = serializers.SerializerMethodField(read_only=True)
-    pallet_label = serializers.SerializerMethodField(read_only=True)
-
-    class Meta:
-        model = Board
-        fields = [
-            'id', 'so', 'pallet', 'pallet_label', 'barcode',
-            'mpn', 'qty',
-            'photo', 'photo_url', 'scanned_at',
-            'chips', 'chip_count',
-        ]
-        read_only_fields = ['scanned_at']
-
-    def get_chips(self, obj):
-        if not obj.mpn_id:
-            return []
-        return ChipSerializer(obj.mpn.chips.all(), many=True, context=self.context).data
-
-    def get_chip_count(self, obj):
-        if not obj.mpn_id:
-            return 0
-        return sum(c.qty or 0 for c in obj.mpn.chips.all())
-
-    def get_pallet_label(self, obj):
-        if not obj.pallet_id:
-            return None
-        p = obj.pallet
-        parts = [x for x in [p.licence_number, p.gateload_number] if x]
-        return '-'.join(parts) if parts else f'#{p.pallet_seq:02d}'
-
-    def get_photo_url(self, obj):
-        if not obj.photo:
-            return None
-        public_domain = os.getenv('PUBLIC_DOMAIN', '')
-        if public_domain:
-            return f"{public_domain}{obj.photo.url}"
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(obj.photo.url)
-        return obj.photo.url
-
-
 class MPNLiteSerializer(serializers.ModelSerializer):
-    """Trimmed MPN payload for the boards-list grouping UI.
+    """Trimmed MPN payload for the SO export rows (PalletMPNExportSerializer).
 
-    Deliberately omits MPNSerializer's SerializerMethodFields (board_count, chip_brands,
-    latest_board_date) — each fires its own COUNT/aggregate query, so including them means
-    one extra query per board (hundreds per page). `chips_per_board` is a model property
-    served off the prefetched chips, so it costs no extra query. The boards tab only needs
-    these fields.
+    Omits MPNSerializer's SerializerMethodFields — each fires its own aggregate query.
+    `chips_per_board` is a model property served off the prefetched chips.
     """
     chips_per_board = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = MPN
         fields = ['id', 'name', 'part_type', 'cutboard_cost', 'created_at', 'chips_per_board']
-
-
-class BoardListSerializer(serializers.ModelSerializer):
-    """Lightweight board row for the SO boards tab.
-
-    Drops the per-board `chips`/`chip_count` payload — it is unused by the list UI and is
-    identical for every board of the same MPN — and swaps the full MPN object for
-    MPNLiteSerializer. Use the full BoardSerializer (via ?include_chips=1) when the chip BOM
-    is actually needed, e.g. the Excel export.
-    """
-    mpn = MPNLiteSerializer(read_only=True)
-    pallet_label = serializers.SerializerMethodField(read_only=True)
-
-    class Meta:
-        model = Board
-        fields = ['id', 'so', 'pallet', 'pallet_label', 'barcode', 'mpn', 'qty', 'scanned_at']
-        read_only_fields = ['scanned_at']
-
-    def get_pallet_label(self, obj):
-        if not obj.pallet_id:
-            return None
-        p = obj.pallet
-        parts = [x for x in [p.licence_number, p.gateload_number] if x]
-        return '-'.join(parts) if parts else f'#{p.pallet_seq:02d}'
 
 
 class SOSerializer(serializers.ModelSerializer):

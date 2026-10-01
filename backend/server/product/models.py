@@ -348,37 +348,6 @@ class PalletMPN(models.Model):
         return Checklist.objects.filter(pallet_id=self.pallet_id, chip__mpn_id=self.mpn_id).count()
 
 
-class Board(models.Model):
-    so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='boards')
-    pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, null=True, blank=True, related_name='boards')
-    barcode = models.CharField(max_length=100, blank=True, db_index=True)
-    mpn = models.ForeignKey(MPN, on_delete=models.PROTECT, null=True, blank=True, related_name='boards')
-    qty = models.IntegerField(default=1)
-    photo = models.ImageField(upload_to='boards/%Y/%m/', blank=True, null=True)
-    scanned_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        db_table = 'board'
-        ordering = ['-scanned_at']
-
-    def __str__(self):
-        mpn_str = self.mpn.name if self.mpn_id else ''
-        return f"{self.barcode or mpn_str or 'Unknown'} (SO: {self.so.so_number})"
-
-    @property
-    def total_chip_count(self):
-        if not self.mpn_id:
-            return 0
-        result = self.mpn.chips.aggregate(total=Sum('qty'))['total']
-        return result or 0
-
-    @property
-    def chip_brand_count(self):
-        if not self.mpn_id:
-            return 0
-        return self.mpn.chips.values('brand').distinct().count()
-
-
 class ChipBrand(models.Model):
     name = models.CharField(max_length=100, unique=True)
 

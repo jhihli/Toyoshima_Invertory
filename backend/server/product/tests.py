@@ -4,7 +4,7 @@ import json
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from product.models import Vendor, SO, Pallet, Box, Checklist, MPN, Chip, ChipBrand, PalletMPN, Board
+from product.models import Vendor, SO, Pallet, Box, Checklist, MPN, Chip, ChipBrand, PalletMPN
 
 
 def make_pallet(so_number='SO112750', licence='hdh77', gateload='1'):
@@ -665,36 +665,6 @@ class ChecklistChipRuleTests(TestCase):
         self.assertEqual(row.checklist_use_count(), 2)
 
 
-class BackfillTests(TestCase):
-    """Removed in Task 5 together with the Board model."""
-
-    def test_groups_by_pallet_and_mpn(self):
-        from product.pallet_mpn_backfill import backfill_pallet_mpns
-        so, (p1, p2) = make_so_with_pallets()
-        m = MPN.objects.create(name='DCS-7060CX-32S')
-        for i in range(3):
-            Board.objects.create(so=so, pallet=p1, mpn=m, barcode=f'a{i}', qty=1)
-        Board.objects.create(so=so, pallet=p2, mpn=m, barcode='b0', qty=2)
-        Board.objects.create(so=so, pallet=None, mpn=m, barcode='orphan')
-        Board.objects.create(so=so, pallet=p1, mpn=None, barcode='nompn')
-
-        created, skipped = backfill_pallet_mpns(Board, PalletMPN)
-
-        self.assertEqual((created, skipped), (2, 2))
-        self.assertEqual(PalletMPN.objects.get(pallet=p1, mpn=m).board_qty, 3)
-        self.assertEqual(PalletMPN.objects.get(pallet=p2, mpn=m).board_qty, 2)
-
-    def test_is_idempotent(self):
-        from product.pallet_mpn_backfill import backfill_pallet_mpns
-        so, (p1, _) = make_so_with_pallets()
-        m = MPN.objects.create(name='A')
-        Board.objects.create(so=so, pallet=p1, mpn=m, barcode='a')
-        backfill_pallet_mpns(Board, PalletMPN)
-        created, _ = backfill_pallet_mpns(Board, PalletMPN)
-        self.assertEqual(created, 0)
-        self.assertEqual(PalletMPN.objects.count(), 1)
-
-
 class BoardCountApiTests(TestCase):
     def setUp(self):
         from rest_framework.test import APIClient
@@ -913,3 +883,21 @@ class ChecklistChipApiTests(TestCase):
                                 format='json', HTTP_X_API_KEY='k')
         self.assertEqual(resp.status_code, 200)
         self.assertFalse(Checklist.objects.filter(chip=self.chip).exists())
+
+
+class BoardRemovedTests(TestCase):
+    def test_board_routes_gone(self):
+        from django.urls import resolve, Resolver404
+        for path in ('/product/sos/1/boards/', '/product/sos/1/boards/bulk/', '/product/boards/1/',
+                     '/product/boards/1/photo/', '/product/boards/1/chips/', '/product/scanner/boards/1/photo/'):
+            with self.assertRaises(Resolver404, msg=path):
+                resolve(path)
+
+    @override_settings(SCANNER_API_KEY='k')
+    def test_board_inbound_action_gone(self):
+        from rest_framework.test import APIClient
+        so, _ = make_so_with_pallets(1)
+        resp = APIClient().post('/product/scanner/', {'action': 'board_inbound', 'so_number': so.so_number,
+                                                     'barcode': 'X'}, format='json', HTTP_X_API_KEY='k')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('Unknown action', resp.json()['error'])

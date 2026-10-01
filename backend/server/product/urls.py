@@ -36,14 +36,6 @@ urlpatterns = [
     path('pallets/<int:pallet_pk>/mpns/<int:pk>/', views.pallet_mpn_detail, name='pallet-mpn-detail'),
     path('pallets/<int:pallet_pk>/chip-options/', views.pallet_chip_options, name='pallet-chip-options'),
     path('sos/<int:so_pk>/pallet-mpns/', views.so_pallet_mpns, name='so-pallet-mpns'),
-    path('sos/<int:so_pk>/boards/', views.board_list_by_so, name='board-list-by-so'),
-    path('sos/<int:so_pk>/boards/bulk/', views.board_bulk_create, name='board-bulk-create'),
-
-    # Boards
-    path('boards/<int:pk>/', views.board_detail, name='board-detail'),
-    path('boards/<int:pk>/photo/', views.board_photo, name='board-photo'),
-    path('boards/<int:board_pk>/chips/', views.chip_create, name='chip-create'),
-    path('boards/<int:board_pk>/chips/<int:pk>/', views.chip_detail, name='chip-detail'),
 
     # Chip Brands
     path('chipbrands/', views.chipbrand_list, name='chipbrand-list'),
@@ -55,7 +47,6 @@ urlpatterns = [
     path('scanner/vendors/<int:pk>/', views.scanner_vendor_detail, name='scanner-vendor-detail'),
     path('scanner/sos/<int:so_pk>/pallets/', views.scanner_so_pallets, name='scanner-so-pallets'),
     path('scanner/sos/<int:so_pk>/photos/', views.scanner_so_photo_upload, name='scanner-so-photo-upload'),
-    path('scanner/boards/<int:board_pk>/photo/', views.scanner_board_photo, name='scanner-board-photo'),
     path('scanner/pallets/lookup/', views.scanner_pallet_lookup, name='scanner-pallet-lookup'),
     path('scanner/pallets/<int:pallet_pk>/boxes/bulk/', views.scanner_box_bulk_create, name='scanner-box-bulk-create'),
     path('scanner/pallets/<int:pallet_pk>/boxes/', views.scanner_box_list, name='scanner-box-list'),

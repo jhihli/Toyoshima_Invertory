@@ -32,12 +32,12 @@ class IsAdminOrManager(BasePermission):
         user = request.user
         return bool(user and user.is_authenticated and getattr(user, 'is_admin_or_manager', False))
 from .models import (
-    Vendor, SO, SOPhoto, Pallet, PalletPhoto, Board, ChipBrand, Chip, MPN,
+    Vendor, SO, SOPhoto, Pallet, PalletPhoto, ChipBrand, Chip, MPN,
     MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist, PalletMPN,
 )
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
-    SOPhotoSerializer, PalletSerializer, PalletPhotoSerializer, BoardSerializer, BoardListSerializer,
+    SOPhotoSerializer, PalletSerializer, PalletPhotoSerializer,
     ChipBrandSerializer, ChipSerializer, MPNSerializer, MPNDetailSerializer,
     MPNReportConfigSerializer, MPNReportEmailSerializer,
     PalletChipContainerSerializer, PalletChipContainerWithChipSerializer, PalletPhotoSerializer,
@@ -589,137 +589,7 @@ def so_pallet_mpns(request, so_pk):
     return Response(PalletMPNExportSerializer(qs, many=True, context={'request': request}).data)
 
 
-# ─────────────────────────────────────────────────── Boards
-@api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
-def board_list_by_so(request, so_pk):
-    so = get_object_or_404(SO, pk=so_pk)
-    if request.method == 'POST':
-        data = request.data.copy()
-        data['so'] = so.pk
-        serializer = BoardSerializer(data=data, context={'request': request})
-        if serializer.is_valid():
-            serializer.save()
-            board = Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand').get(pk=serializer.data['id'])
-            return Response(BoardSerializer(board, context={'request': request}).data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    # The boards tab only needs barcode / mpn / pallet, so it gets the lightweight
-    # BoardListSerializer. Callers that need the chip BOM (the Excel export) pass
-    # ?include_chips=1 to get the full BoardSerializer with nested chips.
-    include_chips = request.query_params.get('include_chips', '').strip() in ('1', 'true', 'yes')
-    if include_chips:
-        qs = so.boards.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand')
-        serializer_cls = BoardSerializer
-    else:
-        qs = so.boards.select_related('pallet', 'mpn').prefetch_related('mpn__chips')
-        serializer_cls = BoardListSerializer
-    date_from = request.query_params.get('date_from', '').strip()
-    date_to = request.query_params.get('date_to', '').strip()
-    pallet_id = request.query_params.get('pallet', '').strip()
-    if date_from:
-        qs = qs.filter(scanned_at__date__gte=date_from)
-    if date_to:
-        qs = qs.filter(scanned_at__date__lte=date_to)
-    if pallet_id:
-        qs = qs.filter(pallet_id=pallet_id)
-    page = max(1, int(request.query_params.get('page', 1)))
-    page_size = min(max(1, int(request.query_params.get('page_size', 8))), 10000)
-    total = qs.count()
-    start = (page - 1) * page_size
-    data = serializer_cls(qs[start:start + page_size], many=True, context={'request': request}).data
-    return Response({'total': total, 'page': page, 'page_size': page_size, 'results': data})
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def board_bulk_create(request, so_pk):
-    so = get_object_or_404(SO, pk=so_pk)
-    items = request.data if isinstance(request.data, list) else []
-    if not items:
-        return Response({'error': 'No boards provided'}, status=status.HTTP_400_BAD_REQUEST)
-    with transaction.atomic():
-        created_ids = []
-        for item in items:
-            data = dict(item)
-            data['so'] = so.pk
-            serializer = BoardSerializer(data=data, context={'request': request})
-            if not serializer.is_valid():
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-            serializer.save()
-            created_ids.append(serializer.data['id'])
-    boards = Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand').filter(pk__in=created_ids)
-    return Response(BoardSerializer(boards, many=True, context={'request': request}).data, status=status.HTTP_201_CREATED)
-
-
-@api_view(['GET', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
-def board_detail(request, pk):
-    board = get_object_or_404(Board.objects.select_related('pallet', 'mpn').prefetch_related('mpn__chips__brand'), pk=pk)
-    if request.method == 'GET':
-        return Response(BoardSerializer(board, context={'request': request}).data)
-    if request.method == 'PUT':
-        serializer = BoardSerializer(board, data=request.data, partial=True, context={'request': request})
-        if serializer.is_valid():
-            serializer.save()
-            board.refresh_from_db()
-            return Response(BoardSerializer(board, context={'request': request}).data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    board.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-@api_view(['POST', 'DELETE'])
-@permission_classes([IsAuthenticated])
-def board_photo(request, pk):
-    board = get_object_or_404(Board, pk=pk)
-    if request.method == 'POST':
-        if not request.FILES.get('photo'):
-            return Response({'error': 'No photo provided'}, status=status.HTTP_400_BAD_REQUEST)
-        if board.photo:
-            board.photo.delete(save=False)
-        board.photo = request.FILES['photo']
-        board.save()
-        board.refresh_from_db()
-        return Response(BoardSerializer(board, context={'request': request}).data)
-    # DELETE — remove photo
-    if board.photo:
-        board.photo.delete(save=False)
-        board.photo = None
-        board.save()
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
-
 # ─────────────────────────────────────────────────── Chips
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def chip_create(request, board_pk):
-    board = get_object_or_404(Board, pk=board_pk)
-    if not board.mpn_id:
-        return Response({'error': 'Board has no MPN set'}, status=status.HTTP_400_BAD_REQUEST)
-    data = request.data.copy()
-    data['mpn'] = board.mpn_id
-    serializer = ChipSerializer(data=data)
-    if serializer.is_valid():
-        serializer.save()
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(['PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
-def chip_detail(request, board_pk, pk):
-    board = get_object_or_404(Board, pk=board_pk)
-    chip = get_object_or_404(Chip, pk=pk, mpn=board.mpn)
-    if request.method == 'PUT':
-        serializer = ChipSerializer(chip, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    chip.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
-
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def mpn_chip_create(request, mpn_pk):
@@ -816,22 +686,6 @@ def scanner_so_photo_upload(request, so_pk):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-@api_view(['POST'])
-@authentication_classes([])
-@permission_classes([AllowAny])
-def scanner_board_photo(request, board_pk):
-    err = _check_scanner_key(request)
-    if err:
-        return err
-    board = get_object_or_404(Board, pk=board_pk)
-    if not request.FILES.get('photo'):
-        return Response({'error': 'No photo provided'}, status=status.HTTP_400_BAD_REQUEST)
-    if board.photo:
-        board.photo.delete(save=False)
-    board.photo = request.FILES['photo']
-    board.save()
-    return Response({'success': True})
-
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])
@@ -876,8 +730,6 @@ def scanner_api(request):
     try:
         if action == 'lot_inbound':
             return _lot_inbound(data)
-        elif action == 'board_inbound':
-            return _board_inbound(data)
         elif action == 'find_so_number':
             return _find_so_number(data)
         elif action == 'so_search':
@@ -938,42 +790,6 @@ def _lot_inbound(data):
         'pallet': PalletSerializer(pallet).data,
     }})
 
-
-def _board_inbound(data):
-    so_number = data.get('so_number', '').strip()
-    if not so_number:
-        return Response({'success': False, 'error': 'so_number required'}, status=400)
-    so = SO.objects.filter(so_number=so_number).first()
-    if not so:
-        return Response({'success': False, 'error': 'SO not found'}, status=404)
-
-    barcodes = data.get('barcodes', [])
-    if not barcodes:
-        bc = data.get('barcode', '')
-        if bc:
-            barcodes = [bc]
-
-    pallet_id = data.get('pallet_id')
-    pallet_obj = None
-    if pallet_id:
-        pallet_obj = Pallet.objects.filter(pk=pallet_id, so=so).first()
-
-
-    mpn_name = data.get('mpn', '').strip()
-    mpn_obj = None
-    if mpn_name:
-        mpn_obj, _ = MPN.objects.get_or_create(name=mpn_name)
-    created = []
-    for bc in barcodes:
-        board = Board.objects.create(
-            so=so,
-            pallet=pallet_obj,
-            barcode=bc,
-            qty=data.get('qty', 1),
-            mpn=mpn_obj,
-        )
-        created.append(board)
-    return Response({'success': True, 'data': BoardSerializer(created, many=True).data})
 
 def _so_search(data):
     q = data.get('q', '').strip()
