@@ -903,8 +903,6 @@ export default function SODetailPage() {
         )}
         {tab === 'boards' && (
           <PalletBoardsTab
-            soId={soId}
-            soNumber={so.so_number}
             palletOptions={boardPalletOptions}
             palletId={boardsPallet}
             onPalletChange={setBoardsPalletId}

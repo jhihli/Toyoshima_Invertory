@@ -21,8 +21,7 @@ function parseBoardQty(raw: string): number | null | undefined {
   return Number.isInteger(n) && n >= 0 ? n : undefined;
 }
 
-export default function PalletBoardsTab({ soId, soNumber, palletOptions, palletId, onPalletChange, onChanged }: {
-  soId: number; soNumber: string;
+export default function PalletBoardsTab({ palletOptions, palletId, onPalletChange, onChanged }: {
   palletOptions: { value: string; label: string }[];
   palletId: number | null;
   onPalletChange: (id: number) => void;
@@ -108,7 +107,7 @@ export default function PalletBoardsTab({ soId, soNumber, palletOptions, palletI
               <tr key={r.id} style={{ borderBottom: '1px solid var(--hair)' }}>
                 <td style={tdS}>
                   <button className="mono"
-                    onClick={() => router.push(`/sos/${soId}/mpns/${r.mpn}?so=${encodeURIComponent(soNumber)}&palletId=${r.pallet}&palletLabel=${encodeURIComponent(palletLabel)}`)}
+                    onClick={() => router.push(`/mpns/${r.mpn}`)}
                     style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--accent-2)', fontWeight: 600, fontSize: 12.5, fontFamily: 'inherit' }}>
                     {r.mpn_name}
                   </button>
