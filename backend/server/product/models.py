@@ -146,6 +146,11 @@ class Pallet(models.Model):
         """True when the number shown is the old hand-typed value, not an MPN sum."""
         return self.board_qty is not None and not list(self.pallet_mpns.all())
 
+    @property
+    def ng_qty(self):
+        """Failed chips on this pallet, all chips together. Reuses a 'chip_ngs' prefetch."""
+        return sum(r.qty for r in self.chip_ngs.all())
+
 
 class PalletPhoto(models.Model):
     pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='photos')
@@ -347,6 +352,10 @@ class PalletMPN(models.Model):
         """Checklist lines on this pallet that name a chip of this MPN."""
         return Checklist.objects.filter(pallet_id=self.pallet_id, chip__mpn_id=self.mpn_id).count()
 
+    def ng_use_count(self):
+        """NG records on this pallet for chips of this MPN."""
+        return PalletChipNG.objects.filter(pallet_id=self.pallet_id, chip__mpn_id=self.mpn_id).count()
+
 
 class ChipBrand(models.Model):
     name = models.CharField(max_length=100, unique=True)
@@ -437,6 +446,26 @@ class PalletChipContainer(models.Model):
 
     def __str__(self):
         return f"{self.pallet} - {self.chip} → {self.container_uid}"
+
+
+class PalletChipNG(models.Model):
+    """Chips that failed the cut on a pallet, counted per chip.
+
+    Exported to the Inventory sheet as Container UID "NG" rows, which drive the
+    Processing chips "Chips failed" / failure-rate formulas. The chip must belong to an
+    MPN on the pallet (same rule as Checklist.chip_allowed). A qty of 0 is not stored.
+    """
+    pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='chip_ngs')
+    chip = models.ForeignKey('Chip', on_delete=models.PROTECT, related_name='pallet_ngs')
+    qty = models.PositiveIntegerField()
+
+    class Meta:
+        db_table = 'pallet_chip_ng'
+        unique_together = [('pallet', 'chip')]
+        ordering = ['pallet', 'chip__mpn__name', 'chip_id']
+
+    def __str__(self):
+        return f"{self.pallet} · NG {self.chip.chip_mpn} ×{self.qty}"
 
 
 class MPNReportConfig(models.Model):

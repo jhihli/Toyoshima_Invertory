@@ -19,6 +19,7 @@ import {
 } from '@/app/lib/chipSlots';
 import { WeightRuleField } from '../WeightRuleField';
 import PalletBoardsTab from '@/app/ui/pallet/PalletBoardsTab';
+import PalletNgModal from '@/app/ui/pallet/PalletNgModal';
 import type { SODetail, Pallet, PalletPhoto, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -234,7 +235,7 @@ export default function SODetailPage() {
   const handleExport = async () => {
     toast('Preparing export…');
     try {
-      const pmRows = await api.sos.palletMpns(soId);
+      const [pmRows, invRows] = await Promise.all([api.sos.palletMpns(soId), api.sos.inventory(soId)]);
       // One row per (pallet, MPN) carrying its board qty — replaces per-scan Board rows.
       const allBoardData = pmRows.map(r => ({
         pallet: r.pallet, mpn: r.mpn, chips: r.chips, qty: r.board_qty ?? 0,
@@ -329,29 +330,49 @@ export default function SODetailPage() {
       const wsChipProc = workbook.addWorksheet('Processing chips');
       wsChipProc.columns = [{ width: 14 }, { width: 20 }, { width: 24 }, { width: 20 }, { width: 14 }, { width: 14 }];
       styleHdr(wsChipProc.addRow(['Date processed', 'process type', 'Chip MPN', 'Chips processed qty.', 'Chips failed', 'Failure rate']));
-      // "Chips failed" is a LIVE formula off the Inventory sheet, so it fills itself once the
-      // user pastes their checklist: sum the Qty (col F) of every row whose Container UID (col B)
-      // is "NG" and whose Chip MPN (col C) matches. A memory slot bundles several alternate MPNs
-      // into one line, so we sum a SUMIFS per alternate. Failure rate tracks it as failed/processed.
+      // Both counts are LIVE formulas off the Inventory sheet (filled from the checklist and
+      // the pallets' NG counts below), so edits made there in Excel flow through:
+      //   Chips processed = every Inventory qty for the slot's chip MPNs (good + NG)
+      //   Chips failed    = only the rows whose Container UID (col B) is "NG"
+      // A memory slot bundles several alternate MPNs into one line, so each sums per alternate.
       const INV_NG_QTY = 'Inventory!$F:$F', INV_NG_UID = 'Inventory!$B:$B', INV_NG_MPN = 'Inventory!$C:$C';
+      const xq = (m: string) => `"${m.replace(/"/g, '""')}"`;
       for (const gs of buildGlobalSlots([...mpnMap.values()])) {
-        const row = wsChipProc.addRow([gs.date.slice(0, 10), 'Chip Harvest', gs.label, gs.processedQty, 0, 0]);
+        const row = wsChipProc.addRow([gs.date.slice(0, 10), 'Chip Harvest', gs.label, 0, 0, 0]);
         const rn = row.number;
+        const processed = gs.chipMpns.map(m => `SUMIF(${INV_NG_MPN},${xq(m)},${INV_NG_QTY})`).join('+') || '0';
         const failed = gs.chipMpns
-          .map(m => `SUMIFS(${INV_NG_QTY},${INV_NG_UID},"${NG_UID}",${INV_NG_MPN},"${m.replace(/"/g, '""')}")`)
+          .map(m => `SUMIFS(${INV_NG_QTY},${INV_NG_UID},"${NG_UID}",${INV_NG_MPN},${xq(m)})`)
           .join('+') || '0';
+        row.getCell(4).value = { formula: processed };
         row.getCell(5).value = { formula: failed };
         row.getCell(6).value = { formula: `IF(D${rn}>0,E${rn}/D${rn},0)` };
         row.getCell(6).numFmt = '0.00%';
       }
 
       // ── Sheet 5: Inventory ───────────────────────────────────────
-      // Headers only, by design: the user pastes their own packing checklist in here.
-      // Do NOT emit container rows — they would be overwritten anyway, and pre-filled rows
-      // left below a shorter paste would silently double-count.
+      // Filled from the system (GET /sos/<id>/inventory/): per pallet, every checklist line
+      // (Container UID = its barcode; unfilled lines stay blank), then one "NG" row per chip
+      // with failures, then the pallet's Tantalum row ("73g"). The other sheets' formulas read
+      // this sheet, so correcting a value here in Excel updates them too.
       const wsInventory = workbook.addWorksheet('Inventory');
-      wsInventory.columns = [{ width: 10 }, { width: 14 }, { width: 24 }, { width: 18 }, { width: 16 }, { width: 8 }];
+      wsInventory.columns = [{ width: 10 }, { width: 34 }, { width: 24 }, { width: 18 }, { width: 16 }, { width: 8 }];
       styleHdr(wsInventory.addRow(['Pallet', 'Container UID', 'Chip MPN', 'Processed type', 'Packaging type', 'Qty.']));
+      const invBorder: Partial<ExcelJS.Borders> = {
+        top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' },
+      };
+      let invGroupStart = 0;
+      invRows.forEach((r, i) => {
+        const row = wsInventory.addRow([r.pallet_label, r.container_uid, r.chip_mpn, r.processed_type, r.packaging_type, r.qty ?? '']);
+        for (let c = 1; c <= 6; c++) row.getCell(c).border = invBorder;
+        if (!invGroupStart || invRows[i - 1]?.pallet_id !== r.pallet_id) invGroupStart = row.number;
+        const lastOfPallet = invRows[i + 1]?.pallet_id !== r.pallet_id;
+        if (lastOfPallet) {
+          if (row.number > invGroupStart) wsInventory.mergeCells(invGroupStart, 1, row.number, 1);
+          const cell = wsInventory.getCell(invGroupStart, 1);
+          cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        }
+      });
 
       // ── Sheet 6: Board BOM ────────────────────────────────────────
       // One column pair per SLOT, not per chip. A slot's alternates are slash-joined.
@@ -462,12 +483,14 @@ export default function SODetailPage() {
         abcLastTotalRow.getCell(8).numFmt = ACCOUNTING_FMT;
       }
 
-      // Chip BOM's Quantity and Bid_Template_Chip's Quantity are the SAME live formula: they
-      // sum the Inventory sheet's Qty column for every row whose Chip MPN matches. The user
-      // pastes their packing checklist into Inventory and these totals fill themselves in.
+      // Chip BOM's Quantity and Bid_Template_Chip's Quantity are the SAME live formula: the
+      // Inventory Qty of every row whose Chip MPN matches, EXCEPT the "NG" rows — failed chips
+      // are not stock that can be bid on or shipped.
       // Inventory layout: A=Pallet, B=Container UID, C=Chip MPN, D=Processed, E=Packaging, F=Qty.
       const INV_MPN_COL = 'Inventory!$C:$C';
       const INV_QTY_COL = 'Inventory!$F:$F';
+      const INV_UID_COL = 'Inventory!$B:$B';
+      const goodQty = (cell: string) => `SUMIFS(${INV_QTY_COL},${INV_MPN_COL},${cell},${INV_UID_COL},"<>${NG_UID}")`;
 
       // ── Sheet 8: Chip BOM (with embedded photos) ──────────────────
       // Individual chips here, NOT slot groups — this is the catalogue of every distinct
@@ -507,8 +530,8 @@ export default function SODetailPage() {
         const dataRow = wsChipBom.addRow([e.chipMpn, e.manufacturer, e.chipType, e.description, '', 0]);
         dataRow.height = 72;
         for (let c = 1; c <= 6; c++) dataRow.getCell(c).border = boxBorder;
-        // Same live formula as Bid_Template_Chip: sum Inventory Qty where Chip MPN (col A) matches.
-        dataRow.getCell(6).value = { formula: `SUMIF(${INV_MPN_COL},$A${dataRow.number},${INV_QTY_COL})` };
+        // Same live formula as Bid_Template_Chip: good (non-NG) Inventory Qty for this Chip MPN (col A).
+        dataRow.getCell(6).value = { formula: goodQty(`$A${dataRow.number}`) };
         if (!chipBomFirstDataRow) chipBomFirstDataRow = dataRow.number;
         chipBomLastDataRow = dataRow.number;
         let chipBomPhotoAdded = false;
@@ -597,7 +620,7 @@ export default function SODetailPage() {
           c.chipMpn, c.description, titleWords(c.manufacturer), CIRCULAR_CENTER,
           c.itemGroup, i + 1, 0, HARVEST_STATE,
         ]);
-        row.getCell(7).value = { formula: `SUMIF(${INV_MPN_COL},$A${row.number},${INV_QTY_COL})` };
+        row.getCell(7).value = { formula: goodQty(`$A${row.number}`) };
       });
       const bidChipTotal = wsBidChip.addRow(['', '', '', '', '', '', '', '']);
       bidChipTotal.getCell(6).value = 'Total';   // to the left of the Quantity total
@@ -608,7 +631,7 @@ export default function SODetailPage() {
       const wsBidTa = workbook.addWorksheet('Bid_Template_Tantalum');
       wsBidTa.columns = BID_COLS;
       styleHdr(wsBidTa.addRow(BID_HEADER));
-      // Quantity is a LIVE total off the Inventory sheet, filling itself once the user pastes.
+      // Quantity is a LIVE total off the Inventory sheet's Tantalum rows (one per pallet).
       // Tantalum is logged there under the Chip MPN "Tantalum" with a TEXT qty like "73g", so a
       // plain SUMIF (which only adds numbers) returns 0 — strip the "g" and sum with SUMPRODUCT.
       // IFERROR(VALUE(...),0) turns each blank/non-numeric cell into 0. Rows bounded generously.
@@ -899,6 +922,7 @@ export default function SODetailPage() {
             onDelete={setDeletePalletId}
             onGoToBoards={palletId => { setBoardsPalletId(palletId); setTab('boards'); }}
             onGoToBoxes={palletId => router.push(`/sos/${soId}/pallets/${palletId}`)}
+            onNgSaved={loadSO}
           />
         )}
         {tab === 'boards' && (
@@ -1193,14 +1217,19 @@ function palletImgs(p: Pallet) {
 }
 
 // ─── Pallets Tab ──────────────────────────────────────────────────
-function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards, onGoToBoxes }: {
+function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards, onGoToBoxes, onNgSaved }: {
   pallets: Pallet[]; effectiveRule: string; ruleIsOverride: boolean; vendorName: string;
   palletTotal: { weight: number; qty: number; boardQty: number; outWeightGross: number; outWeightNet: number; tantalumWt: number }; addDisabled: boolean;
   onAdd: () => void; onUpdate: (id: number, p: Partial<Pallet>) => void; onDelete: (id: number) => void;
   onGoToBoards: (palletId: number) => void;
   onGoToBoxes: (palletId: number) => void;
+  /** NG counts were saved — refresh the SO so the NG column updates. */
+  onNgSaved: () => void;
 }) {
   const [editingPallet, setEditingPallet] = useState<Pallet | null>(null);
+  const [ngPallet, setNgPallet] = useState<{ id: number; label: string } | null>(null);
+  const ngLabel = (p: Pallet) => p.licence_number || `Pallet #${p.pallet_seq}`;
+  const ngTotal = pallets.reduce((n, p) => n + (p.ng_qty ?? 0), 0);
   const [lightbox, setLightbox] = useState<PalletLightboxState | null>(null);
   const isMobile = useIsMobile();
 
@@ -1258,6 +1287,11 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 {(p.licence_number || p.gateload_number) && <span style={{ color: 'var(--hair-strong)' }}>·</span>}
                 <span>Pallet qty <span className="num" style={{ color: 'var(--ink-2)' }}>{p.qty}</span></span>
                 {p.board_qty != null && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span>Boards <span className="num" style={{ color: 'var(--ink-2)' }}>{p.board_qty}</span></span>{p.board_qty_is_legacy && <Badge tone="neutral" style={{ fontSize: 10 }}>Legacy</Badge>}</>}
+                <span style={{ color: 'var(--hair-strong)' }}>·</span>
+                <button onClick={e => { e.stopPropagation(); setNgPallet({ id: p.id, label: ngLabel(p) }); }}
+                  style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', color: 'var(--ink-3)' }}>
+                  NG <span className="num" style={{ color: p.ng_qty ? 'var(--err)' : 'var(--ink-2)' }}>{p.ng_qty || 0}</span>
+                </button>
               </div>
             </div>
           ))}
@@ -1285,6 +1319,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
               <col style={{ width: '7%' }} />
               <col style={{ width: '7%' }} />
               <col style={{ width: '8%' }} />
+              <col style={{ width: '5%' }} />
               <col style={{ width: '11%' }} />
             </colgroup>
             <thead>
@@ -1300,6 +1335,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 <th style={thS}>Material Type</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Pallet Qty</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
+                <th style={{ ...thS, textAlign: 'right' }} title="Failed chips — click a value to edit">NG</th>
                 <th style={{ ...thS, textAlign: 'right' }}></th>
               </tr>
             </thead>
@@ -1349,6 +1385,14 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                     {p.board_qty != null ? p.board_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                     {p.board_qty_is_legacy && <Badge tone="neutral" style={{ marginLeft: 6, fontSize: 10 }}>Legacy</Badge>}
                   </td>
+                  <td style={{ ...tdS, textAlign: 'right' }} className="num" onClick={e => e.stopPropagation()}>
+                    <button onClick={() => setNgPallet({ id: p.id, label: ngLabel(p) })} title="Edit NG (failed chips)"
+                      style={{ background: 'none', border: '1px dashed var(--hair-strong)', borderRadius: 3, padding: '1px 8px',
+                        cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5,
+                        color: p.ng_qty ? 'var(--err)' : 'var(--ink-5)', fontWeight: p.ng_qty ? 600 : 400 }}>
+                      {p.ng_qty || '—'}
+                    </button>
+                  </td>
                   <td style={{ ...tdS, textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
                       <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={ghostBtn} title="Boxes & checklist"><BoxIcon /></button>
@@ -1371,11 +1415,12 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   <td />
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.qty}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.boardQty || '—'}</td>
+                  <td style={{ ...tdS, textAlign: 'right', color: ngTotal ? 'var(--err)' : undefined }} className="num">{ngTotal || '—'}</td>
                   <td />
                 </tr>
               )}
               {pallets.length === 0 && (
-                <tr><td colSpan={12}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
+                <tr><td colSpan={13}><Empty label="No pallets yet" sub="Click 'Add pallet' to start." /></td></tr>
               )}
             </tbody>
           </table>
@@ -1396,6 +1441,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
         />
       )}
       <PalletLightbox state={lightbox} onClose={() => setLightbox(null)} />
+      <PalletNgModal pallet={ngPallet} onClose={() => setNgPallet(null)} onSaved={onNgSaved} />
     </>
   );
 }

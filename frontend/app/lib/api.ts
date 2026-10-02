@@ -89,7 +89,7 @@ export function apiErrorMessage(e: unknown): string {
 // ─── Typed wrappers ───────────────────────────────────────────────
 import type {
   Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, ChipBrand, Chip, MPN,
-  PalletMPN, ChipOptionGroup, PalletMpnExportRow, MpnBoardsBySo,
+  PalletMPN, ChipOptionGroup, PalletMpnExportRow, MpnBoardsBySo, PalletNgGroup, InventoryRow,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
   PalletChipContainer, Box, BoxSearchResult, Checklist, ChecklistSearchResult,
@@ -116,6 +116,7 @@ export const api = {
     delete: (id: number) => apiDelete(`/sos/${id}/`),
     chipContainers: (soId: number) => apiGet<PalletChipContainer[]>(`/sos/${soId}/chip-containers/`),
     palletMpns: (soId: number) => apiGet<PalletMpnExportRow[]>(`/sos/${soId}/pallet-mpns/`),
+    inventory: (soId: number) => apiGet<InventoryRow[]>(`/sos/${soId}/inventory/`),
   },
 
   // Pallets
@@ -178,6 +179,11 @@ export const api = {
       delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/mpns/${id}/`),
     },
     chipOptions: (palletId: number) => apiGet<ChipOptionGroup[]>(`/pallets/${palletId}/chip-options/`),
+    ng: {
+      get: (palletId: number) => apiGet<PalletNgGroup[]>(`/pallets/${palletId}/ng/`),
+      save: (palletId: number, items: { chip: number; qty: number | null }[]) =>
+        apiPut<PalletNgGroup[]>(`/pallets/${palletId}/ng/`, { items }),
+    },
   },
 
   // Box (cross-SO barcode search)

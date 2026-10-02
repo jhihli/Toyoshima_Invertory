@@ -33,7 +33,7 @@ class IsAdminOrManager(BasePermission):
         return bool(user and user.is_authenticated and getattr(user, 'is_admin_or_manager', False))
 from .models import (
     Vendor, SO, SOPhoto, Pallet, PalletPhoto, ChipBrand, Chip, MPN,
-    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist, PalletMPN,
+    MPNReportConfig, MPNReportEmail, PalletChipContainer, Box, Checklist, PalletMPN, PalletChipNG,
 )
 from .serializer import (
     VendorSerializer, SOSerializer, SODetailSerializer,
@@ -253,7 +253,7 @@ def so_list(request):
 @permission_classes([IsAuthenticated])
 def so_detail(request, pk):
     so = get_object_or_404(
-        SO.objects.select_related('vendor').prefetch_related('pallets__pallet_mpns', 'pallets__photos', 'photos'),
+        SO.objects.select_related('vendor').prefetch_related('pallets__pallet_mpns', 'pallets__chip_ngs', 'pallets__photos', 'photos'),
         pk=pk
     )
     if request.method == 'GET':
@@ -297,7 +297,7 @@ def so_photo_delete(request, so_pk, pk):
 def pallet_list(request, so_pk):
     so = get_object_or_404(SO, pk=so_pk)
     if request.method == 'GET':
-        return Response(PalletSerializer(so.pallets.prefetch_related('pallet_mpns', 'photos'), many=True).data)
+        return Response(PalletSerializer(so.pallets.prefetch_related('pallet_mpns', 'chip_ngs', 'photos'), many=True).data)
     data = request.data.copy()
     data['so'] = so.pk
     if 'pallet_seq' not in data:
@@ -586,6 +586,10 @@ def pallet_mpn_detail(request, pallet_pk, pk):
         n = row.checklist_use_count()
         if n:
             return Response({'error': f'Used by {n} checklist line(s)'}, status=status.HTTP_400_BAD_REQUEST)
+        ng = row.ng_use_count()
+        if ng:
+            return Response({'error': f'Its chips have {ng} NG record(s) on this pallet — clear them first'},
+                            status=status.HTTP_400_BAD_REQUEST)
         row.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
     # Only the count is editable; changing the MPN is remove + add.
@@ -626,6 +630,93 @@ def so_pallet_mpns(request, so_pk):
     return Response(PalletMPNExportSerializer(qs, many=True, context={'request': request}).data)
 
 
+def _pallet_ng_payload(pallet):
+    """The pallet's chips (from its MPNs) grouped by MPN, each with its NG count (0 = none)."""
+    ng = {r.chip_id: r.qty for r in pallet.chip_ngs.all()}
+    rows = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips__brand')
+    return [{
+        'mpn_id': r.mpn_id,
+        'mpn_name': r.mpn.name,
+        'chips': [{
+            'id': c.id,
+            'brand_name': c.brand.name if c.brand_id else '',
+            'chip_mpn': c.chip_mpn,
+            'qty': ng.get(c.id, 0),
+        } for c in r.mpn.chips.all()],
+    } for r in rows]
+
+
+@api_view(['GET', 'PUT'])
+@permission_classes([IsAuthenticated])
+def pallet_ng(request, pallet_pk):
+    """Failed chips per chip on one pallet.
+
+    PUT {"items": [{"chip": id, "qty": n}]} sets each listed chip's count; 0 or blank
+    removes it. All or nothing: one bad item rejects the whole request.
+    """
+    pallet = get_object_or_404(Pallet, pk=pallet_pk)
+    if request.method == 'PUT':
+        items = request.data.get('items') if isinstance(request.data, dict) else None
+        if not isinstance(items, list):
+            return Response({'error': 'items must be a list'}, status=status.HTTP_400_BAD_REQUEST)
+        clean = []
+        for item in items:
+            if not isinstance(item, dict):
+                return Response({'error': 'each item must be an object'}, status=status.HTTP_400_BAD_REQUEST)
+            raw = item.get('qty')
+            if raw in (None, ''):
+                qty = 0
+            elif isinstance(raw, bool) or not isinstance(raw, (int, str)) or not str(raw).strip().isdigit():
+                return Response({'error': 'qty must be a whole number, 0 or more'}, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                qty = int(raw)
+            chip = Chip.objects.filter(pk=_as_int(item.get('chip'), 0)).first()
+            if chip is None or not Checklist.chip_allowed(pallet, chip):
+                return Response({'error': 'chip is not on a board assigned to this pallet'}, status=status.HTTP_400_BAD_REQUEST)
+            clean.append((chip, qty))
+        with transaction.atomic():
+            for chip, qty in clean:
+                if qty:
+                    PalletChipNG.objects.update_or_create(pallet=pallet, chip=chip, defaults={'qty': qty})
+                else:
+                    PalletChipNG.objects.filter(pallet=pallet, chip=chip).delete()
+    return Response(_pallet_ng_payload(pallet))
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def so_inventory(request, so_pk):
+    """Rows for the export's Inventory sheet, pallet by pallet.
+
+    Per pallet: every checklist line (unfilled ones too, blank), then one "NG" row per
+    chip with failures, then a Tantalum row when the pallet has a tantalum weight.
+    """
+    so = get_object_or_404(SO, pk=so_pk)
+    pallets = so.pallets.prefetch_related('checklists__chip', 'chip_ngs__chip').order_by('pallet_seq')
+
+    def processed(chip):
+        t = (chip.processed_type or '') if chip else ''
+        return t[:1].upper() + t[1:]
+
+    out = []
+    for p in pallets:
+        label = p.gateload_number or str(p.pallet_seq)
+        base = {'pallet_id': p.id, 'pallet_label': label}
+        for c in p.checklists.all():
+            out.append({**base, 'kind': 'checklist', 'container_uid': c.barcode, 'chip_mpn': c.model or '',
+                        'processed_type': processed(c.chip), 'packaging_type': c.chip.packaging_type if c.chip else '',
+                        'qty': c.qty})
+        for ng in p.chip_ngs.all():
+            out.append({**base, 'kind': 'ng', 'container_uid': 'NG', 'chip_mpn': ng.chip.chip_mpn,
+                        'processed_type': processed(ng.chip), 'packaging_type': ng.chip.packaging_type,
+                        'qty': ng.qty})
+        if p.tantalum_wt:
+            grams = format(p.tantalum_wt.normalize(), 'f')
+            out.append({**base, 'kind': 'tantalum', 'container_uid': '', 'chip_mpn': 'Tantalum',
+                        'processed_type': 'Harvested', 'packaging_type': 'bag', 'qty': f'{grams}g'})
+    return Response(out)
+
+
 # ─────────────────────────────────────────────────── Chips
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -654,8 +745,9 @@ def mpn_chip_detail(request, mpn_pk, pk):
     try:
         chip.delete()
     except ProtectedError:
-        n = chip.checklists.count()
-        return Response({'error': f'Chip is used by {n} checklist line(s)'}, status=status.HTTP_400_BAD_REQUEST)
+        n, ng = chip.checklists.count(), chip.pallet_ngs.count()
+        used = ' and '.join(x for x in (f'{n} checklist line(s)' if n else '', f'{ng} pallet NG record(s)' if ng else '') if x)
+        return Response({'error': f'Chip is used by {used}'}, status=status.HTTP_400_BAD_REQUEST)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 

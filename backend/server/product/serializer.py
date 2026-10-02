@@ -61,6 +61,7 @@ class PalletPhotoSerializer(serializers.ModelSerializer):
 class PalletSerializer(serializers.ModelSerializer):
     board_qty = serializers.SerializerMethodField(read_only=True)
     board_qty_is_legacy = serializers.SerializerMethodField(read_only=True)
+    ng_qty = serializers.SerializerMethodField(read_only=True)
     box_count = serializers.SerializerMethodField(read_only=True)
     checklist_count = serializers.SerializerMethodField(read_only=True)
     photo_url = serializers.SerializerMethodField(read_only=True)
@@ -68,7 +69,7 @@ class PalletSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_qty_is_legacy', 'box_count', 'checklist_count', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_qty_is_legacy', 'ng_qty', 'box_count', 'checklist_count', 'created_at']
         read_only_fields = ['created_at', 'photo_url', 'photos']
 
     def get_board_qty(self, obj):
@@ -76,6 +77,9 @@ class PalletSerializer(serializers.ModelSerializer):
 
     def get_board_qty_is_legacy(self, obj):
         return obj.board_qty_is_legacy
+
+    def get_ng_qty(self, obj):
+        return obj.ng_qty
 
     def get_box_count(self, obj):
         return obj.boxes.count()

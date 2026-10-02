@@ -202,6 +202,9 @@ Key field notes:
   (`Checklist.chip_allowed`); the server copies brand/model text from it (`text_from_chip`),
   and `Chip.save()` / `ChipBrand.save()` re-copy it whenever the chip or brand is edited.
   MSFT checklists pick a chip; Sales Orders checklists stay free text.
+- `PalletChipNG` — failed (NG) chips per (pallet, chip), edited from the Pallets table's NG column.
+  The SO export's Inventory sheet is built by `GET sos/<id>/inventory/` (checklist lines → NG rows →
+  Tantalum row, per pallet); every other sheet's chip quantities are formulas over that sheet.
 - `Pallet.board_qty` — legacy hand-typed board count, read only as the fallback in
   `effective_board_qty`; never written by the UI any more
 - `Chip.mpn` — FK to `MPN` (nullable)

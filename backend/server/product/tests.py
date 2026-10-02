@@ -4,7 +4,7 @@ import json
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
-from product.models import Vendor, SO, Pallet, Box, Checklist, MPN, Chip, ChipBrand, PalletMPN
+from product.models import Vendor, SO, Pallet, Box, Checklist, MPN, Chip, ChipBrand, PalletMPN, PalletChipNG
 
 
 def make_pallet(so_number='SO112750', licence='hdh77', gateload='1'):
@@ -1014,3 +1014,89 @@ class MpnBoardsBySoTests(TestCase):
         m = MPN.objects.create(name='UNUSED')
         data = self.client.get(f'/product/mpns/{m.id}/boards-by-so/').json()
         self.assertEqual((data['total'], data['sos']), (0, []))
+
+
+class PalletNgTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.so, (self.p, self.p2) = make_so_with_pallets()
+        self.mpn = MPN.objects.create(name='SP#0WW9TT')
+        self.slk = Chip.objects.create(mpn=self.mpn, chip_mpn='SLKM8', brand=ChipBrand.objects.create(name='intel'))
+        self.ast = Chip.objects.create(mpn=self.mpn, chip_mpn='AST1050')
+        self.row = PalletMPN.objects.create(pallet=self.p, mpn=self.mpn, board_qty=10)
+        self.url = f'/product/pallets/{self.p.id}/ng/'
+
+    def test_get_lists_pallet_chips_with_zero(self):
+        data = self.client.get(self.url).json()
+        self.assertEqual(data[0]['mpn_name'], 'SP#0WW9TT')
+        self.assertEqual({c['chip_mpn']: c['qty'] for c in data[0]['chips']}, {'SLKM8': 0, 'AST1050': 0})
+
+    def test_put_sets_and_clears(self):
+        resp = self.client.put(self.url, {'items': [{'chip': self.slk.id, 'qty': 19}, {'chip': self.ast.id, 'qty': 0}]}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(PalletChipNG.objects.get(pallet=self.p, chip=self.slk).qty, 19)
+        self.assertFalse(PalletChipNG.objects.filter(chip=self.ast).exists())
+        self.client.put(self.url, {'items': [{'chip': self.slk.id, 'qty': None}]}, format='json')
+        self.assertFalse(PalletChipNG.objects.exists())
+
+    def test_pallet_api_shows_ng_total(self):
+        PalletChipNG.objects.create(pallet=self.p, chip=self.slk, qty=19)
+        PalletChipNG.objects.create(pallet=self.p, chip=self.ast, qty=2)
+        p = next(x for x in self.client.get(f'/product/sos/{self.so.id}/').json()['pallets'] if x['id'] == self.p.id)
+        self.assertEqual(p['ng_qty'], 21)
+
+    def test_chip_not_on_pallet_rejected(self):
+        resp = self.client.put(f'/product/pallets/{self.p2.id}/ng/', {'items': [{'chip': self.slk.id, 'qty': 3}]}, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertFalse(PalletChipNG.objects.exists())
+
+    def test_bad_qty_rejected(self):
+        for bad in (-1, 'x', 1.5):
+            resp = self.client.put(self.url, {'items': [{'chip': self.slk.id, 'qty': bad}]}, format='json')
+            self.assertEqual(resp.status_code, 400, bad)
+
+    def test_mpn_removal_blocked_by_ng(self):
+        PalletChipNG.objects.create(pallet=self.p, chip=self.slk, qty=1)
+        resp = self.client.delete(f'/product/pallets/{self.p.id}/mpns/{self.row.id}/')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('NG', resp.json()['error'])
+
+    def test_chip_delete_blocked_by_ng(self):
+        PalletChipNG.objects.create(pallet=self.p, chip=self.slk, qty=1)
+        resp = self.client.delete(f'/product/mpns/{self.mpn.id}/chips/{self.slk.id}/')
+        self.assertEqual(resp.status_code, 400)
+
+
+class SoInventoryTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.so, (self.p1, self.p2) = make_so_with_pallets()
+        self.p1.gateload_number = '7'; self.p1.tantalum_wt = '73.00'; self.p1.save()
+        mpn = MPN.objects.create(name='M')
+        self.slk = Chip.objects.create(mpn=mpn, chip_mpn='SLKM8', processed_type='harvested', packaging_type='tray')
+        PalletMPN.objects.create(pallet=self.p1, mpn=mpn)
+        Checklist.objects.create(pallet=self.p1, barcode='S-1-1', chip=self.slk, brand='', model='SLKM8', qty=331)
+        Checklist.objects.create(pallet=self.p1, barcode='S-1-2')                      # not filled in yet
+        PalletChipNG.objects.create(pallet=self.p1, chip=self.slk, qty=19)
+        Checklist.objects.create(pallet=self.p2, barcode='S-2-1', brand='Dell', model='X9', qty=4)  # free text
+
+    def test_rows_in_order(self):
+        rows = self.client.get(f'/product/sos/{self.so.id}/inventory/').json()
+        got = [(r['pallet_label'], r['kind'], r['container_uid'], r['chip_mpn'], r['processed_type'],
+                r['packaging_type'], r['qty']) for r in rows]
+        self.assertEqual(got, [
+            ('7', 'checklist', 'S-1-1', 'SLKM8', 'Harvested', 'tray', 331),
+            ('7', 'checklist', 'S-1-2', '', '', '', None),
+            ('7', 'ng', 'NG', 'SLKM8', 'Harvested', 'tray', 19),
+            ('7', 'tantalum', '', 'Tantalum', 'Harvested', 'bag', '73g'),
+            ('2', 'checklist', 'S-2-1', 'X9', '', '', 4),
+        ])
+
+    def test_fractional_tantalum_kept(self):
+        self.p1.tantalum_wt = '72.50'; self.p1.save()
+        rows = self.client.get(f'/product/sos/{self.so.id}/inventory/').json()
+        self.assertEqual([r['qty'] for r in rows if r['kind'] == 'tantalum'], ['72.5g'])

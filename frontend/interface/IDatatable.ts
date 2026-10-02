@@ -66,6 +66,8 @@ export interface Pallet {
   board_qty: number | null;
   /** True when board_qty is the old hand-typed value (the pallet has no MPN rows yet). */
   board_qty_is_legacy: boolean;
+  /** Failed chips on this pallet, all chips together (PalletChipNG). */
+  ng_qty: number;
   box_count?: number;
   checklist_count?: number;
   created_at: string;
@@ -352,4 +354,25 @@ export interface MpnBoardsBySo {
     /** Lowest-numbered pallet in the SO holding this MPN — the click-through target. */
     first_pallet_id: number | null;
   }[];
+}
+
+/** A pallet's chips grouped by MPN, each with its NG (failed) count — GET/PUT /pallets/<id>/ng/. */
+export interface PalletNgGroup {
+  mpn_id: number;
+  mpn_name: string;
+  chips: { id: number; brand_name: string; chip_mpn: string; qty: number }[];
+}
+
+/** One row of the export's Inventory sheet — GET /sos/<id>/inventory/. */
+export interface InventoryRow {
+  pallet_id: number;
+  pallet_label: string;
+  kind: 'checklist' | 'ng' | 'tantalum';
+  /** Checklist barcode, "NG", or blank for tantalum. */
+  container_uid: string;
+  chip_mpn: string;
+  processed_type: string;
+  packaging_type: string;
+  /** Number for chips (null = not filled in yet); text like "73g" for tantalum. */
+  qty: number | string | null;
 }
