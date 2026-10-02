@@ -199,7 +199,8 @@ Key field notes:
   PalletMPN `board_qty` (blank = 0), or the legacy hand-typed `Pallet.board_qty` when the pallet
   has no rows (`board_qty_is_legacy`). The Pallet API's `board_qty` is this value, read-only.
 - `Checklist.chip` — FK to `Chip` (nullable, PROTECT). Must belong to an MPN on the line's pallet
-  (`Checklist.chip_allowed`); the server copies brand/model text from it (`text_from_chip`).
+  (`Checklist.chip_allowed`); the server copies brand/model text from it (`text_from_chip`),
+  and `Chip.save()` / `ChipBrand.save()` re-copy it whenever the chip or brand is edited.
   MSFT checklists pick a chip; Sales Orders checklists stay free text.
 - `Pallet.board_qty` — total board count for this pallet row
 - `Chip.mpn` — FK to `MPN` (nullable)

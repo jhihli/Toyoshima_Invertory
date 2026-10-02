@@ -358,6 +358,11 @@ class ChipBrand(models.Model):
     def __str__(self):
         return self.name
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Checklist lines that picked a chip of this brand carry its name as text.
+        Checklist.objects.filter(chip__brand=self).update(brand=self.name)
+
 
 class Chip(models.Model):
     PROCESSED_TYPE_CHOICES = [
@@ -410,6 +415,13 @@ class Chip(models.Model):
 
     def __str__(self):
         return f"{self.brand} x{self.qty}" if self.brand else f"Chip x{self.qty}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Keep the brand/model text of checklist lines that picked this chip in step with
+        # it (Checklist.text_from_chip); free-text lines have no chip and are untouched.
+        brand, model = Checklist.text_from_chip(self)
+        self.checklists.update(brand=brand, model=model)
 
 
 class PalletChipContainer(models.Model):

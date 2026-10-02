@@ -901,3 +901,45 @@ class BoardRemovedTests(TestCase):
                                                      'barcode': 'X'}, format='json', HTTP_X_API_KEY='k')
         self.assertEqual(resp.status_code, 400)
         self.assertIn('Unknown action', resp.json()['error'])
+
+
+class ChecklistFollowsChipTests(TestCase):
+    """Checklist brand/model text tracks later edits to its chip and the chip's brand."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        _, (self.p, _) = make_so_with_pallets()
+        self.mpn = MPN.objects.create(name='SP#0WW9TT')
+        self.brand = ChipBrand.objects.create(name='ASPEED')
+        self.chip = Chip.objects.create(mpn=self.mpn, brand=self.brand, chip_mpn='AST1050')
+        PalletMPN.objects.create(pallet=self.p, mpn=self.mpn, board_qty=10)
+        self.line = Checklist.objects.create(pallet=self.p, barcode='b-1', chip=self.chip,
+                                             brand='ASPEED', model='AST1050', qty=20)
+        self.free = Checklist.objects.create(pallet=self.p, barcode='b-2', brand='ASPEED', model='AST1050')
+
+    def test_renaming_chip_mpn_updates_linked_lines(self):
+        resp = self.client.put(f'/product/mpns/{self.mpn.id}/chips/{self.chip.id}/',
+                               {'chip_mpn': 'AST1050G'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.line.refresh_from_db()
+        self.assertEqual((self.line.brand, self.line.model, self.line.qty), ('ASPEED', 'AST1050G', 20))
+
+    def test_changing_chip_brand_updates_linked_lines(self):
+        other = ChipBrand.objects.create(name='Broadcom')
+        self.client.put(f'/product/mpns/{self.mpn.id}/chips/{self.chip.id}/', {'brand': other.id}, format='json')
+        self.line.refresh_from_db()
+        self.assertEqual(self.line.brand, 'Broadcom')
+
+    def test_renaming_a_brand_updates_linked_lines(self):
+        resp = self.client.put(f'/product/chipbrands/{self.brand.id}/', {'name': 'Aspeed Tech'}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.line.refresh_from_db()
+        self.assertEqual(self.line.brand, 'Aspeed Tech')
+
+    def test_free_text_lines_are_left_alone(self):
+        self.client.put(f'/product/mpns/{self.mpn.id}/chips/{self.chip.id}/', {'chip_mpn': 'AST1050G'}, format='json')
+        self.client.put(f'/product/chipbrands/{self.brand.id}/', {'name': 'Aspeed Tech'}, format='json')
+        self.free.refresh_from_db()
+        self.assertEqual((self.free.brand, self.free.model), ('ASPEED', 'AST1050'))
