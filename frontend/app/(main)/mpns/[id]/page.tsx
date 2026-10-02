@@ -6,7 +6,7 @@ import {
   Button, Breadcrumbs, Field, Input, Select, Modal, Badge,
   useToast, thS, tdS, ghostBtn, Empty,
 } from '@/app/ui/components';
-import { api } from '@/app/lib/api';
+import { api, apiErrorMessage } from '@/app/lib/api';
 import { buildSlots, bomTotalQty, ITEM_GROUP_OPTIONS, MEMORY_SLOT_GROUP } from '@/app/lib/chipSlots';
 import type { MPN, Chip, ChipBrand } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
@@ -104,7 +104,7 @@ export default function MPNDetailPage() {
       await api.mpns.chips.delete(mpnId, chipId);
       setMpn(m => m ? { ...m, chips: (m.chips ?? []).filter(c => c.id !== chipId) } : m);
       toast('Chip removed');
-    } catch { toast('Failed to delete chip'); }
+    } catch (err) { toast(apiErrorMessage(err) || 'Failed to delete chip'); }
   };
 
 
@@ -233,7 +233,7 @@ export default function MPNDetailPage() {
             <div className="table-scroll">
             {/* Fixed layout: the px widths below must stay <= minWidth, or the last
                 auto-width column collapses and its text spills over its neighbour. */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1280 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1184 }}>
               <colgroup>
                 <col style={{ width: 120 }} />{/* Brand */}
                 <col style={{ width: 150 }} />{/* Chip MPN */}
@@ -245,7 +245,6 @@ export default function MPNDetailPage() {
                 <col style={{ width: 124 }} />{/* Processed Type */}
                 <col style={{ width: 124 }} />{/* Packaging Type */}
                 <col />{/* Description — takes the remainder */}
-                <col style={{ width: 96 }} />{/* actions */}
               </colgroup>
               <thead>
                 <tr>
@@ -259,15 +258,17 @@ export default function MPNDetailPage() {
                   <th style={chipThS}>Processed Type</th>
                   <th style={chipThS}>Packaging Type</th>
                   <th style={chipThS}>Description</th>
-                  <th style={{ ...chipThS, textAlign: 'right' }}></th>
                 </tr>
               </thead>
               <tbody>
                 {chips.length === 0 && (
-                  <tr><td colSpan={12}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
+                  <tr><td colSpan={10}><Empty label="No chips yet" sub="Click '+ Add chip' to start." /></td></tr>
                 )}
                 {chips.map(chip => (
-                  <tr key={chip.id} className="chip-row" style={{ borderTop: '1px solid var(--hair)' }}>
+                  // The whole row opens the editor (Delete lives in it) — an action column at
+                  // the far right of this wide table scrolled out of view.
+                  <tr key={chip.id} className="chip-row" onClick={() => setEditingChip(chip)} title="Click to edit"
+                    style={{ borderTop: '1px solid var(--hair)', cursor: 'pointer' }}>
                     <td style={{ ...chipTdS, fontSize: 13, fontWeight: 500 }}>
                       {chip.brand_name || <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
@@ -290,7 +291,7 @@ export default function MPNDetailPage() {
                         )}
                       </span>
                     </td>
-                    <td style={{ ...chipTdS, padding: '8px 10px' }}>
+                    <td style={{ ...chipTdS, padding: '8px 10px' }} onClick={e => { if (chip.chip_photo_url) e.stopPropagation(); }}>
                       <ChipPhotoCell
                         src={chip.chip_photo_url}
                         onView={() => chip.chip_photo_url && setLightbox({ src: chip.chip_photo_url, title: [chip.brand_name, chip.chip_mpn].filter(Boolean).join(' · ') || 'Chip Photo' })}
@@ -313,12 +314,6 @@ export default function MPNDetailPage() {
                     <td style={{ ...chipTdS, fontSize: 12, color: 'var(--ink-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={chip.description || undefined}>
                       {chip.description || <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
-                    <td style={{ ...chipTdS, textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: 6 }}>
-                        <button onClick={e => { e.stopPropagation(); setEditingChip(chip); }} style={chipIconBtn} title="Edit"><EditIcon /></button>
-                        <button onClick={e => { e.stopPropagation(); setDeleteChipId(chip.id); }} style={{ ...chipIconBtn, color: 'var(--err)' }} title="Delete"><TrashIcon /></button>
-                      </div>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -339,7 +334,9 @@ export default function MPNDetailPage() {
       </Modal>
       <EditMPNModal open={editOpen} mpn={mpn} onClose={() => setEditOpen(false)} onSave={handleUpdateMPN} />
       <AddChipModal open={addChipOpen} chipBrands={chipBrands} onClose={() => setAddChipOpen(false)} onAdd={handleAddChip} />
-      {editingChip && <AddChipModal open={true} mode="edit" initial={editingChip} chipBrands={chipBrands} onClose={() => setEditingChip(null)} onAdd={data => handleUpdateChip(editingChip.id, data)} />}
+      {editingChip && <AddChipModal open={true} mode="edit" initial={editingChip} chipBrands={chipBrands}
+        onDelete={() => { setDeleteChipId(editingChip.id); setEditingChip(null); }}
+        onClose={() => setEditingChip(null)} onAdd={data => handleUpdateChip(editingChip.id, data)} />}
       <Lightbox src={lightbox?.src ?? null} title={lightbox?.title} onClose={() => setLightbox(null)} />
     </div>
   );
@@ -421,18 +418,6 @@ const chipThS: React.CSSProperties = {
 // against their headers.
 const chipTdS: React.CSSProperties = { ...tdS, padding: '6px 10px' };
 
-const chipIconBtn: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  width: 32, height: 32, background: 'transparent', border: '1px solid var(--hair)',
-  borderRadius: 4, cursor: 'pointer', color: 'var(--ink-3)', padding: 0, flexShrink: 0,
-};
-
-const EditIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-  </svg>
-);
 const TrashIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6" />
@@ -616,8 +601,10 @@ const PACKAGING_TYPE_OPTIONS = [
   { value: 'bag', label: 'Bag' },
 ];
 
-function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd }: {
+function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd, onDelete }: {
   open: boolean; mode?: 'add' | 'edit'; initial?: Chip | null; chipBrands: ChipBrand[]; onClose: () => void; onAdd: (data: ChipFormData) => void;
+  /** Edit mode only: shows a Delete button that hands off to the confirm dialog. */
+  onDelete?: () => void;
 }) {
   const isMobile = useIsMobile();
   const [brandId, setBrandId] = useState('');
@@ -674,6 +661,9 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd 
   return (
     <Modal open={open} onClose={onClose} title={mode === 'edit' ? 'Edit Chip' : 'Add Chip'} width={580}
       footer={<>
+        {mode === 'edit' && onDelete && (
+          <Button variant="danger" icon={<TrashIcon />} onClick={onDelete} style={{ marginRight: 'auto' }}>Delete</Button>
+        )}
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" onClick={submit}>{mode === 'edit' ? 'Save' : 'Add'}</Button>
       </>}>
