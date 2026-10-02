@@ -10,6 +10,7 @@ import { api, apiErrorMessage } from '@/app/lib/api';
 import { slotCount } from '@/app/lib/chipSlots';
 import type { MPN, MPNReportConfig, MPNReportStatus, SO } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
+import BoardsBySoModal from '@/app/ui/mpn/BoardsBySoModal';
 
 export default function MPNsPage() {
   const router = useRouter();
@@ -21,6 +22,8 @@ export default function MPNsPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMpn, setModalMpn] = useState<MPN | null>(null);
+  // BOARDS count clicked → per-SO breakdown of that MPN's boards.
+  const [boardsByMpn, setBoardsByMpn] = useState<MPN | null>(null);
   const [exporting, setExporting] = useState(false);
 
   // Optional SO scope — when set, the Boards column counts only boards assigned
@@ -459,12 +462,14 @@ export default function MPNsPage() {
                   <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 12, color: 'var(--ink-3)' }}>
                     <span><span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-4)' }}>BF/AF</span> <span className="num">{m.beforecut_weight ?? '—'} / {m.aftercut_weight ?? '—'}</span></span>
                     <span><span style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--ink-4)' }}>Chips</span> <span className="num">{m.chips_per_board ?? '—'}</span></span>
-                    <span className="num" style={{
-                      padding: '1px 7px', fontSize: 11,
+                    <button className="num" onClick={() => globalCount > 0 && setBoardsByMpn(m)}
+                      title={globalCount > 0 ? 'Boards by SO' : undefined} style={{
+                      padding: '1px 7px', fontSize: 11, fontFamily: 'inherit',
                       background: bc > 0 ? '#e6f4ea' : 'var(--surface-2)',
                       border: `1px solid ${bc > 0 ? '#a8d5b0' : 'var(--hair)'}`,
                       borderRadius: 3, color: bc > 0 ? '#2e7d32' : 'var(--ink-4)',
-                    }}>{bc} {selectedSo ? `in ${selectedSo.so_number}` : 'boards'}</span>
+                      cursor: globalCount > 0 ? 'pointer' : 'default',
+                    }}>{bc} {selectedSo ? `in ${selectedSo.so_number}` : 'boards'}</button>
                     <span style={{ color: 'var(--ink-5)' }}>{m.created_at?.slice(0, 10) || '—'}</span>
                   </div>
                   {m.note && (
@@ -547,13 +552,14 @@ export default function MPNsPage() {
                       <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.aftercut_weight ?? '—'}</td>
                       <td style={{ ...tdS, textAlign: 'right' }} className="num">{m.chips_per_board ?? '—'}</td>
                       <td style={{ ...tdS, textAlign: 'right' }}>
-                        <span className="num" style={{
-                          display: 'inline-block', padding: '2px 8px', fontSize: 12,
+                        <button className="num" onClick={() => globalCount > 0 && setBoardsByMpn(m)}
+                          title={globalCount > 0 ? 'Boards by SO' : undefined} style={{
+                          display: 'inline-block', padding: '2px 8px', fontSize: 12, fontFamily: 'inherit',
                           background: bc > 0 ? '#e6f4ea' : 'var(--surface-2)',
                           border: `1px solid ${bc > 0 ? '#a8d5b0' : 'var(--hair)'}`,
                           borderRadius: 3, color: bc > 0 ? '#2e7d32' : 'var(--ink-4)',
-                          lineHeight: 1.6,
-                        }}>{bc}</span>
+                          lineHeight: 1.6, cursor: globalCount > 0 ? 'pointer' : 'default',
+                        }}>{bc}</button>
                       </td>
                       <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)' }}>{m.created_at?.slice(0, 10) || '—'}</td>
                       <td style={{ ...tdS, fontSize: 12, color: 'var(--ink-3)', maxWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: m.note ? 600 : 400 }}
@@ -661,6 +667,7 @@ export default function MPNsPage() {
           </div>
         </div>
       </Modal>
+      <BoardsBySoModal mpn={boardsByMpn} highlightSoId={selectedSo?.id ?? null} onClose={() => setBoardsByMpn(null)} />
     </div>
   );
 }

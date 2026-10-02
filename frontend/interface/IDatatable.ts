@@ -335,3 +335,21 @@ export interface PalletMpnExportRow {
   mpn: Pick<MPN, 'id' | 'name' | 'part_type' | 'cutboard_cost' | 'created_at' | 'chips_per_board'>;
   chips: Chip[];
 }
+
+/** Where an MPN's boards are: one row per SO (GET /mpns/<id>/boards-by-so/). */
+export interface MpnBoardsBySo {
+  mpn_id: number;
+  mpn_name: string;
+  /** Equals the MPN's board_count. */
+  total: number;
+  sos: {
+    so_id: number;
+    so_number: string;
+    inbound_date: string | null;
+    vendor_name: string;
+    pallet_count: number;
+    board_qty: number;
+    /** Lowest-numbered pallet in the SO holding this MPN — the click-through target. */
+    first_pallet_id: number | null;
+  }[];
+}

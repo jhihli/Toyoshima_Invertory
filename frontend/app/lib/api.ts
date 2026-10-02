@@ -89,7 +89,7 @@ export function apiErrorMessage(e: unknown): string {
 // ─── Typed wrappers ───────────────────────────────────────────────
 import type {
   Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, ChipBrand, Chip, MPN,
-  PalletMPN, ChipOptionGroup, PalletMpnExportRow,
+  PalletMPN, ChipOptionGroup, PalletMpnExportRow, MpnBoardsBySo,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
   PalletChipContainer, Box, BoxSearchResult, Checklist, ChecklistSearchResult,
@@ -217,6 +217,7 @@ export const api = {
       return apiGet<MPN[]>(`/mpns/?${qs}`);
     },
     get: (id: number) => apiGet<MPN>(`/mpns/${id}/`),
+    boardsBySo: (id: number) => apiGet<MpnBoardsBySo>(`/mpns/${id}/boards-by-so/`),
     create: (d: Partial<MPN>) => apiPost<MPN>('/mpns/', d),
     update: (id: number, d: Partial<MPN>) => apiPut<MPN>(`/mpns/${id}/`, d),
     delete: (id: number) => apiDelete(`/mpns/${id}/`),

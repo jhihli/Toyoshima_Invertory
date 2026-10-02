@@ -113,6 +113,38 @@ def mpn_detail(request, pk):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def mpn_boards_by_so(request, pk):
+    """Where an MPN's boards are: one row per SO, newest SO first.
+
+    Sums PalletMPN.board_qty (blank = 0) the same way MPN.board_total() does, so
+    `total` always equals the MPN's board_count.
+    """
+    from django.db.models import Count, Sum
+    mpn = get_object_or_404(MPN, pk=pk)
+    rows = (mpn.pallet_mpns
+            .values('pallet__so_id', 'pallet__so__so_number', 'pallet__so__inbound_date',
+                    'pallet__so__vendor__name')
+            .annotate(pallets=Count('pallet', distinct=True), boards=Sum('board_qty'))
+            .order_by('-pallet__so__inbound_date', '-pallet__so_id'))
+    # Lowest-numbered pallet in each SO that holds this MPN — where a click lands.
+    first_pallet = {}
+    for so_id, pallet_id in mpn.pallet_mpns.order_by('pallet__pallet_seq').values_list('pallet__so_id', 'pallet_id'):
+        first_pallet.setdefault(so_id, pallet_id)
+    sos = [{
+        'so_id': r['pallet__so_id'],
+        'so_number': r['pallet__so__so_number'],
+        'inbound_date': r['pallet__so__inbound_date'].isoformat() if r['pallet__so__inbound_date'] else None,
+        'vendor_name': r['pallet__so__vendor__name'],
+        'pallet_count': r['pallets'],
+        'board_qty': r['boards'] or 0,
+        'first_pallet_id': first_pallet.get(r['pallet__so_id']),
+    } for r in rows]
+    return Response({'mpn_id': mpn.id, 'mpn_name': mpn.name,
+                     'total': sum(r['board_qty'] for r in sos), 'sos': sos})
+
+
 @api_view(['POST', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def mpn_beforecut_photo(request, pk):

@@ -970,3 +970,47 @@ class ChecklistBulkChipQueryTests(TestCase):
         small, large = self._queries_for(2), self._queries_for(52)
         # One INSERT per extra line is inherent; anything above that is a per-line lookup.
         self.assertLessEqual(large - small, 50)
+
+
+class MpnBoardsBySoTests(TestCase):
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.mpn = MPN.objects.create(name='SP#0WW9TT')
+        other = MPN.objects.create(name='OTHER')
+        self.so1, (a, b) = make_so_with_pallets(2, so_number='SO-NEW')
+        self.so1.inbound_date = date(2026, 9, 1); self.so1.save()
+        self.so2, (c,) = make_so_with_pallets(1, so_number='SO-OLD')
+        self.so2.inbound_date = date(2026, 8, 1); self.so2.save()
+        PalletMPN.objects.create(pallet=a, mpn=self.mpn, board_qty=20)
+        PalletMPN.objects.create(pallet=b, mpn=self.mpn, board_qty=None)   # blank counts 0
+        PalletMPN.objects.create(pallet=c, mpn=self.mpn, board_qty=7)
+        PalletMPN.objects.create(pallet=c, mpn=other, board_qty=99)        # other MPN ignored
+        self.url = f'/product/mpns/{self.mpn.id}/boards-by-so/'
+
+    def test_one_row_per_so_newest_first(self):
+        data = self.client.get(self.url).json()
+        self.assertEqual(data['total'], 27)
+        self.assertEqual([(r['so_number'], r['pallet_count'], r['board_qty']) for r in data['sos']],
+                         [('SO-NEW', 2, 20), ('SO-OLD', 1, 7)])
+        row = data['sos'][0]
+        self.assertEqual((row['so_id'], row['inbound_date'], row['vendor_name']),
+                         (self.so1.id, '2026-09-01', 'MSFT'))
+
+    def test_first_pallet_holding_the_mpn(self):
+        _, (x,) = make_so_with_pallets(1, so_number='SO-X')
+        late = Pallet.objects.create(so=x.so, pallet_seq=5, qty=1)
+        PalletMPN.objects.create(pallet=late, mpn=self.mpn, board_qty=3)   # pallet #1 lacks it
+        rows = {r['so_number']: r for r in self.client.get(self.url).json()['sos']}
+        self.assertEqual(rows['SO-X']['first_pallet_id'], late.id)
+        self.assertEqual(rows['SO-OLD']['first_pallet_id'], self.so2.pallets.get().id)
+
+    def test_total_matches_mpn_board_count(self):
+        data = self.client.get(self.url).json()
+        self.assertEqual(data['total'], self.client.get(f'/product/mpns/{self.mpn.id}/').json()['board_count'])
+
+    def test_unused_mpn_is_empty(self):
+        m = MPN.objects.create(name='UNUSED')
+        data = self.client.get(f'/product/mpns/{m.id}/boards-by-so/').json()
+        self.assertEqual((data['total'], data['sos']), (0, []))

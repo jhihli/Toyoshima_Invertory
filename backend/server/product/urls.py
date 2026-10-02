@@ -6,6 +6,7 @@ urlpatterns = [
     path('mpns/', views.mpn_list, name='mpn-list'),
     path('mpns/bulk-status/', views.mpn_bulk_status, name='mpn-bulk-status'),
     path('mpns/<int:pk>/', views.mpn_detail, name='mpn-detail'),
+    path('mpns/<int:pk>/boards-by-so/', views.mpn_boards_by_so, name='mpn-boards-by-so'),
     path('mpns/<int:mpn_pk>/chips/', views.mpn_chip_create, name='mpn-chip-create'),
     path('mpns/<int:mpn_pk>/chips/<int:pk>/', views.mpn_chip_detail, name='mpn-chip-detail'),
     path('mpns/<int:mpn_pk>/chips/<int:pk>/photo/', views.chip_photo, name='chip-photo'),
