@@ -6,7 +6,7 @@ import {
   Button, Modal, Input, Empty,
   Field, useToast, thS, tdS, ghostBtn,
 } from '@/app/ui/components';
-import { api } from '@/app/lib/api';
+import { api, apiErrorMessage } from '@/app/lib/api';
 import { slotCount } from '@/app/lib/chipSlots';
 import type { MPN, MPNReportConfig, MPNReportStatus, SO } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
@@ -23,8 +23,8 @@ export default function MPNsPage() {
   const [modalMpn, setModalMpn] = useState<MPN | null>(null);
   const [exporting, setExporting] = useState(false);
 
-  // Optional SO scope — when set, the Boards column counts only boards scanned
-  // in that SO (a reused MPN starts at 0 per shipment). null = all-SO totals.
+  // Optional SO scope — when set, the Boards column counts only boards assigned
+  // to that SO's pallets (a reused MPN starts at 0 per shipment). null = all-SO totals.
   const [selectedSo, setSelectedSo] = useState<{ id: number; so_number: string } | null>(null);
 
   // Current / Finished lifecycle
@@ -193,25 +193,20 @@ export default function MPNsPage() {
   };
 
   const handleDelete = async (m: MPN) => {
-    const bc = m.board_count ?? 0;
-    if (bc > 0) {
-      toast(`Cannot delete — ${bc} board${bc !== 1 ? 's are' : ' is'} still using this MPN. Reassign them first.`);
-      return;
-    }
     if (!confirm(`Delete MPN "${m.name}"? This cannot be undone.`)) return;
     try {
       await api.mpns.delete(m.id);
       setMpns(ms => ms.filter(x => x.id !== m.id));
       toast('MPN deleted');
-    } catch (err: any) {
-      const msg = err?.message ?? '';
-      toast(msg.includes('Cannot delete') ? msg : 'Failed to delete MPN');
+    } catch (err) {
+      // e.g. "Cannot delete: this MPN is assigned to 3 pallet(s). Remove it from those pallets first."
+      toast(apiErrorMessage(err) || 'Failed to delete MPN');
     }
   };
 
   const handleExport = async () => {
     // Follow the on-screen SO scope: when an SO is selected, export that SO's
-    // own per-shipment counts (and only the MPNs actually scanned in it),
+    // own per-shipment counts (and only the MPNs actually assigned in it),
     // not the all-time all-SO totals.
     const so = selectedSo;
     setExporting(true);
@@ -221,7 +216,7 @@ export default function MPNsPage() {
       const sourceMpns = so ? mpns.filter(m => (m.so_board_count ?? 0) > 0) : mpns;
 
       if (so && sourceMpns.length === 0) {
-        toast(`No boards scanned for ${so.so_number}`);
+        toast(`No boards assigned to ${so.so_number}'s pallets`);
         return;
       }
 
@@ -229,7 +224,7 @@ export default function MPNsPage() {
 
       const aoa: any[][] = [[
         'MPN', 'Date Processed', 'Chip MPN',
-        so ? `BOARDS (${so.so_number})` : 'BOARDS (Scanned)', 'CUTBOARD COST', 'CHIP COST',
+        so ? `BOARDS (${so.so_number})` : 'BOARDS', 'CUTBOARD COST', 'CHIP COST',
       ]];
 
       const merges: { s: { r: number; c: number }; e: { r: number; c: number } }[] = [];
@@ -506,7 +501,7 @@ export default function MPNsPage() {
                   <th style={{ ...thS, textAlign: 'right' }}>Beforecut Weight</th>
                   <th style={{ ...thS, textAlign: 'right' }}>Aftercut Weight</th>
                   <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
-                  <th style={{ ...thS, textAlign: 'right' }}>{selectedSo ? `Boards (${selectedSo.so_number})` : 'Boards (Scanned)'}</th>
+                  <th style={{ ...thS, textAlign: 'right' }}>{selectedSo ? `Boards (${selectedSo.so_number})` : 'Boards'}</th>
                   <th style={thS}>Created</th>
                   <th style={thS}>Note</th>
                   <th style={{ ...thS, textAlign: 'right' }}></th>
@@ -685,7 +680,7 @@ const ChevronDown = ({ open }: { open: boolean }) => (
 );
 
 /** Searchable SO picker. When an SO is chosen, the MPN list's Boards column
- * counts only boards scanned in that SO — so a reused MPN reads 0 per shipment
+ * counts only boards assigned to that SO's pallets — so a reused MPN reads 0 per shipment
  * instead of its confusing all-time, all-SO running total. */
 function SoFilter({ selected, onSelect, fullWidth }: {
   selected: { id: number; so_number: string } | null;

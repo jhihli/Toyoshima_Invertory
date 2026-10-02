@@ -943,3 +943,30 @@ class ChecklistFollowsChipTests(TestCase):
         self.client.put(f'/product/chipbrands/{self.brand.id}/', {'name': 'Aspeed Tech'}, format='json')
         self.free.refresh_from_db()
         self.assertEqual((self.free.brand, self.free.model), ('ASPEED', 'AST1050'))
+
+
+class ChecklistBulkChipQueryTests(TestCase):
+    """Adding many lines with the same chip must not look the chip up once per line."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        _, (self.p, _) = make_so_with_pallets()
+        mpn = MPN.objects.create(name='A')
+        self.chip = Chip.objects.create(mpn=mpn, chip_mpn='X1')
+        PalletMPN.objects.create(pallet=self.p, mpn=mpn)
+
+    def _queries_for(self, n):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        with CaptureQueriesContext(connection) as ctx:
+            resp = self.client.post(f'/product/pallets/{self.p.id}/checklists/',
+                                    {'items': [{'chip': self.chip.id, 'qty': 1}] * n}, format='json')
+        self.assertEqual(resp.status_code, 201)
+        return len(ctx.captured_queries)
+
+    def test_chip_lookup_is_not_per_line(self):
+        small, large = self._queries_for(2), self._queries_for(52)
+        # One INSERT per extra line is inherent; anything above that is a per-line lookup.
+        self.assertLessEqual(large - small, 50)

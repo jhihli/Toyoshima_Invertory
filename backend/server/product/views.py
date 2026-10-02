@@ -403,6 +403,7 @@ def _clean_checklist_rows(items, pallet=None):
     without `pallet`, so a `chip` it sends is ignored and its text is stored as before.
     """
     rows = []
+    allowed_chips = {}   # chip id → Chip that passed the check; a batch usually repeats one chip
     for item in items:
         if not isinstance(item, dict):
             return None, 'each item must be an object'
@@ -412,9 +413,13 @@ def _clean_checklist_rows(items, pallet=None):
             return None, 'brand and model must be strings'
         chip = None
         if pallet is not None and item.get('chip') not in (None, ''):
-            chip = Chip.objects.select_related('brand').filter(pk=_as_int(item.get('chip'), 0)).first()
-            if chip is None or not Checklist.chip_allowed(pallet, chip):
-                return None, 'chip is not on a board assigned to this pallet'
+            chip_id = _as_int(item.get('chip'), 0)
+            chip = allowed_chips.get(chip_id)
+            if chip is None:
+                chip = Chip.objects.select_related('brand').filter(pk=chip_id).first()
+                if chip is None or not Checklist.chip_allowed(pallet, chip):
+                    return None, 'chip is not on a board assigned to this pallet'
+                allowed_chips[chip_id] = chip
             brand, model = Checklist.text_from_chip(chip)
         rows.append({
             'brand': brand.strip()[:100],

@@ -33,8 +33,16 @@ function parseQty(raw: string): number | null {
 /** One dropdown, grouped by the pallet's boards (MPNs). Picking a chip sets both the
  *  brand and the model — the server copies them from the chip. */
 function ChipSelect({ groups, value, onChange, boardsHref }: {
-  groups: ChipOptionGroup[]; value: string; onChange: (v: string) => void; boardsHref?: string;
+  /** 'error' = the chip list failed to load (distinct from a pallet with no boards). */
+  groups: ChipOptionGroup[] | 'error'; value: string; onChange: (v: string) => void; boardsHref?: string;
 }) {
+  if (groups === 'error') {
+    return (
+      <div style={{ ...InputSty, display: 'flex', alignItems: 'center', color: 'var(--err)', fontSize: 13, height: 'auto', minHeight: 40 }}>
+        Couldn&apos;t load the chip list — close this and try again.
+      </div>
+    );
+  }
   if (groups.length === 0) {
     return (
       <div style={{ ...InputSty, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4, color: 'var(--ink-4)', fontSize: 13, height: 'auto', minHeight: 40 }}>
@@ -65,7 +73,7 @@ type AddPayload = { count: number; brand: string; model: string; chip: number | 
 function AddModal({ open, palletBarcode, nextSeq, chipGroups, boardsHref, onClose, onSubmit }: {
   open: boolean; palletBarcode: string; nextSeq: number;
   /** null = free-text Brand/Model (Sales Orders); an array = chip dropdown (MSFT). */
-  chipGroups: ChipOptionGroup[] | null; boardsHref?: string;
+  chipGroups: ChipOptionGroup[] | 'error' | null; boardsHref?: string;
   onClose: () => void;
   onSubmit: (d: AddPayload) => Promise<void>;
 }) {
@@ -152,7 +160,7 @@ type EditPayload = { brand?: string; model?: string; chip?: number | null; qty: 
 function EditModal({ row, chipGroups, boardsHref, onClose, onSubmit }: {
   row: Checklist | null;
   /** null = free-text Brand/Model (Sales Orders); an array = chip dropdown (MSFT). */
-  chipGroups: ChipOptionGroup[] | null; boardsHref?: string;
+  chipGroups: ChipOptionGroup[] | 'error' | null; boardsHref?: string;
   onClose: () => void; onSubmit: (d: EditPayload) => Promise<void>;
 }) {
   const [brand, setBrand] = useState('');
@@ -243,14 +251,18 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
   const [deleteTarget, setDeleteTarget] = useState<Checklist | null>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [chipGroups, setChipGroups] = useState<ChipOptionGroup[] | null>(null);
+  const [chipGroups, setChipGroups] = useState<ChipOptionGroup[] | 'error' | null>(null);
 
   const load = useCallback(async () => {
     try {
       setRows((await api.pallets.checklists.list(palletId)) || []);
       setSelected(new Set());
-      if (chipMode) setChipGroups(await api.pallets.chipOptions(palletId));
     } catch { showToast('Failed to load checklist', 'err'); }
+    // Separate from the rows: a chip-list failure must not read as "no boards on this pallet".
+    if (chipMode) {
+      try { setChipGroups(await api.pallets.chipOptions(palletId)); }
+      catch { setChipGroups('error'); showToast('Failed to load the chip list', 'err'); }
+    }
     // showToast is recreated every render by the parent; depending on it would reload in a loop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [palletId, chipMode]);

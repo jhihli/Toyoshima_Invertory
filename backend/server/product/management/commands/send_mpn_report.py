@@ -103,7 +103,7 @@ class Command(BaseCommand):
     def _build_excel(self) -> bytes:
         """
         Mirrors the frontend handleExport columns exactly:
-          MPN | Date Processed | Chip MPN | BOARDS (Scanned) | CUTBOARD COST | CHIP COST
+          MPN | Date Processed | Chip MPN | BOARDS | CUTBOARD COST | CHIP COST
         """
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -113,7 +113,7 @@ class Command(BaseCommand):
             'MPN',
             'Date Processed',
             'Chip MPN',
-            'BOARDS (Scanned)',
+            'BOARDS',
             'CUTBOARD COST',
             'CHIP COST',
         ]

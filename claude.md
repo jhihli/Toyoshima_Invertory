@@ -202,7 +202,8 @@ Key field notes:
   (`Checklist.chip_allowed`); the server copies brand/model text from it (`text_from_chip`),
   and `Chip.save()` / `ChipBrand.save()` re-copy it whenever the chip or brand is edited.
   MSFT checklists pick a chip; Sales Orders checklists stay free text.
-- `Pallet.board_qty` — total board count for this pallet row
+- `Pallet.board_qty` — legacy hand-typed board count, read only as the fallback in
+  `effective_board_qty`; never written by the UI any more
 - `Chip.mpn` — FK to `MPN` (nullable)
 - `Box.pallet` — FK to `Pallet` (`related_name='boxes'`), DB table `box`
 

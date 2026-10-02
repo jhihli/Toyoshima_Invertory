@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, apiErrorMessage } from '@/app/lib/api';
 import type { MPN, PalletMPN } from '@/interface/IDatatable';
@@ -157,12 +157,21 @@ export default function PalletBoardsTab({ soId, soNumber, palletOptions, palletI
 function QtyCell({ row, onSave }: { row: PalletMPN; onSave: (r: PalletMPN, raw: string) => Promise<boolean> }) {
   const shown = row.board_qty == null ? '' : String(row.board_qty);
   const [v, setV] = useState(shown);
+  const cancelled = useRef(false);   // Escape: the blur that follows must not save
   useEffect(() => { setV(shown); }, [shown]);
   return (
-    <input type="number" min={0} step={1} value={v} placeholder="—"
+    // Text, not type="number": a number input reports malformed text ('1e') as '',
+    // which would save as a blank qty instead of being rejected.
+    <input type="text" inputMode="numeric" value={v} placeholder="—"
       onChange={e => setV(e.target.value)}
-      onBlur={async () => { if (!(await onSave(row, v))) setV(shown); }}
-      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+      onBlur={async () => {
+        if (cancelled.current) { cancelled.current = false; setV(shown); return; }
+        if (!(await onSave(row, v))) setV(shown);
+      }}
+      onKeyDown={e => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') { cancelled.current = true; e.currentTarget.blur(); }
+      }}
       style={{ width: 84, height: 28, textAlign: 'right', border: '1px solid var(--hair-strong)', borderRadius: 3,
         padding: '0 8px', fontSize: 12.5, background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit' }} />
   );
@@ -236,7 +245,7 @@ function AddBoardsModal({ open, palletId, existingMpnIds, onClose, onAdded }: {
                 {m.part_type && <span style={{ fontSize: 11.5, color: 'var(--ink-4)' }}>{m.part_type}</span>}
               </label>
               {on && (
-                <input type="number" min={0} step={1} placeholder="Board qty" value={picked.get(m.id) ?? ''}
+                <input type="text" inputMode="numeric" placeholder="Board qty" value={picked.get(m.id) ?? ''}
                   onChange={e => { const v = e.target.value; setPicked(p => new Map(p).set(m.id, v)); }}
                   style={{ width: 96, height: 28, textAlign: 'right', border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '0 8px', fontSize: 12.5, fontFamily: 'inherit' }} />
               )}
