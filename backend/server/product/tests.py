@@ -1092,7 +1092,7 @@ class SoInventoryTests(TestCase):
             ('7', 'checklist', 'S-1-1', 'SLKM8', 'Harvested', 'tray', 331),
             ('7', 'checklist', 'S-1-2', '', '', '', None),
             ('7', 'ng', 'NG', 'SLKM8', 'Harvested', 'tray', 19),
-            ('7', 'tantalum', '', 'Tantalum', 'Harvested', 'bag', '73g'),
+            ('7', 'tantalum', 'Tantalum', '', 'Harvested', 'bag', '73g'),
             ('2', 'checklist', 'S-2-1', 'X9', '', '', 4),
         ])
 

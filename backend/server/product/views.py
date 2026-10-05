@@ -712,7 +712,7 @@ def so_inventory(request, so_pk):
                         'qty': ng.qty})
         if p.tantalum_wt:
             grams = format(p.tantalum_wt.normalize(), 'f')
-            out.append({**base, 'kind': 'tantalum', 'container_uid': '', 'chip_mpn': 'Tantalum',
+            out.append({**base, 'kind': 'tantalum', 'container_uid': 'Tantalum', 'chip_mpn': '',
                         'processed_type': 'Harvested', 'packaging_type': 'bag', 'qty': f'{grams}g'})
     return Response(out)
 

@@ -368,7 +368,7 @@ export interface InventoryRow {
   pallet_id: number;
   pallet_label: string;
   kind: 'checklist' | 'ng' | 'tantalum';
-  /** Checklist barcode, "NG", or blank for tantalum. */
+  /** Checklist barcode, "NG", or "Tantalum". */
   container_uid: string;
   chip_mpn: string;
   processed_type: string;
