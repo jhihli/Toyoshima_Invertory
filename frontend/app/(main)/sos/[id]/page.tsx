@@ -20,7 +20,7 @@ import {
 import { WeightRuleField } from '../WeightRuleField';
 import PalletBoardsTab from '@/app/ui/pallet/PalletBoardsTab';
 import PalletNgModal from '@/app/ui/pallet/PalletNgModal';
-import { usePalletBoardsNg, BoardQtyField, NgField } from '@/app/ui/pallet/PalletBoardsNgSection';
+import { usePalletBoardsNg, BoardQtyField, NgField, BoardsNgPanels } from '@/app/ui/pallet/PalletBoardsNgSection';
 import type { SODetail, Pallet, PalletPhoto, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -1575,6 +1575,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
         </Field>
         <BoardQtyField state={boardsNg} />
         <NgField state={boardsNg} />
+        <BoardsNgPanels state={boardsNg} />
       </div>
       <div style={{ marginTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 10 }}>

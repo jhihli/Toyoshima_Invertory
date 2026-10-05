@@ -2,15 +2,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, apiErrorMessage } from '@/app/lib/api';
 import type { PalletMPN, PalletNgGroup } from '@/interface/IDatatable';
-import { Field, Input, Button } from '@/app/ui/components';
+import { Field, Input } from '@/app/ui/components';
 
-/** Board Qty + NG fields of the Edit pallet dialog.
+/** Board Qty + NG of the Edit pallet dialog.
  *
  *  The pallet's Board Qty and NG are sums (Pallet.effective_board_qty / ng_qty) of board
- *  qty per MPN and NG per chip, so they are edited at that level — but shown as ordinary
- *  fields: one Board Qty input when the pallet has a single MPN (the usual case), and an
- *  NG total with only the chips that actually failed listed under it.
- *  The dialog calls `save()` from the hook before saving the pallet itself. */
+ *  qty per MPN and NG per chip, so that is where they are edited — but they show as
+ *  ordinary one-line fields. A single-MPN pallet edits Board Qty in place; otherwise the
+ *  breakdown opens in a full-width panel below the fields (so the two-column grid never
+ *  leaves a hole), and the same goes for NG by chip.
+ *
+ *  Grid usage: <BoardQtyField/> <NgField/> then <BoardsNgPanels/> (spans both columns).
+ *  The dialog calls `save()` before saving the pallet itself. */
 
 const WHOLE = /^\d+$/;
 const num = (v: string) => (WHOLE.test(v.trim()) ? +v.trim() : 0);
@@ -22,24 +25,23 @@ export function usePalletBoardsNg(palletId: number, open: boolean) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [boardQty, setBoardQty] = useState<Record<number, string>>({});   // PalletMPN id → text
   const [ng, setNg] = useState<Record<number, string>>({});               // chip id → text
-  const [ngShown, setNgShown] = useState<number[]>([]);                   // chips listed under NG
+  const [boardsOpen, setBoardsOpen] = useState(false);
+  const [ngOpen, setNgOpen] = useState(false);
   const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setRows(null); setLoadError('');
+    setRows(null); setLoadError(''); setBoardsOpen(false); setNgOpen(false);
     Promise.all([api.pallets.mpns.list(palletId), api.pallets.ng.get(palletId)])
       .then(([pms, groups]) => {
         if (cancelled) return;
         const chipsByMpn = new Map(groups.map(g => [g.mpn_id, g.chips]));
         setRows(pms.map(pm => ({ pm, chips: chipsByMpn.get(pm.mpn) ?? [] })));
         setBoardQty(Object.fromEntries(pms.map(pm => [pm.id, pm.board_qty == null ? '' : String(pm.board_qty)])));
-        const all = groups.flatMap(g => g.chips);
-        setNg(Object.fromEntries(all.map(c => [c.id, c.qty ? String(c.qty) : ''])));
-        setNgShown(all.filter(c => c.qty > 0).map(c => c.id));
+        setNg(Object.fromEntries(groups.flatMap(g => g.chips.map(c => [c.id, c.qty ? String(c.qty) : '']))));
       })
-      .catch(() => { if (!cancelled) setLoadError('Failed to load boards & NG'); });
+      .catch(() => { if (!cancelled) setLoadError('Failed to load Board Qty / NG'); });
     return () => { cancelled = true; };
   }, [palletId, open]);
 
@@ -67,140 +69,122 @@ export function usePalletBoardsNg(palletId: number, open: boolean) {
     }
   }, [rows, boardQty, ng, palletId]);
 
-  return { rows, boardQty, setBoardQty, ng, setNg, ngShown, setNgShown, loadError, save };
+  return { rows, boardQty, setBoardQty, ng, setNg, boardsOpen, setBoardsOpen, ngOpen, setNgOpen, loadError, save };
 }
 
 type State = ReturnType<typeof usePalletBoardsNg>;
 
-const hint: React.CSSProperties = { marginTop: 5, fontSize: 11.5, color: 'var(--ink-4)' };
-const linkBtn: React.CSSProperties = {
+const hint: React.CSSProperties = { fontSize: 11.5, color: 'var(--ink-4)' };
+const toggleSty: React.CSSProperties = {
   background: 'none', border: 0, padding: 0, cursor: 'pointer', fontFamily: 'inherit',
   fontSize: 11.5, color: 'var(--accent-2)', fontWeight: 600,
 };
-const smallInput: React.CSSProperties = {
-  width: 76, height: 28, textAlign: 'right', border: '1px solid var(--hair-strong)', borderRadius: 3,
+const cellInput: React.CSSProperties = {
+  width: 64, height: 28, flexShrink: 0, textAlign: 'right', border: '1px solid var(--hair-strong)', borderRadius: 3,
   padding: '0 8px', fontSize: 12.5, background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit',
 };
 const chipLabel = (c: Chip) => [c.brand_name, c.chip_mpn].filter(Boolean).join(' · ') || `Chip #${c.id}`;
 
-/** Board Qty: a plain input for a single-MPN pallet; the total (+ per-MPN inputs on demand) otherwise. */
-export function BoardQtyField({ state }: { state: State }) {
-  const { rows, boardQty, setBoardQty, loadError } = state;
-  const [perMpn, setPerMpn] = useState(false);
+/** A field label with an optional toggle link on its right. The toggle sits outside the
+ *  <label> so clicking it does not also focus the field's input. */
+function FieldHead({ label, toggle }: { label: string; toggle?: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
+      <span style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-3)' }}>{label}</span>
+      {toggle}
+    </div>
+  );
+}
 
-  if (loadError) return <Field label="Board Qty"><Input value="" disabled placeholder="—" /></Field>;
-  if (!rows) return <Field label="Board Qty"><Input value="" disabled placeholder="Loading…" /></Field>;
+export function BoardQtyField({ state }: { state: State }) {
+  const { rows, boardQty, setBoardQty, boardsOpen, setBoardsOpen, loadError } = state;
+  if (loadError || !rows) {
+    return <Field label="Board Qty"><Input value="" disabled placeholder={loadError ? '—' : 'Loading…'} /></Field>;
+  }
   if (rows.length === 0) {
-    return (
-      <Field label="Board Qty">
-        <Input value="" disabled placeholder="—" />
-        <div style={hint}>Add boards (MPNs) on the Boards tab.</div>
-      </Field>
-    );
+    return <Field label="Board Qty"><Input value="" disabled placeholder="Add boards on the Boards tab" /></Field>;
   }
   if (rows.length === 1) {
     const pm = rows[0].pm;
     return (
-      <Field label="Board Qty">
-        <Input value={boardQty[pm.id] ?? ''} onChange={v => setBoardQty(s => ({ ...s, [pm.id]: v }))} placeholder="0" />
-        <div style={hint}><span className="mono">{pm.mpn_name}</span></div>
-      </Field>
+      <div>
+        <FieldHead label="Board Qty" toggle={<span className="mono" style={hint}>{pm.mpn_name}</span>} />
+        <Input value={boardQty[pm.id] ?? ''} onChange={v => setBoardQty(s => ({ ...s, [pm.id]: v }))} placeholder="0" style={{ width: '100%' }} />
+      </div>
     );
   }
   const total = rows.reduce((n, r) => n + num(boardQty[r.pm.id] ?? ''), 0);
   return (
-    <Field label="Board Qty">
-      <Input value={String(total)} disabled />
-      <div style={hint}>
-        Sum of {rows.length} boards ·{' '}
-        <button type="button" style={linkBtn} onClick={() => setPerMpn(o => !o)}>{perMpn ? 'Hide' : 'Edit per MPN'}</button>
-      </div>
-      {perMpn && (
-        <div style={{ marginTop: 6, border: '1px solid var(--hair)', borderRadius: 3 }}>
-          {rows.map(({ pm }) => (
-            <div key={pm.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderBottom: '1px solid var(--hair)' }}>
-              <span className="mono" style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{pm.mpn_name}</span>
+    <div>
+      <FieldHead label="Board Qty" toggle={
+        <button type="button" style={toggleSty} onClick={() => setBoardsOpen(o => !o)}>
+          {boardsOpen ? 'Done' : `Edit per MPN (${rows.length})`}
+        </button>} />
+      <Input value={String(total)} disabled style={{ width: '100%' }} />
+    </div>
+  );
+}
+
+export function NgField({ state }: { state: State }) {
+  const { rows, ng, ngOpen, setNgOpen, loadError } = state;
+  const chips = rows?.flatMap(r => r.chips) ?? [];
+  if (loadError || !rows || chips.length === 0) {
+    return (
+      <Field label="NG (failed chips)">
+        <Input value="" disabled placeholder={loadError ? '—' : !rows ? 'Loading…' : 'Add boards first'} />
+      </Field>
+    );
+  }
+  const total = chips.reduce((n, c) => n + num(ng[c.id] ?? ''), 0);
+  return (
+    <div>
+      <FieldHead label="NG (failed chips)" toggle={
+        <button type="button" style={toggleSty} onClick={() => setNgOpen(o => !o)}>
+          {ngOpen ? 'Done' : 'Edit by chip'}
+        </button>} />
+      <Input value={String(total)} disabled style={{ width: '100%', ...(total ? { color: 'var(--err)' } : {}) }} />
+    </div>
+  );
+}
+
+/** Full-width breakdowns, opened from the fields' toggles. Spans both grid columns. */
+export function BoardsNgPanels({ state }: { state: State }) {
+  const { rows, boardQty, setBoardQty, ng, setNg, boardsOpen, ngOpen } = state;
+  if (!rows) return null;
+  const panel: React.CSSProperties = { gridColumn: 'span 2', border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface-2)', padding: '8px 10px' };
+  const grid: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '6px 16px' };
+  const cell = (label: React.ReactNode, title: string, input: React.ReactNode, key: number) => (
+    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }} title={title}>
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {input}
+    </label>
+  );
+  return (
+    <>
+      {boardsOpen && rows.length > 1 && (
+        <div style={panel}>
+          <div style={{ ...hint, marginBottom: 6 }}>Board qty per MPN</div>
+          <div style={grid}>
+            {rows.map(({ pm }) => cell(<span className="mono">{pm.mpn_name}</span>, pm.mpn_name,
               <input type="text" inputMode="numeric" placeholder="0" value={boardQty[pm.id] ?? ''}
-                onChange={e => { const v = e.target.value; setBoardQty(s => ({ ...s, [pm.id]: v })); }}
-                style={smallInput} />
+                onChange={e => { const v = e.target.value; setBoardQty(s => ({ ...s, [pm.id]: v })); }} style={cellInput} />, pm.id))}
+          </div>
+        </div>
+      )}
+      {ngOpen && (
+        <div style={panel}>
+          {rows.filter(r => r.chips.length).map(({ pm, chips }) => (
+            <div key={pm.id} style={{ marginBottom: 6 }}>
+              {rows.length > 1 && <div className="mono" style={{ ...hint, fontWeight: 600, margin: '2px 0 6px' }}>{pm.mpn_name}</div>}
+              <div style={grid}>
+                {chips.map(c => cell(chipLabel(c), chipLabel(c),
+                  <input type="text" inputMode="numeric" placeholder="0" value={ng[c.id] ?? ''}
+                    onChange={e => { const v = e.target.value; setNg(s => ({ ...s, [c.id]: v })); }} style={cellInput} />, c.id))}
+              </div>
             </div>
           ))}
         </div>
       )}
-    </Field>
-  );
-}
-
-/** NG: the total as a field; only failed chips listed under it, more added from a picker. */
-export function NgField({ state }: { state: State }) {
-  const { rows, ng, setNg, ngShown, setNgShown, loadError } = state;
-  const [pick, setPick] = useState('');
-
-  if (loadError || !rows) return <Field label="NG"><Input value="" disabled placeholder={loadError ? '—' : 'Loading…'} /></Field>;
-  const chips = rows.flatMap(r => r.chips);
-  if (chips.length === 0) {
-    return (
-      <Field label="NG">
-        <Input value="" disabled placeholder="—" />
-        <div style={hint}>NG is entered per chip — add this pallet&apos;s boards first.</div>
-      </Field>
-    );
-  }
-  const byId = new Map(chips.map(c => [c.id, c]));
-  const total = ngShown.reduce((n, id) => n + num(ng[id] ?? ''), 0);
-  const addable = chips.filter(c => !ngShown.includes(c.id));
-  const add = () => {
-    const id = +pick;
-    if (!id) return;
-    setNgShown(s => [...s, id]);
-    setPick('');
-  };
-  const remove = (id: number) => {
-    setNg(s => ({ ...s, [id]: '' }));
-    setNgShown(s => s.filter(x => x !== id));
-  };
-
-  return (
-    <Field label="NG (failed chips)">
-      <Input value={String(total)} disabled />
-      {ngShown.length > 0 && (
-        <div style={{ marginTop: 6, border: '1px solid var(--hair)', borderRadius: 3 }}>
-          {ngShown.map(id => {
-            const c = byId.get(id);
-            if (!c) return null;
-            return (
-              <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', borderBottom: '1px solid var(--hair)' }}>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={chipLabel(c)}>
-                  {chipLabel(c)}
-                </span>
-                <input type="text" inputMode="numeric" placeholder="0" value={ng[id] ?? ''} autoFocus={!c.qty && !ng[id]}
-                  onChange={e => { const v = e.target.value; setNg(s => ({ ...s, [id]: v })); }}
-                  style={smallInput} />
-                <button type="button" onClick={() => remove(id)} title="Remove"
-                  style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--ink-4)', padding: 2, lineHeight: 0 }}>
-                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M3 3l6 6M9 3l-6 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" /></svg>
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
-      {addable.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-          <select value={pick} onChange={e => setPick(e.target.value)}
-            style={{ flex: 1, minWidth: 0, height: 30, border: '1px solid var(--hair-strong)', borderRadius: 3, padding: '0 6px', fontSize: 12, background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit' }}>
-            <option value="">+ Add a failed chip…</option>
-            {rows.map(r => r.chips.some(c => !ngShown.includes(c.id)) && (
-              <optgroup key={r.pm.id} label={r.pm.mpn_name}>
-                {r.chips.filter(c => !ngShown.includes(c.id)).map(c => (
-                  <option key={c.id} value={String(c.id)}>{chipLabel(c)}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <Button size="sm" variant="outline" onClick={add} disabled={!pick}>Add</Button>
-        </div>
-      )}
-    </Field>
+    </>
   );
 }
