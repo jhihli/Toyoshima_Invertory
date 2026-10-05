@@ -20,6 +20,7 @@ import {
 import { WeightRuleField } from '../WeightRuleField';
 import PalletBoardsTab from '@/app/ui/pallet/PalletBoardsTab';
 import PalletNgModal from '@/app/ui/pallet/PalletNgModal';
+import PalletBoardsNgSection, { usePalletBoardsNg } from '@/app/ui/pallet/PalletBoardsNgSection';
 import type { SODetail, Pallet, PalletPhoto, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -1465,9 +1466,13 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   const [existingPhotos, setExistingPhotos] = useState<PhotoEntry[]>([]);
   const [pendingPhotos, setPendingPhotos] = useState<string[]>([]);
   const [removedPhotoIds, setRemovedPhotoIds] = useState<number[]>([]);
+  const [error, setError] = useState('');
+  // Board qty per MPN + NG per chip; the pallet's Board Qty / NG are their sums.
+  const boardsNg = usePalletBoardsNg(pallet.id, open);
 
   useEffect(() => {
     if (open) {
+      setError('');
       setLicence(pallet.licence_number);
       setPayload(pallet.gateload_number);
       setInWeightGross(parseFloat(pallet.in_weight_gross).toFixed(2));
@@ -1500,9 +1505,12 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   };
 
   const handleSave = async () => {
-    setSaving(true);
+    setSaving(true); setError('');
     try {
-      // Photo ops first, so the pallet returned by onSave() reflects the final photo set.
+      // Boards & NG first: the pallet returned by onSave() then carries the new totals.
+      const err = await boardsNg.save();
+      if (err) { setError(err); return; }
+      // Photo ops next, so the pallet returned by onSave() reflects the final photo set.
       if (removedPhotoIds.length) {
         await Promise.all(removedPhotoIds.map(pid => api.pallets.photos.delete(pallet.id, pid)));
       }
@@ -1533,6 +1541,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
           {saving ? 'Saving…' : 'Save'}
         </Button>
       </>}>
+      {error && <div style={{ marginBottom: 12, color: 'var(--err)', fontSize: 12.5 }}>{error}</div>}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="Licence No">
           <Input value={licence} onChange={setLicence} placeholder="TRK-00123" autoFocus />
@@ -1564,6 +1573,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
             : <Input value="1" onChange={() => {}} type="number" disabled />}
         </Field>
       </div>
+      <PalletBoardsNgSection state={boardsNg} />
       <div style={{ marginTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 10 }}>
           Photos <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-4)' }}>
