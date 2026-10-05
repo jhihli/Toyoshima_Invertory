@@ -69,14 +69,20 @@ const inputSty: React.CSSProperties = {
   padding: '0 8px', fontSize: 12.5, background: 'var(--surface)', color: 'var(--ink)', fontFamily: 'inherit',
 };
 
-export default function PalletBoardsNgSection({ state }: { state: ReturnType<typeof usePalletBoardsNg> }) {
+export default function PalletBoardsNgSection({ state, listMaxHeight = 280, flush = false }: {
+  state: ReturnType<typeof usePalletBoardsNg>;
+  /** Height cap of the MPN/chip list before it scrolls. */
+  listMaxHeight?: number | string;
+  /** No top margin (when the block heads its own column). */
+  flush?: boolean;
+}) {
   const { rows, boardQty, setBoardQty, ng, setNg, loadError } = state;
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
   const totalBoards = Object.values(boardQty).reduce((n, v) => n + num(v), 0);
   const totalNg = Object.values(ng).reduce((n, v) => n + num(v), 0);
 
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={{ marginTop: flush ? 0 : 16 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>
           Boards &amp; NG
@@ -95,7 +101,7 @@ export default function PalletBoardsNgSection({ state }: { state: ReturnType<typ
         </div>
       )}
       {rows && rows.length > 0 && (
-        <div style={{ border: '1px solid var(--hair)', borderRadius: 3, maxHeight: 280, overflowY: 'auto' }}>
+        <div style={{ border: '1px solid var(--hair)', borderRadius: 3, maxHeight: listMaxHeight, overflowY: 'auto' }}>
           {rows.map(({ pm, chips }) => {
             const open = !collapsed[pm.id];
             return (
@@ -115,7 +121,7 @@ export default function PalletBoardsNgSection({ state }: { state: ReturnType<typ
                     style={inputSty} />
                 </div>
                 {open && chips.map(c => (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px 5px 32px', borderTop: '1px solid var(--hair)' }}>
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '3px 10px 3px 32px', borderTop: '1px solid var(--hair)' }}>
                     <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {c.brand_name && <span style={{ color: 'var(--ink-3)' }}>{c.brand_name} · </span>}
                       <span className="mono">{c.chip_mpn || `Chip #${c.id}`}</span>

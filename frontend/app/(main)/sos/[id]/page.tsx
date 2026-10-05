@@ -1470,6 +1470,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   const [error, setError] = useState('');
   // Board qty per MPN + NG per chip; the pallet's Board Qty / NG are their sums.
   const boardsNg = usePalletBoardsNg(pallet.id, open);
+  const isMobile = useIsMobile();
 
   useEffect(() => {
     if (open) {
@@ -1535,7 +1536,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title={`Edit Pallet #${String(pallet.pallet_seq).padStart(2, '0')}`} width={560}
+    <Modal open={open} onClose={onClose} title={`Edit Pallet #${String(pallet.pallet_seq).padStart(2, '0')}`} width={isMobile ? 560 : 1040}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
         <Button variant="primary" disabled={!inWeightGross || !qty || saving} onClick={handleSave}>
@@ -1543,6 +1544,10 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
         </Button>
       </>}>
       {error && <div style={{ marginBottom: 12, color: 'var(--err)', fontSize: 12.5 }}>{error}</div>}
+      {/* Wide layout: pallet fields + photos on the left, Boards & NG on the right, so the
+          whole pallet fits without scrolling. Stacks on phones. */}
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 0 : 24, alignItems: 'start' }}>
+      <div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="Licence No">
           <Input value={licence} onChange={setLicence} placeholder="TRK-00123" autoFocus />
@@ -1574,7 +1579,6 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
             : <Input value="1" onChange={() => {}} type="number" disabled />}
         </Field>
       </div>
-      <PalletBoardsNgSection state={boardsNg} />
       <div style={{ marginTop: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 10 }}>
           Photos <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0, color: 'var(--ink-4)' }}>
@@ -1586,6 +1590,9 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
           onAdd={urls => setPendingPhotos(ps => [...ps, ...urls])}
           onRemove={removePhoto}
         />
+      </div>
+      </div>
+      <PalletBoardsNgSection state={boardsNg} flush={!isMobile} listMaxHeight={isMobile ? 280 : 'calc(100vh - 340px)'} />
       </div>
     </Modal>
   );
