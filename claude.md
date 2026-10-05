@@ -152,10 +152,20 @@ Logs: `journalctl -u toyoshima-frontend -n 100` (or `-u toyoshima-backend`), `-f
 - `/` → Next.js on port 3000
 
 ### Server network notes
-- Server LAN IP: `192.168.1.196` (may change on reboot — router port forwarding must match)
-- Router public IP: `72.183.39.29` (domain `toyoshimainventory.com` points here)
-- Port forwarding on router: 80, 443 → server LAN IP
-- **Hairpin NAT limitation:** devices on the same WiFi band as the server cannot access via domain name. Use the 5GHz band (`toyoshima-5G`) when accessing the site from within the office.
+- Server LAN IP: `192.168.1.196`, pinned by an IP reservation on the router (device "Dell e5:3f:1f",
+  MAC `b8:cb:29:e5:3f:1f`)
+- Public IP: `68.201.129.63` (domain `toyoshimainventory.com` A record points here; no AAAA record).
+  It was `72.183.39.29` until the router was replaced in 2026-10 — Spectrum can change it, so check
+  with `curl -4 ifconfig.me` on the server before touching DNS.
+- Router is a Spectrum Business router (WiFi `SpectrumSetup-2E` since 2026-10). Port forwarding lives in
+  the Spectrum Business portal: Services → Internet → Router → Port Forwarding and IP Reservations →
+  "Dell e5:3f:1f" → `toyoshima-http` (TCP 80→80) and `toyoshima-https` (TCP 443→443).
+- **A rule can show as saved but not work.** After the 2026-10 router swap, 443 was listed but inbound 443
+  timed out while 80 worked (so HTTP→HTTPS redirects died). Deleting and re-creating the 443 rule fixed it.
+  Check from OUTSIDE the office (phone data, or canyouseeme.org) — never from the office LAN.
+- **Hairpin NAT does not work:** from inside the office, the domain resolves to the public IP and the router
+  will not loop it back. The dev PC works only via a hosts-file override (`192.168.1.196 toyoshimainventory.com`).
+  Scanners/handhelds need a non-office network (hotspot / mobile data) or a local DNS override.
 
 ---
 
