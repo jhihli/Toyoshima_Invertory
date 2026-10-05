@@ -16,7 +16,6 @@ export const authOptions = {
             },
             async authorize(credentials, req) {
                 try {
-                    console.log("🔍 Received credentials:", credentials);
                     const parsedCredentials = z
                         .object({ username: z.string(), password: z.string() })
                         .safeParse(credentials);
