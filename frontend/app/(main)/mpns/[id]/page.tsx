@@ -323,7 +323,7 @@ export default function MPNDetailPage() {
         </div>
       </div>
 
-      <style>{`.chip-row:hover{background:var(--accent-tint)}.chip-photo-cell:hover .chip-photo-overlay{opacity:1}.chip-photo-empty:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}`}</style>
+      <style>{`.chip-row:hover{background:var(--accent-light)}.chip-photo-cell:hover .chip-photo-overlay{opacity:1}.chip-photo-empty:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}`}</style>
       <Modal open={deleteChipId !== null} onClose={() => setDeleteChipId(null)} title="Delete Chip" width={420}
         footer={<>
           <Button variant="ghost" onClick={() => setDeleteChipId(null)}>Cancel</Button>

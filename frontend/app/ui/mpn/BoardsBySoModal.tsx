@@ -71,7 +71,7 @@ export default function BoardsBySoModal({ mpn, highlightSoId, onClose }: {
               ))}
             </tbody>
           </table>
-          <style>{`.bbs-row:hover{background:var(--accent-tint)}`}</style>
+          <style>{`.bbs-row:hover{background:var(--accent-light)}`}</style>
         </div>
       )}
     </Modal>

@@ -1386,13 +1386,13 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                     {p.board_qty != null ? p.board_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                     {p.board_qty_is_legacy && <Badge tone="neutral" style={{ marginLeft: 6, fontSize: 10 }}>Legacy</Badge>}
                   </td>
-                  <td style={{ ...tdS, textAlign: 'right' }} className="num" onClick={e => e.stopPropagation()}>
-                    <button onClick={() => setNgPallet({ id: p.id, label: ngLabel(p) })} title="Edit NG (failed chips)"
-                      style={{ background: 'none', border: '1px dashed var(--hair-strong)', borderRadius: 3, padding: '1px 8px',
-                        cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5,
-                        color: p.ng_qty ? 'var(--err)' : 'var(--ink-5)', fontWeight: p.ng_qty ? 600 : 400 }}>
-                      {p.ng_qty || '—'}
-                    </button>
+                  {/* Reads like the other number columns; the whole cell is the click target. */}
+                  <td className="num ng-cell" title="Edit NG (failed chips)"
+                    style={{ ...tdS, textAlign: 'right', cursor: 'pointer' }}
+                    onClick={e => { e.stopPropagation(); setNgPallet({ id: p.id, label: ngLabel(p) }); }}>
+                    {p.ng_qty
+                      ? <Badge tone="err" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{p.ng_qty}</Badge>
+                      : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                   </td>
                   <td style={{ ...tdS, textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
@@ -1443,6 +1443,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
       )}
       <PalletLightbox state={lightbox} onClose={() => setLightbox(null)} />
       <PalletNgModal pallet={ngPallet} onClose={() => setNgPallet(null)} onSaved={onNgSaved} />
+      <style>{`.ng-cell:hover{background:var(--accent-light)}`}</style>
     </>
   );
 }
