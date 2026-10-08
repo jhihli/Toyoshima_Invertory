@@ -30,8 +30,33 @@ function parseQty(raw: string): number | null {
 }
 
 // ── Chip picker (MSFT orders) ───────────────────────────────────────────────────
-/** One dropdown, grouped by the pallet's boards (MPNs). Picking a chip sets both the
- *  brand and the model — the server copies them from the chip. */
+/** The pallet's chips as one flat list, sorted by brand then part number. The same part
+ *  on several of the pallet's boards is a separate Chip row per board, so it is listed
+ *  once (under its first row's id); a line saved with one of the other rows still shows
+ *  as selected. Picking a chip sets both brand and model — the server copies them. */
+function flatChipOptions(groups: ChipOptionGroup[]) {
+  const key = (c: ChipOptionGroup['chips'][number]) =>
+    `${(c.brand_name || '').trim().toLowerCase()}|${(c.chip_mpn || '').trim().toLowerCase()}`;
+  const options: { id: number; label: string }[] = [];
+  const canonical = new Map<number, number>();   // any chip id → the id its option uses
+  const byKey = new Map<string, number>();
+  for (const g of groups) {
+    for (const c of g.chips) {
+      const k = key(c);
+      const first = byKey.get(k);
+      if (first === undefined) {
+        byKey.set(k, c.id);
+        canonical.set(c.id, c.id);
+        options.push({ id: c.id, label: [c.brand_name, c.chip_mpn].filter(Boolean).join(' · ') || `Chip #${c.id}` });
+      } else {
+        canonical.set(c.id, first);
+      }
+    }
+  }
+  options.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+  return { options, canonical };
+}
+
 function ChipSelect({ groups, value, onChange, boardsHref }: {
   /** 'error' = the chip list failed to load (distinct from a pallet with no boards). */
   groups: ChipOptionGroup[] | 'error'; value: string; onChange: (v: string) => void; boardsHref?: string;
@@ -51,18 +76,12 @@ function ChipSelect({ groups, value, onChange, boardsHref }: {
       </div>
     );
   }
+  const { options, canonical } = flatChipOptions(groups);
+  const shown = value ? String(canonical.get(+value) ?? value) : '';
   return (
-    <select value={value} onChange={e => onChange(e.target.value)} style={{ ...InputSty, cursor: 'pointer' }}>
+    <select value={shown} onChange={e => onChange(e.target.value)} style={{ ...InputSty, cursor: 'pointer' }}>
       <option value="">— Select a chip —</option>
-      {groups.map(g => (
-        <optgroup key={g.mpn_id} label={g.mpn_name}>
-          {g.chips.map(c => (
-            <option key={c.id} value={String(c.id)}>
-              {[c.brand_name, c.chip_mpn].filter(Boolean).join(' · ') || `Chip #${c.id}`}
-            </option>
-          ))}
-        </optgroup>
-      ))}
+      {options.map(o => <option key={o.id} value={String(o.id)}>{o.label}</option>)}
     </select>
   );
 }
