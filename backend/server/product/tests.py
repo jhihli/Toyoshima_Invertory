@@ -1102,8 +1102,8 @@ class SoInventoryTests(TestCase):
         self.assertEqual([r['qty'] for r in rows if r['kind'] == 'tantalum'], ['72.5g'])
 
 
-class PalletExcludedChipsTests(TestCase):
-    """A batch of boards on one pallet may lack some of the MPN's chips."""
+class PalletChipsPerBoardAutoTests(TestCase):
+    """A pallet's chips/board counts only the BOM chips its checklist (or NG) names."""
 
     def setUp(self):
         from rest_framework.test import APIClient
@@ -1113,50 +1113,46 @@ class PalletExcludedChipsTests(TestCase):
         self.mpn = MPN.objects.create(name='SP#0WW9TT')
         self.slk = Chip.objects.create(mpn=self.mpn, chip_mpn='SLKM8')
         self.ast = Chip.objects.create(mpn=self.mpn, chip_mpn='AST1050')
-        self.row = PalletMPN.objects.create(pallet=self.p, mpn=self.mpn, board_qty=208)
-        self.row2 = PalletMPN.objects.create(pallet=self.p2, mpn=self.mpn, board_qty=10)
-        self.url = f'/product/pallets/{self.p.id}/mpns/{self.row.id}/'
+        self.k4b = Chip.objects.create(mpn=self.mpn, chip_mpn='K4B1G1646G-BCH9')
+        PalletMPN.objects.create(pallet=self.p, mpn=self.mpn, board_qty=208)
+        PalletMPN.objects.create(pallet=self.p2, mpn=self.mpn, board_qty=10)
 
-    def test_exclude_lowers_chips_per_board_for_that_pallet_only(self):
-        resp = self.client.put(self.url, {'excluded_chips': [self.ast.id]}, format='json')
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.json()['chips_per_board'], 1)
-        self.assertEqual(resp.json()['bom_chips_per_board'], 2)
-        other = self.client.get(f'/product/pallets/{self.p2.id}/mpns/').json()[0]
-        self.assertEqual(other['chips_per_board'], 2)
+    def row(self, pallet):
+        return self.client.get(f'/product/pallets/{pallet.id}/mpns/').json()[0]
 
-    def test_list_shows_chips_with_excluded_flag(self):
-        self.row.excluded_chips.add(self.ast)
-        row = self.client.get(f'/product/pallets/{self.p.id}/mpns/').json()[0]
-        self.assertEqual({c['chip_mpn']: c['excluded'] for c in row['chips']}, {'SLKM8': False, 'AST1050': True})
+    def test_empty_checklist_is_zero(self):
+        r = self.row(self.p)
+        self.assertEqual((r['chips_per_board'], r['bom_chips_per_board']), (0, 3))
 
-    def test_excluded_chip_hidden_from_checklist_and_ng_pickers(self):
-        self.row.excluded_chips.add(self.ast)
-        opts = self.client.get(f'/product/pallets/{self.p.id}/chip-options/').json()
-        self.assertEqual([c['chip_mpn'] for c in opts[0]['chips']], ['SLKM8'])
-        ng = self.client.get(f'/product/pallets/{self.p.id}/ng/').json()
-        self.assertEqual([c['chip_mpn'] for c in ng[0]['chips']], ['SLKM8'])
+    def test_counts_chips_named_in_checklist(self):
+        Checklist.objects.create(pallet=self.p, barcode='b-1', chip=self.slk, model='SLKM8', qty=275)
+        Checklist.objects.create(pallet=self.p, barcode='b-2', chip=self.k4b, model='K4B1G1646G-BCH9', qty=196)
+        r = self.row(self.p)
+        self.assertEqual(r['chips_per_board'], 2)
+        self.assertEqual({c['chip_mpn']: c['present'] for c in r['chips']},
+                         {'SLKM8': True, 'AST1050': False, 'K4B1G1646G-BCH9': True})
+        self.assertEqual(self.row(self.p2)['chips_per_board'], 0)   # other pallet unaffected
 
-    def test_board_qty_update_keeps_exclusions(self):
-        self.row.excluded_chips.add(self.ast)
-        self.client.put(self.url, {'board_qty': 200}, format='json')
-        self.assertEqual(list(self.row.excluded_chips.values_list('id', flat=True)), [self.ast.id])
+    def test_same_part_from_another_boards_chip_row_counts(self):
+        """The flat dropdown may link a line to another MPN's copy of the same part."""
+        other = Chip.objects.create(mpn=MPN.objects.create(name='SP#123456-789'), chip_mpn='slkm8 ')
+        Checklist.objects.create(pallet=self.p, barcode='b-1', chip=other, model='SLKM8', qty=5)
+        self.assertEqual(self.row(self.p)['chips_per_board'], 1)
 
-    def test_chip_of_another_mpn_rejected(self):
-        other = Chip.objects.create(mpn=MPN.objects.create(name='X'), chip_mpn='X1')
-        resp = self.client.put(self.url, {'excluded_chips': [other.id]}, format='json')
-        self.assertEqual(resp.status_code, 400)
+    def test_free_text_line_counts_by_model(self):
+        Checklist.objects.create(pallet=self.p, barcode='b-1', brand='Intel', model='SLKM8', qty=5)
+        self.assertEqual(self.row(self.p)['chips_per_board'], 1)
 
-    def test_cannot_exclude_a_chip_in_use_on_the_pallet(self):
-        Checklist.objects.create(pallet=self.p, barcode='b-1', chip=self.ast, qty=3)
-        resp = self.client.put(self.url, {'excluded_chips': [self.ast.id]}, format='json')
-        self.assertEqual(resp.status_code, 400)
-        PalletChipNG.objects.create(pallet=self.p, chip=self.slk, qty=1)
-        resp = self.client.put(self.url, {'excluded_chips': [self.slk.id]}, format='json')
-        self.assertEqual(resp.status_code, 400)
+    def test_ng_only_chip_counts(self):
+        PalletChipNG.objects.create(pallet=self.p, chip=self.ast, qty=3)
+        self.assertEqual(self.row(self.p)['chips_per_board'], 1)
 
-    def test_export_rows_carry_exclusions(self):
-        self.row.excluded_chips.add(self.ast)
+    def test_export_rows_carry_present_chips(self):
+        Checklist.objects.create(pallet=self.p, barcode='b-1', chip=self.slk, model='SLKM8', qty=1)
         rows = {r['pallet']: r for r in self.client.get(f'/product/sos/{self.so.id}/pallet-mpns/').json()}
-        self.assertEqual(rows[self.p.id]['excluded_chip_ids'], [self.ast.id])
-        self.assertEqual(rows[self.p2.id]['excluded_chip_ids'], [])
+        self.assertEqual(rows[self.p.id]['present_chip_ids'], [self.slk.id])
+        self.assertEqual(rows[self.p2.id]['present_chip_ids'], [])
+
+    def test_pickers_list_the_whole_bom(self):
+        opts = self.client.get(f'/product/pallets/{self.p.id}/chip-options/').json()
+        self.assertEqual(len(opts[0]['chips']), 3)

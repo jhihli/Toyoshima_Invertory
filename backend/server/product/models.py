@@ -146,6 +146,18 @@ class Pallet(models.Model):
         """True when the number shown is the old hand-typed value, not an MPN sum."""
         return self.board_qty is not None and not list(self.pallet_mpns.all())
 
+    def harvested_chip_mpns(self):
+        """Normalised part numbers this pallet's checklist lines (by model text) and NG
+        records name — the chips actually found on its boards. Cached per instance."""
+        cached = getattr(self, '_harvested_chip_mpns', None)
+        if cached is None:
+            norm = lambda v: (v or '').strip().lower()
+            cached = {norm(m) for m in self.checklists.values_list('model', flat=True)}
+            cached |= {norm(m) for m in self.chip_ngs.values_list('chip__chip_mpn', flat=True)}
+            cached.discard('')
+            self._harvested_chip_mpns = cached
+        return cached
+
     @property
     def ng_qty(self):
         """Failed chips on this pallet, all chips together. Reuses a 'chip_ngs' prefetch."""
@@ -340,9 +352,6 @@ class PalletMPN(models.Model):
     pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='pallet_mpns')
     mpn = models.ForeignKey(MPN, on_delete=models.PROTECT, related_name='pallet_mpns')
     board_qty = models.IntegerField(null=True, blank=True)
-    # Chips of the MPN's BOM that this pallet's batch of boards does not have (e.g. a
-    # board revision without the ASPEED chip). The MPN's BOM itself stays the superset.
-    excluded_chips = models.ManyToManyField('Chip', blank=True, related_name='excluded_on_pallets')
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -357,14 +366,18 @@ class PalletMPN(models.Model):
         """Checklist lines on this pallet that name a chip of this MPN."""
         return Checklist.objects.filter(pallet_id=self.pallet_id, chip__mpn_id=self.mpn_id).count()
 
-    def excluded_chip_ids(self):
-        """Uses a prefetch of 'excluded_chips' when present."""
-        return {c.id for c in self.excluded_chips.all()}
+    def present_chip_ids(self):
+        """BOM chips of this MPN that the pallet's checklist / NG actually name (matched by
+        part number, so another board's copy of the same part and free-text lines count).
+        A batch of boards can lack some of the MPN's chips; this is how that shows up."""
+        found = self.pallet.harvested_chip_mpns()
+        return {c.id for c in self.mpn.chips.all() if (c.chip_mpn or '').strip().lower() in found}
 
     @property
     def chips_per_board(self):
-        """Chips on ONE board of this pallet's batch: the MPN's BOM minus excluded chips."""
-        return sum(self.mpn._slots(exclude=self.excluded_chip_ids()).values())
+        """Chips on ONE board of this pallet's batch — only the chips its checklist names."""
+        present = self.present_chip_ids()
+        return sum(self.mpn._slots(exclude={c.id for c in self.mpn.chips.all()} - present).values())
 
     def ng_use_count(self):
         """NG records on this pallet for chips of this MPN."""

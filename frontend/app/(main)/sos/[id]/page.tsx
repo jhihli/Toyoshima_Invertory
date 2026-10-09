@@ -237,14 +237,13 @@ export default function SODetailPage() {
     toast('Preparing export…');
     try {
       const [pmRows, invRows] = await Promise.all([api.sos.palletMpns(soId), api.sos.inventory(soId)]);
-      // One row per (pallet, MPN) carrying its board qty. `chips` is what that pallet's batch
-      // actually has (the MPN's BOM minus the chips marked missing on the Boards tab);
-      // `bomChips` is the MPN's full standard BOM.
+      // One row per (pallet, MPN) carrying its board qty. `chips` is what that pallet's boards
+      // actually had — the BOM chips its checklist / NG name; `bomChips` is the MPN's full BOM.
       const allBoardData = pmRows.map(r => {
-        const missing = new Set(r.excluded_chip_ids ?? []);
+        const present = new Set(r.present_chip_ids ?? []);
         return {
           pallet: r.pallet, mpn: r.mpn, qty: r.board_qty ?? 0,
-          chips: r.chips.filter(c => !missing.has(c.id)), bomChips: r.chips,
+          chips: r.chips.filter(c => present.has(c.id)), bomChips: r.chips,
           date: r.created_at,   // when this MPN was added to the pallet = "Date processed"
         };
       });

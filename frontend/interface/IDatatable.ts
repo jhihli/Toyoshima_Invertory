@@ -314,14 +314,13 @@ export interface PalletMPN {
   mpn: number;
   mpn_name: string;
   part_type: string;
-  /** Chips on one board of THIS pallet's batch: the MPN's BOM minus `excluded_chips`. */
+  /** Chips on one board of THIS pallet: only the BOM chips its checklist / NG name. */
   chips_per_board: number;
   /** The MPN's full standard BOM. */
   bom_chips_per_board: number;
   board_qty: number | null;
-  /** BOM chips this pallet's batch does not have. */
-  excluded_chips: number[];
-  chips: { id: number; brand_name: string; chip_mpn: string; excluded: boolean }[];
+  /** The MPN's BOM chips, flagged by whether this pallet's checklist / NG names them. */
+  chips: { id: number; brand_name: string; chip_mpn: string; present: boolean }[];
   /** Checklist lines on this pallet naming a chip of this MPN — removal is blocked while > 0. */
   checklist_use_count: number;
   created_at: string;
@@ -341,9 +340,9 @@ export interface PalletMpnExportRow {
   board_qty: number | null;
   created_at: string;
   mpn: Pick<MPN, 'id' | 'name' | 'part_type' | 'cutboard_cost' | 'created_at' | 'chips_per_board'>;
-  /** The MPN's full BOM; drop `excluded_chip_ids` for what this pallet's batch has. */
+  /** The MPN's full BOM; `present_chip_ids` are the ones this pallet's checklist / NG name. */
   chips: Chip[];
-  excluded_chip_ids: number[];
+  present_chip_ids: number[];
 }
 
 /** Where an MPN's boards are: one row per SO (GET /mpns/<id>/boards-by-so/). */

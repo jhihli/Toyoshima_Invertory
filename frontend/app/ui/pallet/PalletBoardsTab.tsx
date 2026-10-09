@@ -33,7 +33,6 @@ export default function PalletBoardsTab({ palletOptions, palletId, onPalletChang
   const [loading, setLoading] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PalletMPN | null>(null);
-  const [chipsTarget, setChipsTarget] = useState<PalletMPN | null>(null);
 
   const load = useCallback(async () => {
     if (palletId == null) { setRows([]); return; }
@@ -113,14 +112,14 @@ export default function PalletBoardsTab({ palletOptions, palletId, onPalletChang
                   </button>
                 </td>
                 <td style={tdS}>{r.part_type || DASH}</td>
-                <td style={{ ...tdS, textAlign: 'right' }}>
-                  {/* This pallet's batch may lack some of the MPN's chips — click to mark which. */}
-                  <button onClick={() => setChipsTarget(r)} title="Which of this board's chips this pallet's batch has"
-                    className="num chips-cell"
-                    style={{ background: 'none', border: 0, padding: '2px 6px', borderRadius: 3, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5,
-                      color: r.chips_per_board < r.bom_chips_per_board ? 'var(--warn, #a86b00)' : 'var(--ink)' }}>
+                {/* Counted from this pallet's checklist / NG: only chips actually named there. */}
+                <td style={{ ...tdS, textAlign: 'right' }} className="num"
+                  title={r.chips.some(c => !c.present)
+                    ? `Not in this pallet's checklist: ${r.chips.filter(c => !c.present).map(c => c.chip_mpn || `#${c.id}`).join(', ')}`
+                    : "All of this board's chips are in the checklist"}>
+                  <span style={{ color: r.chips_per_board < r.bom_chips_per_board ? 'var(--warn, #a86b00)' : 'var(--ink)' }}>
                     {r.chips_per_board < r.bom_chips_per_board ? `${r.chips_per_board} of ${r.bom_chips_per_board}` : r.chips_per_board}
-                  </button>
+                  </span>
                 </td>
                 <td style={{ ...tdS, textAlign: 'right' }}><QtyCell row={r} onSave={saveQty} /></td>
                 <td style={{ ...tdS, textAlign: 'right' }}>
@@ -142,10 +141,6 @@ export default function PalletBoardsTab({ palletOptions, palletId, onPalletChang
         onClose={() => setAddOpen(false)}
         onAdded={n => { load(); onChanged(); toast(`${n} board type${n === 1 ? '' : 's'} added`); }} />
 
-      <BatchChipsModal row={chipsTarget} palletLabel={palletLabel} onClose={() => setChipsTarget(null)}
-        onSaved={updated => { setRows(rs => rs.map(r => r.id === updated.id ? updated : r)); toast('Chips updated'); }} />
-      <style>{`.chips-cell:hover{background:var(--accent-light)}`}</style>
-
       <Modal open={!!deleteTarget} onClose={() => setDeleteTarget(null)} title="Remove board from pallet"
         footer={<>
           <Button variant="ghost" onClick={() => setDeleteTarget(null)}>Cancel</Button>
@@ -161,70 +156,6 @@ export default function PalletBoardsTab({ palletOptions, palletId, onPalletChang
         </div>
       </Modal>
     </>
-  );
-}
-
-/** Which of the MPN's chips this pallet's batch has. Unticked = missing on these boards;
- *  the MPN's own BOM is unchanged. */
-function BatchChipsModal({ row, palletLabel, onClose, onSaved }: {
-  row: PalletMPN | null; palletLabel: string; onClose: () => void; onSaved: (r: PalletMPN) => void;
-}) {
-  const [present, setPresent] = useState<Set<number>>(new Set());
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (!row) return;
-    setPresent(new Set(row.chips.filter(c => !c.excluded).map(c => c.id)));
-    setError('');
-  }, [row]);
-
-  const save = async () => {
-    if (!row) return;
-    setSaving(true); setError('');
-    try {
-      const updated = await api.pallets.mpns.update(row.pallet, row.id, {
-        excluded_chips: row.chips.filter(c => !present.has(c.id)).map(c => c.id),
-      });
-      onSaved(updated);
-      onClose();
-    } catch (e) { setError(apiErrorMessage(e) || 'Failed to save'); }
-    finally { setSaving(false); }
-  };
-
-  const toggle = (id: number) => setPresent(p => {
-    const n = new Set(p);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
-
-  return (
-    <Modal open={!!row} onClose={onClose} width={480}
-      title={<span>Chips on <span className="mono">{row?.mpn_name}</span>
-        <span style={{ fontWeight: 400, color: 'var(--ink-3)', fontSize: 13 }}> · {palletLabel}</span></span>}
-      footer={<>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
-      </>}>
-      <div style={{ fontSize: 12.5, color: 'var(--ink-3)', marginBottom: 10 }}>
-        Untick chips these boards don&apos;t have. Only this pallet changes — the MPN&apos;s BOM stays as is.
-      </div>
-      {error && <div style={{ marginBottom: 10, color: 'var(--err)', fontSize: 12.5 }}>{error}</div>}
-      <div style={{ border: '1px solid var(--hair)', borderRadius: 3 }}>
-        {row?.chips.map(c => (
-          <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 12px', borderBottom: '1px solid var(--hair)', cursor: 'pointer' }}>
-            <input type="checkbox" checked={present.has(c.id)} onChange={() => toggle(c.id)} style={{ accentColor: 'var(--accent)' }} />
-            <span style={{ fontSize: 13, color: present.has(c.id) ? 'var(--ink)' : 'var(--ink-4)', textDecoration: present.has(c.id) ? 'none' : 'line-through' }}>
-              {c.brand_name && <span style={{ color: 'var(--ink-3)' }}>{c.brand_name} · </span>}
-              <span className="mono">{c.chip_mpn || `Chip #${c.id}`}</span>
-            </span>
-          </label>
-        ))}
-      </div>
-      <div className="num" style={{ marginTop: 8, fontSize: 12, color: 'var(--ink-3)' }}>
-        {present.size} of {row?.chips.length ?? 0} chips on these boards
-      </div>
-    </Modal>
   );
 }
 
