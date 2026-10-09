@@ -695,7 +695,7 @@ def so_inventory(request, so_pk):
     chip with failures, then a Tantalum row when the pallet has a tantalum weight.
     """
     so = get_object_or_404(SO, pk=so_pk)
-    pallets = so.pallets.prefetch_related('checklists__chip', 'chip_ngs__chip').order_by('pallet_seq')
+    pallets = so.pallets.prefetch_related('checklists__chip', 'chip_ngs__chip__brand').order_by('pallet_seq')
 
     def processed(chip):
         t = (chip.processed_type or '') if chip else ''
@@ -707,15 +707,17 @@ def so_inventory(request, so_pk):
         base = {'pallet_id': p.id, 'pallet_label': label}
         for c in p.checklists.all():
             out.append({**base, 'kind': 'checklist', 'container_uid': c.barcode, 'chip_mpn': c.model or '',
+                        'brand': c.brand or '', 'date': c.created_at.date().isoformat(),
                         'processed_type': processed(c.chip), 'packaging_type': c.chip.packaging_type if c.chip else '',
                         'qty': c.qty})
         for ng in p.chip_ngs.all():
             out.append({**base, 'kind': 'ng', 'container_uid': 'NG', 'chip_mpn': ng.chip.chip_mpn,
+                        'brand': ng.chip.brand.name if ng.chip.brand_id else '', 'date': None,
                         'processed_type': processed(ng.chip), 'packaging_type': ng.chip.packaging_type,
                         'qty': ng.qty})
         if p.tantalum_wt:
             grams = format(p.tantalum_wt.normalize(), 'f')
-            out.append({**base, 'kind': 'tantalum', 'container_uid': 'Tantalum', 'chip_mpn': '',
+            out.append({**base, 'kind': 'tantalum', 'container_uid': 'Tantalum', 'chip_mpn': '', 'brand': '', 'date': None,
                         'processed_type': 'Harvested', 'packaging_type': 'bag', 'qty': f'{grams}g'})
     return Response(out)
 

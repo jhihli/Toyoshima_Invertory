@@ -1096,6 +1096,14 @@ class SoInventoryTests(TestCase):
             ('2', 'checklist', 'S-2-1', 'X9', '', '', 4),
         ])
 
+    def test_rows_carry_brand_and_checklist_date(self):
+        rows = self.client.get(f'/product/sos/{self.so.id}/inventory/').json()
+        by_uid = {r['container_uid']: r for r in rows}
+        self.assertEqual(by_uid['S-2-1']['brand'], 'Dell')                 # free-text line keeps its brand
+        self.assertEqual(by_uid['S-1-1']['date'], Checklist.objects.get(barcode='S-1-1').created_at.date().isoformat())
+        self.assertIsNone(by_uid['NG']['date'])
+        self.assertIsNone([r for r in rows if r['kind'] == 'tantalum'][0]['date'])
+
     def test_fractional_tantalum_kept(self):
         self.p1.tantalum_wt = '72.50'; self.p1.save()
         rows = self.client.get(f'/product/sos/{self.so.id}/inventory/').json()

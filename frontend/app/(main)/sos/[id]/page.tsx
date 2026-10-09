@@ -273,6 +273,23 @@ export default function SODetailPage() {
         for (const c of b.chips) st.present.set(c.id, c);
         mpnStats.set(b.mpn.id, st);
       }
+      // What the checklist says, for the date columns and the chip catalogue:
+      //   palletDate = latest checklist date on each pallet  → Processing PCB "Date processed"
+      //   chipDate   = latest checklist date per chip MPN    → Processing chips "Date processed"
+      //   invChips   = every chip MPN named in Inventory (checklist + NG), first spelling kept
+      const palletDate = new Map<number, string>();
+      const chipDate = new Map<string, string>();
+      const invChips = new Map<string, { chipMpn: string; brand: string }>();
+      for (const r of invRows) {
+        if (r.kind === 'tantalum') continue;
+        const key = normalizeChipMpn(r.chip_mpn);
+        if (r.date) {
+          if (r.date > (palletDate.get(r.pallet_id) ?? '')) palletDate.set(r.pallet_id, r.date);
+          if (key && r.date > (chipDate.get(key) ?? '')) chipDate.set(key, r.date);
+        }
+        if (key && !invChips.has(key)) invChips.set(key, { chipMpn: r.chip_mpn.trim(), brand: r.brand });
+      }
+
       /** Board-weighted per-board figures — exact totals divided by boards, so a pallet whose
        *  batch lacks a chip pulls them down. With no boards yet, the full BOM. */
       const perBoard = (entry: MpnEntry) => {
@@ -324,10 +341,13 @@ export default function SODetailPage() {
         const pallet = b.pallet ? palletMap.get(b.pallet) : null;
         const lpNo = pallet?.licence_number || '';
         const key = `${lpNo}||${b.mpn.id}`;
-        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: b.date?.slice(0, 10) || '', partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chips: b.chips ?? [] });
+        // Date processed = when the pallet's checklist was last written; before any checklist,
+        // when the MPN was put on the pallet.
+        const processedOn = palletDate.get(b.pallet) ?? (b.date?.slice(0, 10) || '');
+        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: processedOn, partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chips: b.chips ?? [] });
         const entry = pcbMap.get(key)!;
         entry.partQty += b.qty;
-        if ((b.date || '') > (entry.date + 'T')) entry.date = b.date?.slice(0, 10) || '';
+        if (processedOn > entry.date) entry.date = processedOn;
       }
       const pcbRows = [...pcbMap.values()].sort((a, b) => a.lpNo.localeCompare(b.lpNo));
       let pcbFirstDataRow = 0;
@@ -362,8 +382,21 @@ export default function SODetailPage() {
       // A memory slot bundles several alternate MPNs into one line, so each sums per alternate.
       const INV_NG_QTY = 'Inventory!$F:$F', INV_NG_UID = 'Inventory!$B:$B', INV_NG_MPN = 'Inventory!$C:$C';
       const xq = (m: string) => `"${m.replace(/"/g, '""')}"`;
-      for (const gs of buildGlobalSlots([...mpnMap.values()])) {
-        const row = wsChipProc.addRow([gs.date.slice(0, 10), 'Chip Harvest', gs.label, 0, 0, 0]);
+      // Only chips the checklist / NG actually name: each MPN contributes the chips present on
+      // at least one of its pallets (so a BOM chip no batch had gets no 0-row).
+      const presentEntries = [...mpnMap.values()]
+        .map(e => ({ ...e, chips: [...(mpnStats.get(e.mpn.id)?.present.values() ?? [])] }))
+        .filter(e => e.chips.length);
+      const procLines = buildGlobalSlots(presentEntries).map(gs => ({ label: gs.label, chipMpns: gs.chipMpns, date: gs.date }));
+      // Parts named in the checklist but in no board's BOM (typed by hand) still get a line.
+      const inSlots = new Set(procLines.flatMap(l => l.chipMpns.map(normalizeChipMpn)));
+      for (const [key, c] of invChips) {
+        if (!inSlots.has(key)) procLines.push({ label: c.chipMpn, chipMpns: [c.chipMpn], date: '' });
+      }
+      for (const gs of procLines) {
+        // Date processed = the latest checklist date of any of the line's chip MPNs.
+        const lastSeen = gs.chipMpns.map(m => chipDate.get(normalizeChipMpn(m)) ?? '').sort().pop() || gs.date.slice(0, 10);
+        const row = wsChipProc.addRow([lastSeen, 'Chip Harvest', gs.label, 0, 0, 0]);
         const rn = row.number;
         const processed = gs.chipMpns.map(m => `SUMIF(${INV_NG_MPN},${xq(m)},${INV_NG_QTY})`).join('+') || '0';
         const failed = gs.chipMpns
@@ -520,22 +553,28 @@ export default function SODetailPage() {
       const goodQty = (cell: string) => `SUMIFS(${INV_QTY_COL},${INV_MPN_COL},${cell},${INV_UID_COL},"<>${NG_UID}")`;
 
       // ── Sheet 8: Chip BOM (with embedded photos) ──────────────────
-      // Individual chips here, NOT slot groups — this is the catalogue of every distinct
-      // part, which is also what the Bid template enumerates.
-      const chipBomMap = new Map<string, { chipMpn: string; manufacturer: string; chipType: string; description: string; itemGroup: string; photoUrl: string }>();
+      // Individual chips here, NOT slot groups — this is the catalogue of every distinct part the
+      // checklist / NG name (also what the Bid template enumerates). Details come from the chip
+      // record when one matches the part number; a part typed by hand keeps its checklist brand.
+      const chipRecord = new Map<string, Chip>();
       for (const b of allBoardData) {
-        for (const chip of b.chips ?? []) {
+        for (const chip of b.bomChips ?? []) {
           const key = normalizeChipMpn(chip.chip_mpn);
-          if (!key || chipBomMap.has(key)) continue;
-          chipBomMap.set(key, {
-            chipMpn: chip.chip_mpn.trim(),
-            manufacturer: chip.brand_name || '',
-            chipType: chip.chip_type || '',
-            description: chip.description || '',
-            itemGroup: chip.item_group || '',
-            photoUrl: chip.chip_photo_url || '',
-          });
+          if (key && !chipRecord.has(key)) chipRecord.set(key, chip);
         }
+      }
+      const chipBomMap = new Map<string, { chipMpn: string; manufacturer: string; chipType: string; description: string; itemGroup: string; photoUrl: string }>();
+      for (const [key, c] of invChips) {
+        const rec = chipRecord.get(key);
+        chipBomMap.set(key, {
+          // The Inventory spelling, so the SUMIFS below matches its rows exactly.
+          chipMpn: c.chipMpn,
+          manufacturer: rec?.brand_name || c.brand || '',
+          chipType: rec?.chip_type || '',
+          description: rec?.description || '',
+          itemGroup: rec?.item_group || '',
+          photoUrl: rec?.chip_photo_url || '',
+        });
       }
       const wsChipBom = workbook.addWorksheet('Chip BOM');
       wsChipBom.columns = [{ width: 24 }, { width: 18 }, { width: 14 }, { width: 30 }, { width: 18 }, { width: 12 }];

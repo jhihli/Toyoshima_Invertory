@@ -378,6 +378,10 @@ export interface InventoryRow {
   /** Checklist barcode, "NG", or "Tantalum". */
   container_uid: string;
   chip_mpn: string;
+  /** Checklist brand text, or the chip's brand for NG rows; blank for tantalum. */
+  brand: string;
+  /** Checklist line date (YYYY-MM-DD); null for NG and tantalum rows. */
+  date: string | null;
   processed_type: string;
   packaging_type: string;
   /** Number for chips (null = not filled in yet); text like "73g" for tantalum. */
