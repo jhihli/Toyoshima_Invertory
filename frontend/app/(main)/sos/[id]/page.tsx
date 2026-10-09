@@ -237,11 +237,17 @@ export default function SODetailPage() {
     toast('Preparing export…');
     try {
       const [pmRows, invRows] = await Promise.all([api.sos.palletMpns(soId), api.sos.inventory(soId)]);
-      // One row per (pallet, MPN) carrying its board qty — replaces per-scan Board rows.
-      const allBoardData = pmRows.map(r => ({
-        pallet: r.pallet, mpn: r.mpn, chips: r.chips, qty: r.board_qty ?? 0,
-        date: r.created_at,   // when this MPN was added to the pallet = "Date processed"
-      }));
+      // One row per (pallet, MPN) carrying its board qty. `chips` is what that pallet's batch
+      // actually has (the MPN's BOM minus the chips marked missing on the Boards tab);
+      // `bomChips` is the MPN's full standard BOM.
+      const allBoardData = pmRows.map(r => {
+        const missing = new Set(r.excluded_chip_ids ?? []);
+        return {
+          pallet: r.pallet, mpn: r.mpn, qty: r.board_qty ?? 0,
+          chips: r.chips.filter(c => !missing.has(c.id)), bomChips: r.chips,
+          date: r.created_at,   // when this MPN was added to the pallet = "Date processed"
+        };
+      });
       const workbook = new ExcelJS.Workbook();
       const palletMap = new Map(so.pallets.map(p => [p.id, p]));
 
@@ -251,13 +257,32 @@ export default function SODetailPage() {
 
       // Build MPN map once (reused across sheets)
       const mpnMap = new Map<number, MpnEntry>();
+      // Per MPN, summed over its pallets with each pallet's own chip set:
+      //   harvest    = chips harvested       = Σ boards × chips per board
+      //   slotBoards = chip slots processed  = Σ boards × slots per board
+      //   present    = chips present on at least one pallet (the BOM minus never-present ones)
+      const mpnStats = new Map<number, { harvest: number; slotBoards: number; present: Map<number, Chip> }>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
-        if (!mpnMap.has(b.mpn.id)) mpnMap.set(b.mpn.id, { mpn: b.mpn, chips: b.chips, boardCount: 0, latestDate: '' });
+        if (!mpnMap.has(b.mpn.id)) mpnMap.set(b.mpn.id, { mpn: b.mpn, chips: b.bomChips, boardCount: 0, latestDate: '' });
         const entry = mpnMap.get(b.mpn.id)!;
         entry.boardCount += b.qty;
         if (b.date > entry.latestDate) entry.latestDate = b.date;
+        const st = mpnStats.get(b.mpn.id) ?? { harvest: 0, slotBoards: 0, present: new Map<number, Chip>() };
+        st.harvest += b.qty * bomTotalQty(b.chips);
+        st.slotBoards += b.qty * slotCount(b.chips);
+        for (const c of b.chips) st.present.set(c.id, c);
+        mpnStats.set(b.mpn.id, st);
       }
+      /** Board-weighted per-board figures — exact totals divided by boards, so a pallet whose
+       *  batch lacks a chip pulls them down. With no boards yet, the full BOM. */
+      const perBoard = (entry: MpnEntry) => {
+        const st = mpnStats.get(entry.mpn.id);
+        if (!st || entry.boardCount <= 0) {
+          return { chips: bomTotalQty(entry.chips), slots: slotCount(entry.chips), presentChips: entry.chips };
+        }
+        return { chips: st.harvest / entry.boardCount, slots: st.slotBoards / entry.boardCount, presentChips: [...st.present.values()] };
+      };
 
 
       // ── Sheet 1: Worksheet Descriptions (static) ─────────────────
@@ -434,8 +459,10 @@ export default function SODetailPage() {
         const cutCost = r3(Number(entry.mpn.cutboard_cost ?? 0));
         // Divide the board's cut cost across its SLOTS. Five interchangeable DRAMs are
         // one slot, so a 3-slot board bills 0.7/3, not 0.7/5.
-        const nSlots = slotCount(entry.chips);
-        const chipCutCost = cutCost > 0 && nSlots > 0 ? r3(cutCost / nSlots) : null;
+        // Batches missing a chip have fewer slots, so the slot count is board-weighted.
+        const pb = perBoard(entry);
+        const nSlots = r3(pb.slots);
+        const chipCutCost = cutCost > 0 && pb.slots > 0 ? r3(cutCost / pb.slots) : null;
         const cutDef = chipCutCost != null
           ? `The cost to cut a single chip by board type (${cutCost}/${nSlots}=${chipCutCost})`
           : 'The cost to cut a single chip by board type';
@@ -448,7 +475,7 @@ export default function SODetailPage() {
         for (let c = 2; c <= 8; c++) bpnRow.getCell(c).fill = ABC_MPN_FILL;
         const bpnNum = bpnRow.number;
         bpnRow.getCell(5).value = entry.boardCount;             // Qty of Boards Processed (= On Hand Inventory)
-        bpnRow.getCell(6).value = bomTotalQty(entry.chips);     // # chips per board (chips harvested per board)
+        bpnRow.getCell(6).value = r3(pb.chips);                  // # chips per board (board-weighted over pallets)
         bpnRow.getCell(7).value = { formula: `E${bpnNum}*F${bpnNum}` };       // Total Chips Harvested
         // Total cost = harvested chips × per-chip total service cost (this block's Total row, col B).
         bpnRow.getCell(8).value = { formula: `G${bpnNum}*B${bpnNum + 6}` };
@@ -587,8 +614,9 @@ export default function SODetailPage() {
       for (const entry of sortedMpns) {
         const cutCost = entry.mpn.cutboard_cost ?? 0;
         const inv = entry.boardCount;
-        const slots = buildSlots(entry.chips);
-        const unitChipCost = r3(cutCost > 0 && slots.length > 0 ? Number(cutCost) / slots.length : 0);
+        const pb = perBoard(entry);
+        const slots = buildSlots(pb.presentChips);   // only chips some pallet actually had
+        const unitChipCost = r3(cutCost > 0 && pb.slots > 0 ? Number(cutCost) / pb.slots : 0);
         wsSCE.addRow([]);
         const mpnRow = addSceRow(wsSCE, [entry.mpn.name, cutCost, '', '', '', '', 0, inv, 0]);
         mpnRow.getCell(1).fill = HDR_FILL; mpnRow.getCell(1).font = HDR_FONT;

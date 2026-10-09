@@ -284,8 +284,8 @@ class MPN(models.Model):
     def __str__(self):
         return self.name
 
-    def _slots(self):
-        """Group chips into physical board slots.
+    def _slots(self, exclude=()):
+        """Group chips into physical board slots (skipping chip ids in `exclude`).
 
         Chips sharing a non-empty slot_group are interchangeable alternates for the SAME
         slot (e.g. 5 DRAM part numbers that can each fill one socket) and count once. A
@@ -296,6 +296,8 @@ class MPN(models.Model):
         """
         slots = {}
         for c in self.chips.all():
+            if c.id in exclude:
+                continue
             group = (c.slot_group or '').strip()
             key = f'g:{group}' if group else f'c:{c.id}'
             qty = c.qty if c.qty is not None else 1
@@ -338,6 +340,9 @@ class PalletMPN(models.Model):
     pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='pallet_mpns')
     mpn = models.ForeignKey(MPN, on_delete=models.PROTECT, related_name='pallet_mpns')
     board_qty = models.IntegerField(null=True, blank=True)
+    # Chips of the MPN's BOM that this pallet's batch of boards does not have (e.g. a
+    # board revision without the ASPEED chip). The MPN's BOM itself stays the superset.
+    excluded_chips = models.ManyToManyField('Chip', blank=True, related_name='excluded_on_pallets')
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -351,6 +356,15 @@ class PalletMPN(models.Model):
     def checklist_use_count(self):
         """Checklist lines on this pallet that name a chip of this MPN."""
         return Checklist.objects.filter(pallet_id=self.pallet_id, chip__mpn_id=self.mpn_id).count()
+
+    def excluded_chip_ids(self):
+        """Uses a prefetch of 'excluded_chips' when present."""
+        return {c.id for c in self.excluded_chips.all()}
+
+    @property
+    def chips_per_board(self):
+        """Chips on ONE board of this pallet's batch: the MPN's BOM minus excluded chips."""
+        return sum(self.mpn._slots(exclude=self.excluded_chip_ids()).values())
 
     def ng_use_count(self):
         """NG records on this pallet for chips of this MPN."""

@@ -553,7 +553,7 @@ def checklist_search(request):
 def pallet_mpn_list(request, pallet_pk):
     pallet = get_object_or_404(Pallet, pk=pallet_pk)
     if request.method == 'GET':
-        qs = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips')
+        qs = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips__brand', 'excluded_chips')
         return Response(PalletMPNSerializer(qs, many=True).data)
 
     # POST {"items": [{"mpn": id, "board_qty": n|null}, ...]} — all or nothing.
@@ -592,13 +592,23 @@ def pallet_mpn_detail(request, pallet_pk, pk):
                             status=status.HTTP_400_BAD_REQUEST)
         row.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
-    # Only the count is editable; changing the MPN is remove + add.
-    data = {'board_qty': request.data['board_qty']} if 'board_qty' in request.data else {}
+    # Board qty and the batch's missing chips are editable; changing the MPN is remove + add.
+    data = {k: request.data[k] for k in ('board_qty', 'excluded_chips') if k in request.data}
     s = PalletMPNSerializer(row, data=data, partial=True)
-    if s.is_valid():
-        s.save()
-        return Response(s.data)
-    return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+    if not s.is_valid():
+        return Response(s.errors, status=status.HTTP_400_BAD_REQUEST)
+    excluded = s.validated_data.get('excluded_chips')
+    if excluded is not None:
+        if any(c.mpn_id != row.mpn_id for c in excluded):
+            return Response({'error': 'excluded chips must belong to this MPN'}, status=status.HTTP_400_BAD_REQUEST)
+        ids = [c.id for c in excluded]
+        used = (Checklist.objects.filter(pallet_id=pallet_pk, chip_id__in=ids).exists()
+                or PalletChipNG.objects.filter(pallet_id=pallet_pk, chip_id__in=ids).exists())
+        if used:
+            return Response({'error': 'A chip in use by this pallet\'s checklist or NG cannot be marked missing'},
+                            status=status.HTTP_400_BAD_REQUEST)
+    s.save()
+    return Response(PalletMPNSerializer(row).data)
 
 
 @api_view(['GET'])
@@ -606,17 +616,21 @@ def pallet_mpn_detail(request, pallet_pk, pk):
 def pallet_chip_options(request, pallet_pk):
     """Chips a checklist line on this pallet may name, grouped by board (MPN)."""
     pallet = get_object_or_404(Pallet, pk=pallet_pk)
-    rows = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips__brand')
-    return Response([{
-        'mpn_id': r.mpn_id,
-        'mpn_name': r.mpn.name,
-        'chips': [{
-            'id': c.id,
-            'brand_name': c.brand.name if c.brand_id else '',
-            'chip_mpn': c.chip_mpn,
-            'slot_group': c.slot_group,
-        } for c in r.mpn.chips.all()],
-    } for r in rows])
+    rows = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips__brand', 'excluded_chips')
+    out = []
+    for r in rows:
+        excluded = r.excluded_chip_ids()
+        out.append({
+            'mpn_id': r.mpn_id,
+            'mpn_name': r.mpn.name,
+            'chips': [{
+                'id': c.id,
+                'brand_name': c.brand.name if c.brand_id else '',
+                'chip_mpn': c.chip_mpn,
+                'slot_group': c.slot_group,
+            } for c in r.mpn.chips.all() if c.id not in excluded],
+        })
+    return Response(out)
 
 
 @api_view(['GET'])
@@ -625,7 +639,7 @@ def so_pallet_mpns(request, so_pk):
     """Every (pallet, MPN) row of an SO with chip BOMs — the Excel export's data source."""
     so = get_object_or_404(SO, pk=so_pk)
     qs = (PalletMPN.objects.filter(pallet__so=so)
-          .select_related('mpn').prefetch_related('mpn__chips__brand')
+          .select_related('mpn').prefetch_related('mpn__chips__brand', 'excluded_chips')
           .order_by('pallet__pallet_seq', 'mpn__name'))
     return Response(PalletMPNExportSerializer(qs, many=True, context={'request': request}).data)
 
@@ -633,7 +647,7 @@ def so_pallet_mpns(request, so_pk):
 def _pallet_ng_payload(pallet):
     """The pallet's chips (from its MPNs) grouped by MPN, each with its NG count (0 = none)."""
     ng = {r.chip_id: r.qty for r in pallet.chip_ngs.all()}
-    rows = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips__brand')
+    rows = pallet.pallet_mpns.select_related('mpn').prefetch_related('mpn__chips__brand', 'excluded_chips')
     return [{
         'mpn_id': r.mpn_id,
         'mpn_name': r.mpn.name,
@@ -642,7 +656,7 @@ def _pallet_ng_payload(pallet):
             'brand_name': c.brand.name if c.brand_id else '',
             'chip_mpn': c.chip_mpn,
             'qty': ng.get(c.id, 0),
-        } for c in r.mpn.chips.all()],
+        } for c in r.mpn.chips.all() if c.id not in r.excluded_chip_ids()],
     } for r in rows]
 
 

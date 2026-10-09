@@ -174,7 +174,7 @@ export const api = {
       list: (palletId: number) => apiGet<PalletMPN[]>(`/pallets/${palletId}/mpns/`),
       create: (palletId: number, items: { mpn: number; board_qty: number | null }[]) =>
         apiPost<PalletMPN[]>(`/pallets/${palletId}/mpns/`, { items }),
-      update: (palletId: number, id: number, d: { board_qty: number | null }) =>
+      update: (palletId: number, id: number, d: { board_qty?: number | null; excluded_chips?: number[] }) =>
         apiPut<PalletMPN>(`/pallets/${palletId}/mpns/${id}/`, d),
       delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/mpns/${id}/`),
     },

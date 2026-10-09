@@ -347,18 +347,27 @@ class PalletChipContainerWithChipSerializer(serializers.ModelSerializer):
 class PalletMPNSerializer(serializers.ModelSerializer):
     mpn_name = serializers.CharField(source='mpn.name', read_only=True)
     part_type = serializers.CharField(source='mpn.part_type', read_only=True)
-    chips_per_board = serializers.IntegerField(source='mpn.chips_per_board', read_only=True)
+    # This pallet's batch (BOM minus excluded chips) vs the MPN's full BOM.
+    chips_per_board = serializers.IntegerField(read_only=True)
+    bom_chips_per_board = serializers.IntegerField(source='mpn.chips_per_board', read_only=True)
     board_qty = serializers.IntegerField(allow_null=True, required=False, min_value=0)
+    excluded_chips = serializers.PrimaryKeyRelatedField(many=True, required=False, queryset=Chip.objects.all())
+    chips = serializers.SerializerMethodField(read_only=True)
     checklist_use_count = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = PalletMPN
-        fields = ['id', 'pallet', 'mpn', 'mpn_name', 'part_type', 'chips_per_board',
-                  'board_qty', 'checklist_use_count', 'created_at']
+        fields = ['id', 'pallet', 'mpn', 'mpn_name', 'part_type', 'chips_per_board', 'bom_chips_per_board',
+                  'board_qty', 'excluded_chips', 'chips', 'checklist_use_count', 'created_at']
         read_only_fields = ['pallet', 'created_at']
         # (pallet, mpn) uniqueness is checked in the view: pallet is read-only here,
         # so DRF's auto UniqueTogetherValidator would demand it in the payload.
         validators = []
+
+    def get_chips(self, obj):
+        excluded = obj.excluded_chip_ids()
+        return [{'id': c.id, 'brand_name': c.brand.name if c.brand_id else '', 'chip_mpn': c.chip_mpn,
+                 'excluded': c.id in excluded} for c in obj.mpn.chips.all()]
 
     def get_checklist_use_count(self, obj):
         return obj.checklist_use_count()
@@ -368,10 +377,14 @@ class PalletMPNExportSerializer(serializers.ModelSerializer):
     """One (pallet, MPN) row with the MPN's chip BOM, for the SO Excel export."""
     mpn = MPNLiteSerializer(read_only=True)
     chips = serializers.SerializerMethodField(read_only=True)
+    excluded_chip_ids = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = PalletMPN
-        fields = ['id', 'pallet', 'board_qty', 'created_at', 'mpn', 'chips']
+        fields = ['id', 'pallet', 'board_qty', 'created_at', 'mpn', 'chips', 'excluded_chip_ids']
+
+    def get_excluded_chip_ids(self, obj):
+        return sorted(obj.excluded_chip_ids())
 
     def get_chips(self, obj):
         return ChipSerializer(obj.mpn.chips.all(), many=True, context=self.context).data
