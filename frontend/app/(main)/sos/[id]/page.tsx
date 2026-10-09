@@ -18,6 +18,7 @@ import {
   type MpnEntry,
 } from '@/app/lib/chipSlots';
 import { WeightRuleField } from '../WeightRuleField';
+import { splitChecklistByBoard } from '@/app/lib/checklistSplit';
 import PalletBoardsTab from '@/app/ui/pallet/PalletBoardsTab';
 import PalletNgModal from '@/app/ui/pallet/PalletNgModal';
 import PalletBoardsNgSection, { usePalletBoardsNg } from '@/app/ui/pallet/PalletBoardsNgSection';
@@ -290,6 +291,22 @@ export default function SODetailPage() {
         if (key && !invChips.has(key)) invChips.set(key, { chipMpn: r.chip_mpn.trim(), brand: r.brand });
       }
 
+      // Chips actually harvested per (pallet, MPN), from the checklist quantities: each pallet's
+      // rows add up to exactly its checklist total (shared / hand-typed parts split by boards).
+      const harvested = splitChecklistByBoard(
+        allBoardData.filter(b => b.mpn).map(b => ({
+          key: `${b.pallet}|${b.mpn.id}`, palletId: b.pallet, boards: b.qty,
+          chipKeys: new Set((b.bomChips ?? []).map(c => normalizeChipMpn(c.chip_mpn))),
+        })),
+        invRows.filter(r => r.kind === 'checklist' && typeof r.qty === 'number')
+          .map(r => ({ palletId: r.pallet_id, chipKey: normalizeChipMpn(r.chip_mpn), qty: r.qty as number })),
+      );
+      const harvestedByMpn = new Map<number, number>();
+      for (const b of allBoardData) {
+        if (!b.mpn) continue;
+        harvestedByMpn.set(b.mpn.id, (harvestedByMpn.get(b.mpn.id) ?? 0) + (harvested.get(`${b.pallet}|${b.mpn.id}`) ?? 0));
+      }
+
       /** Board-weighted per-board figures — exact totals divided by boards, so a pallet whose
        *  batch lacks a chip pulls them down. With no boards yet, the full BOM. */
       const perBoard = (entry: MpnEntry) => {
@@ -335,7 +352,7 @@ export default function SODetailPage() {
       const wsPCB = workbook.addWorksheet('Processing PCB');
       wsPCB.columns = [{ width: 18 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 10 }, { width: 14 }, { width: 16 }];
       styleHdr(wsPCB.addRow(['Inbound LP No.', 'Date processed', 'Part type', 'MPN', 'Part Qty.', 'Chip Total Qty.', 'Chips per board']));
-      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chips: Chip[] }>();
+      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chipTotal: number }>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
         const pallet = b.pallet ? palletMap.get(b.pallet) : null;
@@ -344,9 +361,10 @@ export default function SODetailPage() {
         // Date processed = when the pallet's checklist was last written; before any checklist,
         // when the MPN was put on the pallet.
         const processedOn = palletDate.get(b.pallet) ?? (b.date?.slice(0, 10) || '');
-        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: processedOn, partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chips: b.chips ?? [] });
+        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: processedOn, partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chipTotal: 0 });
         const entry = pcbMap.get(key)!;
         entry.partQty += b.qty;
+        entry.chipTotal += harvested.get(`${b.pallet}|${b.mpn.id}`) ?? 0;
         if (processedOn > entry.date) entry.date = processedOn;
       }
       const pcbRows = [...pcbMap.values()].sort((a, b) => a.lpNo.localeCompare(b.lpNo));
@@ -355,7 +373,8 @@ export default function SODetailPage() {
       for (const e of pcbRows) {
         // Chips harvested = boards x chips per board. Interchangeable alternates share one
         // slot, so a 5-alternate DRAM slot still yields 1 chip per board, not 5.
-        const row = wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.partQty * bomTotalQty(e.chips)]);
+        // Chip Total Qty = the checklist quantities of this pallet's lines for this board.
+        const row = wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.chipTotal]);
         // Chips on this board MPN = Chip Total Qty / Part Qty.
         row.getCell(7).value = { formula: `IF(E${row.number}>0,F${row.number}/E${row.number},0)` };
         if (!pcbFirstDataRow) pcbFirstDataRow = row.number;
@@ -507,7 +526,10 @@ export default function SODetailPage() {
         for (let c = 2; c <= 8; c++) bpnRow.getCell(c).fill = ABC_MPN_FILL;
         const bpnNum = bpnRow.number;
         bpnRow.getCell(5).value = entry.boardCount;             // Qty of Boards Processed (= On Hand Inventory)
-        bpnRow.getCell(6).value = r3(pb.chips);                  // # chips per board (board-weighted over pallets)
+        // # chips per board = chips actually harvested (checklist) ÷ boards, so G (= E×F) is that total.
+        const harvestTotal = harvestedByMpn.get(entry.mpn.id) ?? 0;
+        bpnRow.getCell(6).value = entry.boardCount > 0 ? harvestTotal / entry.boardCount : 0;
+        bpnRow.getCell(6).numFmt = '0.00';
         bpnRow.getCell(7).value = { formula: `E${bpnNum}*F${bpnNum}` };       // Total Chips Harvested
         // Total cost = harvested chips × per-chip total service cost (this block's Total row, col B).
         bpnRow.getCell(8).value = { formula: `G${bpnNum}*B${bpnNum + 6}` };
