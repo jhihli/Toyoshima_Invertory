@@ -96,7 +96,7 @@ export default function PalletBoardsTab({ palletOptions, palletId, onPalletChang
             <tr style={{ borderBottom: '1px solid var(--hair)' }}>
               <th style={thS}>MPN</th>
               <th style={thS}>Part type</th>
-              <th style={{ ...thS, textAlign: 'right' }}>Chips / board</th>
+              <th style={{ ...thS, textAlign: 'right' }}>Chips</th>
               <th style={{ ...thS, textAlign: 'right' }}>Board qty</th>
               <th style={{ ...thS, width: 48 }} />
             </tr>
@@ -117,9 +117,7 @@ export default function PalletBoardsTab({ palletOptions, palletId, onPalletChang
                   title={r.chips.some(c => !c.present)
                     ? `Not in this pallet's checklist: ${r.chips.filter(c => !c.present).map(c => c.chip_mpn || `#${c.id}`).join(', ')}`
                     : "All of this board's chips are in the checklist"}>
-                  <span style={{ color: r.chips_per_board < r.bom_chips_per_board ? 'var(--warn, #a86b00)' : 'var(--ink)' }}>
-                    {r.chips_per_board < r.bom_chips_per_board ? `${r.chips_per_board} of ${r.bom_chips_per_board}` : r.chips_per_board}
-                  </span>
+                  {r.chips_per_board}
                 </td>
                 <td style={{ ...tdS, textAlign: 'right' }}><QtyCell row={r} onSave={saveQty} /></td>
                 <td style={{ ...tdS, textAlign: 'right' }}>
