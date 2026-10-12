@@ -353,8 +353,10 @@ export default function SODetailPage() {
 
       // ── Sheet 3: Processing PCB ───────────────────────────────────
       const wsPCB = workbook.addWorksheet('Processing PCB');
-      wsPCB.columns = [{ width: 18 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 10 }, { width: 14 }, { width: 16 }];
-      styleHdr(wsPCB.addRow(['Inbound LP No.', 'Date processed', 'Part type', 'MPN', 'Part Qty.', 'Chip Total Qty.', 'Chips per board']));
+      wsPCB.columns = [{ width: 18 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 10 }, { width: 14 }, { width: 21 }];
+      // "types": G counts chip positions on a board (a memory slot group is one type), not
+      // pieces — so Chip Total Qty (actual pieces) need not equal Part Qty × G.
+      styleHdr(wsPCB.addRow(['Inbound LP No.', 'Date processed', 'Part type', 'MPN', 'Part Qty.', 'Chip Total Qty.', 'Chip types per board']));
       const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chipTotal: number; chipsPerBoard: number }>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
