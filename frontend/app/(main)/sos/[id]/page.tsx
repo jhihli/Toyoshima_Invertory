@@ -352,7 +352,7 @@ export default function SODetailPage() {
       const wsPCB = workbook.addWorksheet('Processing PCB');
       wsPCB.columns = [{ width: 18 }, { width: 14 }, { width: 14 }, { width: 20 }, { width: 10 }, { width: 14 }, { width: 16 }];
       styleHdr(wsPCB.addRow(['Inbound LP No.', 'Date processed', 'Part type', 'MPN', 'Part Qty.', 'Chip Total Qty.', 'Chips per board']));
-      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chipTotal: number }>();
+      const pcbMap = new Map<string, { lpNo: string; date: string; partType: string; mpnName: string; partQty: number; chipTotal: number; chipsPerBoard: number }>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
         const pallet = b.pallet ? palletMap.get(b.pallet) : null;
@@ -361,31 +361,31 @@ export default function SODetailPage() {
         // Date processed = when the pallet's checklist was last written; before any checklist,
         // when the MPN was put on the pallet.
         const processedOn = palletDate.get(b.pallet) ?? (b.date?.slice(0, 10) || '');
-        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: processedOn, partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chipTotal: 0 });
+        if (!pcbMap.has(key)) pcbMap.set(key, { lpNo, date: processedOn, partType: b.mpn.part_type || '', mpnName: b.mpn.name, partQty: 0, chipTotal: 0, chipsPerBoard: 0 });
         const entry = pcbMap.get(key)!;
         entry.partQty += b.qty;
         entry.chipTotal += harvested.get(`${b.pallet}|${b.mpn.id}`) ?? 0;
+        // Whole chips per board: the slots this pallet's checklist names (a slot group such as
+        // 1G memory counts once) — the same figure as the Boards tab's Chips column.
+        entry.chipsPerBoard = Math.max(entry.chipsPerBoard, bomTotalQty(b.chips));
         if (processedOn > entry.date) entry.date = processedOn;
       }
       const pcbRows = [...pcbMap.values()].sort((a, b) => a.lpNo.localeCompare(b.lpNo));
       let pcbFirstDataRow = 0;
       let pcbLastDataRow = 0;
       for (const e of pcbRows) {
-        // Chips harvested = boards x chips per board. Interchangeable alternates share one
-        // slot, so a 5-alternate DRAM slot still yields 1 chip per board, not 5.
         // Chip Total Qty = the checklist quantities of this pallet's lines for this board.
-        const row = wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.chipTotal]);
-        // Chips on this board MPN = Chip Total Qty / Part Qty.
-        row.getCell(7).value = { formula: `IF(E${row.number}>0,F${row.number}/E${row.number},0)` };
+        // Chips per board = whole slots on the board (interchangeable alternates count once).
+        const row = wsPCB.addRow([e.lpNo, e.date, e.partType, e.mpnName, e.partQty, e.chipTotal, e.chipsPerBoard]);
         if (!pcbFirstDataRow) pcbFirstDataRow = row.number;
         pcbLastDataRow = row.number;
       }
-      // Totals: Part Qty and Chip Total Qty summed; Chips per board = fleet-wide ratio F/E.
+      // Totals: Part Qty and Chip Total Qty summed. Chips per board has no meaningful total
+      // across different boards, so it stays blank.
       if (pcbFirstDataRow) {
         const totalRow = wsPCB.addRow([]);
         totalRow.getCell(5).value = { formula: `SUM(E${pcbFirstDataRow}:E${pcbLastDataRow})` };
         totalRow.getCell(6).value = { formula: `SUM(F${pcbFirstDataRow}:F${pcbLastDataRow})` };
-        totalRow.getCell(7).value = { formula: `IF(E${totalRow.number}>0,F${totalRow.number}/E${totalRow.number},0)` };
       }
 
       // ── Sheet 4: Processing chips ─────────────────────────────────
@@ -526,11 +526,10 @@ export default function SODetailPage() {
         for (let c = 2; c <= 8; c++) bpnRow.getCell(c).fill = ABC_MPN_FILL;
         const bpnNum = bpnRow.number;
         bpnRow.getCell(5).value = entry.boardCount;             // Qty of Boards Processed (= On Hand Inventory)
-        // # chips per board = chips actually harvested (checklist) ÷ boards, so G (= E×F) is that total.
-        const harvestTotal = harvestedByMpn.get(entry.mpn.id) ?? 0;
-        bpnRow.getCell(6).value = entry.boardCount > 0 ? harvestTotal / entry.boardCount : 0;
-        bpnRow.getCell(6).numFmt = '0.00';
-        bpnRow.getCell(7).value = { formula: `E${bpnNum}*F${bpnNum}` };       // Total Chips Harvested
+        // # chips per board = whole slots the checklist names on this board (slot groups count
+        // once); Total Chips Harvested = the checklist quantities, not boards × that.
+        bpnRow.getCell(6).value = bomTotalQty(pb.presentChips);
+        bpnRow.getCell(7).value = harvestedByMpn.get(entry.mpn.id) ?? 0;
         // Total cost = harvested chips × per-chip total service cost (this block's Total row, col B).
         bpnRow.getCell(8).value = { formula: `G${bpnNum}*B${bpnNum + 6}` };
         bpnRow.getCell(8).numFmt = ACCOUNTING_FMT;   // "$" at the left of the value
