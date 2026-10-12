@@ -261,16 +261,19 @@ export default function SODetailPage() {
       //   harvest    = chips harvested       = Σ boards × chips per board
       //   slotBoards = chip slots processed  = Σ boards × slots per board
       //   present    = chips present on at least one pallet (the BOM minus never-present ones)
-      const mpnStats = new Map<number, { harvest: number; slotBoards: number; present: Map<number, Chip> }>();
+      // processedBoards = boards on pallets whose checklist names at least one of this MPN's
+      // chips; pallets not yet worked (no checklist) are left out of every per-board figure.
+      const mpnStats = new Map<number, { harvest: number; slotBoards: number; processedBoards: number; present: Map<number, Chip> }>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
         if (!mpnMap.has(b.mpn.id)) mpnMap.set(b.mpn.id, { mpn: b.mpn, chips: b.bomChips, boardCount: 0, latestDate: '' });
         const entry = mpnMap.get(b.mpn.id)!;
         entry.boardCount += b.qty;
         if (b.date > entry.latestDate) entry.latestDate = b.date;
-        const st = mpnStats.get(b.mpn.id) ?? { harvest: 0, slotBoards: 0, present: new Map<number, Chip>() };
+        const st = mpnStats.get(b.mpn.id) ?? { harvest: 0, slotBoards: 0, processedBoards: 0, present: new Map<number, Chip>() };
         st.harvest += b.qty * bomTotalQty(b.chips);
         st.slotBoards += b.qty * slotCount(b.chips);
+        if (b.chips.length) st.processedBoards += b.qty;
         for (const c of b.chips) st.present.set(c.id, c);
         mpnStats.set(b.mpn.id, st);
       }
@@ -314,10 +317,11 @@ export default function SODetailPage() {
       const perBoard = (entry: MpnEntry) => {
         const st = mpnStats.get(entry.mpn.id);
         const presentChips = st ? [...st.present.values()] : [];
-        if (!st || entry.boardCount <= 0) {
-          return { chips: bomTotalQty(presentChips), slots: slotCount(presentChips), presentChips };
+        const boards = st?.processedBoards ?? 0;   // only boards whose pallet has a checklist
+        if (!st || boards <= 0) {
+          return { boards: 0, chips: bomTotalQty(presentChips), slots: slotCount(presentChips), presentChips };
         }
-        return { chips: st.harvest / entry.boardCount, slots: st.slotBoards / entry.boardCount, presentChips };
+        return { boards, chips: st.harvest / boards, slots: st.slotBoards / boards, presentChips };
       };
 
 
@@ -532,7 +536,7 @@ export default function SODetailPage() {
         // MPN name + the E–H roll-up cells sit on a light blue band (col A stays dark teal).
         for (let c = 2; c <= 8; c++) bpnRow.getCell(c).fill = ABC_MPN_FILL;
         const bpnNum = bpnRow.number;
-        bpnRow.getCell(5).value = entry.boardCount;             // Qty of Boards Processed (= On Hand Inventory)
+        bpnRow.getCell(5).value = pb.boards;                    // Qty of Boards Processed: pallets with a checklist only
         // # chips per board = whole slots the checklist names on this board (slot groups count
         // once); Total Chips Harvested = the checklist quantities, not boards × that.
         bpnRow.getCell(6).value = bomTotalQty(pb.presentChips);
@@ -679,7 +683,7 @@ export default function SODetailPage() {
       const sortedMpns = [...mpnMap.values()].sort((a, b) => b.boardCount - a.boardCount);
       for (const entry of sortedMpns) {
         const cutCost = entry.mpn.cutboard_cost ?? 0;
-        const inv = entry.boardCount;
+        const inv = perBoard(entry).boards;   // On Hand Inventory: processed boards only
         const pb = perBoard(entry);
         const slots = buildSlots(pb.presentChips);   // only chips some pallet actually had
         const unitChipCost = r3(cutCost > 0 && pb.slots > 0 ? Number(cutCost) / pb.slots : 0);
