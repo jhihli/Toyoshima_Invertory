@@ -309,12 +309,15 @@ export default function SODetailPage() {
 
       /** Board-weighted per-board figures — exact totals divided by boards, so a pallet whose
        *  batch lacks a chip pulls them down. With no boards yet, the full BOM. */
+      // Every sheet follows the checklist: a BOM chip no pallet's checklist names (e.g. this
+      // batch had no ASPEED) is left out everywhere, even if the MPN lists it for other batches.
       const perBoard = (entry: MpnEntry) => {
         const st = mpnStats.get(entry.mpn.id);
+        const presentChips = st ? [...st.present.values()] : [];
         if (!st || entry.boardCount <= 0) {
-          return { chips: bomTotalQty(entry.chips), slots: slotCount(entry.chips), presentChips: entry.chips };
+          return { chips: bomTotalQty(presentChips), slots: slotCount(presentChips), presentChips };
         }
-        return { chips: st.harvest / entry.boardCount, slots: st.slotBoards / entry.boardCount, presentChips: [...st.present.values()] };
+        return { chips: st.harvest / entry.boardCount, slots: st.slotBoards / entry.boardCount, presentChips };
       };
 
 
@@ -453,10 +456,11 @@ export default function SODetailPage() {
 
       // ── Sheet 6: Board BOM ────────────────────────────────────────
       // One column pair per SLOT, not per chip. A slot's alternates are slash-joined.
-      const mpnBomEntries = [...mpnMap.values()].map(({ mpn, chips }) => ({
-        partType: mpn.part_type || '',
-        mpnName: mpn.name,
-        slots: buildSlots(chips),
+      // Only the chips this SO's checklist names for the board (not its full standard BOM).
+      const mpnBomEntries = [...mpnMap.values()].map(entry => ({
+        partType: entry.mpn.part_type || '',
+        mpnName: entry.mpn.name,
+        slots: buildSlots(perBoard(entry).presentChips),
       }));
       const maxSlots = Math.max(0, ...mpnBomEntries.map(e => e.slots.length));
       const bomHeader: string[] = ['Part type', 'MPN'];
