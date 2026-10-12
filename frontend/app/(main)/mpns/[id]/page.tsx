@@ -49,13 +49,9 @@ export default function MPNDetailPage() {
   const slots = buildSlots(chips);
   const nSlots = slots.length;
   const chipsPerBoard = bomTotalQty(chips);
-  // Slot A / B / C — the same letters the Board BOM sheet uses as its column headers, so a
-  // chip's position here lines up with where it lands in the export.
-  const slotOf = new Map<number, { letter: string; shared: boolean }>();
-  slots.forEach((slot, i) => {
-    const letter = String.fromCharCode(65 + i);
-    for (const c of slot.chips) slotOf.set(c.id, { letter, shared: slot.chips.length > 1 });
-  });
+  // Chips that share a slot with alternates (only one of them is on any given board).
+  const sharedSlot = new Set<number>();
+  for (const slot of slots) if (slot.chips.length > 1) for (const c of slot.chips) sharedSlot.add(c.id);
 
   const handleUpdateMPN = async (patch: Partial<MPN>) => {
     try {
@@ -221,7 +217,7 @@ export default function MPNDetailPage() {
               {chips.length} part{chips.length !== 1 ? 's' : ''} in {nSlots} slot{nSlots !== 1 ? 's' : ''}
               {chips.length > nSlots && (
                 <span style={{ color: 'var(--ink-4)' }}>
-                  {' '}({slots.filter(s => s.chips.length > 1).map(s => `${s.chips.length} alternates share slot ${String.fromCharCode(65 + slots.indexOf(s))}`).join(', ')})
+                  {' '}({slots.filter(s => s.chips.length > 1).map(s => `${s.chips.length} alternates share one ${s.chips[0].slot_group} slot`).join(', ')})
                 </span>
               )}
               {' · '}{chips.filter(c => c.chip_photo_url).length}/{chips.length} with photo
@@ -239,7 +235,7 @@ export default function MPNDetailPage() {
                 <col style={{ width: 120 }} />{/* Brand */}
                 <col style={{ width: 150 }} />{/* Chip MPN */}
                 <col style={{ width: 90 }} />{/* Type */}
-                <col style={{ width: 80 }} />{/* Slot */}
+                <col style={{ width: 110 }} />{/* Item group */}
                 <col style={{ width: 64 }} />{/* Photo */}
                 <col style={{ width: 96 }} />{/* Qty/Board */}
                 <col style={{ width: 92 }} />{/* Chip Cost */}
@@ -252,7 +248,7 @@ export default function MPNDetailPage() {
                   <th style={chipThS}>Brand</th>
                   <th style={chipThS}>Chip MPN</th>
                   <th style={chipThS}>Type</th>
-                  <th style={chipThS}>Slot</th>
+                  <th style={chipThS}>Item group</th>
                   <th style={chipThS}>Photo</th>
                   <th style={{ ...chipThS, textAlign: 'right' }}>Qty/Board</th>
                   <th style={{ ...chipThS, textAlign: 'right' }}>Chip Cost</th>
@@ -281,13 +277,15 @@ export default function MPNDetailPage() {
                     </td>
                     <td style={{ ...chipTdS, fontSize: 12 }}>
                       <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
-                        <Badge>{slotOf.get(chip.id)?.letter ?? '—'}</Badge>
-                        {slotOf.get(chip.id)?.shared && (
+                        {chip.item_group || chip.slot_group
+                          ? <Badge>{chip.item_group || chip.slot_group}</Badge>
+                          : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                        {sharedSlot.has(chip.id) && (
                           <span
-                            title={`Shares slot ${slotOf.get(chip.id)!.letter} with the other "${chip.slot_group}" chips — only one is on any given board`}
+                            title={`Shares one slot with the other "${chip.slot_group}" chips — only one is on any given board`}
                             style={{ fontSize: 10.5, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}
                           >
-                            {chip.slot_group}
+                            shared
                           </span>
                         )}
                       </span>
