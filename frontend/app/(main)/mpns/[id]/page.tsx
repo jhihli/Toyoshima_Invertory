@@ -49,9 +49,6 @@ export default function MPNDetailPage() {
   const slots = buildSlots(chips);
   const nSlots = slots.length;
   const chipsPerBoard = bomTotalQty(chips);
-  // Chips that share a slot with alternates (only one of them is on any given board).
-  const sharedSlot = new Set<number>();
-  for (const slot of slots) if (slot.chips.length > 1) for (const c of slot.chips) sharedSlot.add(c.id);
 
   const handleUpdateMPN = async (patch: Partial<MPN>) => {
     try {
@@ -276,19 +273,9 @@ export default function MPNDetailPage() {
                       {chip.chip_type || <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     <td style={{ ...chipTdS, fontSize: 12 }}>
-                      <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 5 }}>
-                        {chip.item_group || chip.slot_group
-                          ? <Badge>{chip.item_group || chip.slot_group}</Badge>
-                          : <span style={{ color: 'var(--ink-4)' }}>—</span>}
-                        {sharedSlot.has(chip.id) && (
-                          <span
-                            title={`Shares one slot with the other "${chip.slot_group}" chips — only one is on any given board`}
-                            style={{ fontSize: 10.5, color: 'var(--ink-4)', whiteSpace: 'nowrap' }}
-                          >
-                            shared
-                          </span>
-                        )}
-                      </span>
+                      {chip.item_group || chip.slot_group
+                        ? <Badge>{chip.item_group || chip.slot_group}</Badge>
+                        : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     <td style={{ ...chipTdS, padding: '8px 10px' }} onClick={e => { if (chip.chip_photo_url) e.stopPropagation(); }}>
                       <ChipPhotoCell
