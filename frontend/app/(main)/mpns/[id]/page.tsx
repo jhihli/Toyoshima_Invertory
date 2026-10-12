@@ -8,7 +8,8 @@ import {
 } from '@/app/ui/components';
 import { api, apiErrorMessage } from '@/app/lib/api';
 import { buildSlots, bomTotalQty, ITEM_GROUP_OPTIONS, MEMORY_SLOT_GROUP } from '@/app/lib/chipSlots';
-import type { MPN, Chip, ChipBrand } from '@/interface/IDatatable';
+import type { MPN, Chip, ChipBrand, ChipCatalogEntry } from '@/interface/IDatatable';
+import ChipMpnInput from '@/app/ui/mpn/ChipMpnInput';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
 export default function MPNDetailPage() {
@@ -621,6 +622,12 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [photo, setPhoto] = useState<{ src: string; name?: string; file?: File } | null>(null);
   const initialPhotoUrl = initial?.chip_photo_url ?? null;
+  // Existing part numbers across every MPN, for the Chip MPN picker.
+  const [catalog, setCatalog] = useState<ChipCatalogEntry[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    api.chipCatalog().then(setCatalog).catch(() => setCatalog([]));
+  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -649,6 +656,17 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
     else if (next !== 'Memory' && slotGroup.trim() === MEMORY_SLOT_GROUP) setSlotGroup('');
   };
 
+  // Picking an existing part copies its details; every field stays editable afterwards.
+  const pickCatalog = (e: ChipCatalogEntry) => {
+    setChipMpn(e.chip_mpn);
+    setBrandId(e.brand != null ? String(e.brand) : '');
+    setChipType(e.chip_type || '');
+    setDescription(e.description || '');
+    if (e.processed_type) setProcessedType(e.processed_type);
+    if (e.packaging_type) setPackagingType(e.packaging_type);
+    changeItemGroup(e.item_group || '');   // Memory → pre-fills the slot group, as when chosen by hand
+  };
+
   const submit = () => {
     onAdd({
       brandId, qty, slotGroup: slotGroup.trim(), itemGroup, chipMpn, chipType, description,
@@ -670,7 +688,7 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
       <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 180px', gap: 20 }}>
         <div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Field label="Chip MPN"><Input value={chipMpn} onChange={setChipMpn} placeholder="e.g. TPS62130" /></Field>
+            <Field label="Chip MPN"><ChipMpnInput value={chipMpn} onChange={setChipMpn} catalog={catalog} onPick={pickCatalog} placeholder="Type or pick, e.g. TPS62130" /></Field>
             <Field label="Type"><Input value={chipType} onChange={setChipType} placeholder="e.g. DC-DC" /></Field>
             <Field label="Brand"><Select value={brandId} onChange={setBrandId} options={[{ value: '', label: 'No brand' }, ...chipBrands.map(b => ({ value: String(b.id), label: b.name }))]} /></Field>
             <Field label="Item Group"><Select value={itemGroup} onChange={changeItemGroup} options={ITEM_GROUP_OPTIONS} /></Field>

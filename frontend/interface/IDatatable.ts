@@ -387,3 +387,15 @@ export interface InventoryRow {
   /** Number for chips (null = not filled in yet); text like "73g" for tantalum. */
   qty: number | string | null;
 }
+
+/** One distinct chip part number across all MPNs — GET /chips/catalog/ (Add/Edit chip picker). */
+export interface ChipCatalogEntry {
+  chip_mpn: string;
+  brand: number | null;
+  brand_name: string;
+  chip_type: string;
+  item_group: string;
+  description: string;
+  processed_type: string;
+  packaging_type: string;
+}

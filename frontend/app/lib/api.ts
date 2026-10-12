@@ -89,7 +89,7 @@ export function apiErrorMessage(e: unknown): string {
 // ─── Typed wrappers ───────────────────────────────────────────────
 import type {
   Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, ChipBrand, Chip, MPN,
-  PalletMPN, ChipOptionGroup, PalletMpnExportRow, MpnBoardsBySo, PalletNgGroup, InventoryRow,
+  PalletMPN, ChipOptionGroup, PalletMpnExportRow, MpnBoardsBySo, PalletNgGroup, InventoryRow, ChipCatalogEntry,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
   PalletChipContainer, Box, BoxSearchResult, Checklist, ChecklistSearchResult,
@@ -207,6 +207,9 @@ export const api = {
     },
     delete: (soId: number, photoId: number) => apiDelete(`/sos/${soId}/photos/${photoId}/`),
   },
+
+  // Every distinct chip part number across all MPNs (Add/Edit chip picker)
+  chipCatalog: () => apiGet<ChipCatalogEntry[]>('/chips/catalog/'),
 
   // Chip Brands
   chipBrands: {

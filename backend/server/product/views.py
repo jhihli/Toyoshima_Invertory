@@ -776,6 +776,40 @@ def chip_photo(request, mpn_pk, pk):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def chip_catalog(request):
+    """Every distinct chip part number across all MPNs, for the Add/Edit chip picker.
+
+    Part numbers are free text and repeat across boards (often with stray spaces or case),
+    so they are grouped on a normalised key. Each entry carries the details of the most
+    complete record of that part, which the picker copies into the form.
+    """
+    def key(v):
+        return ' '.join((v or '').split()).upper()
+
+    def filled(c):
+        return sum(bool(x) for x in (c.brand_id, c.chip_type, c.item_group, c.description))
+
+    best = {}
+    for c in Chip.objects.select_related('brand').order_by('-id'):
+        k = key(c.chip_mpn)
+        if k and (k not in best or filled(c) > filled(best[k])):
+            best[k] = c
+    out = [{
+        'chip_mpn': ' '.join(c.chip_mpn.split()),
+        'brand': c.brand_id,
+        'brand_name': c.brand.name if c.brand_id else '',
+        'chip_type': c.chip_type,
+        'item_group': c.item_group,
+        'description': c.description,
+        'processed_type': c.processed_type,
+        'packaging_type': c.packaging_type,
+    } for c in best.values()]
+    out.sort(key=lambda d: d['chip_mpn'].upper())
+    return Response(out)
+
+
 # ─────────────────────────────────────────────────── ChipBrand
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])

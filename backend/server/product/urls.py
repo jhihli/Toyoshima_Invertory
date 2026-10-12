@@ -40,6 +40,8 @@ urlpatterns = [
     path('sos/<int:so_pk>/inventory/', views.so_inventory, name='so-inventory'),
     path('pallets/<int:pallet_pk>/ng/', views.pallet_ng, name='pallet-ng'),
 
+    path('chips/catalog/', views.chip_catalog, name='chip-catalog'),
+
     # Chip Brands
     path('chipbrands/', views.chipbrand_list, name='chipbrand-list'),
     path('chipbrands/<int:pk>/', views.chipbrand_detail, name='chipbrand-detail'),

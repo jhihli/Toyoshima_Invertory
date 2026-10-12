@@ -1164,3 +1164,31 @@ class PalletChipsPerBoardAutoTests(TestCase):
     def test_pickers_list_the_whole_bom(self):
         opts = self.client.get(f'/product/pallets/{self.p.id}/chip-options/').json()
         self.assertEqual(len(opts[0]['chips']), 3)
+
+
+class ChipCatalogTests(TestCase):
+    """GET /product/chips/catalog/: one entry per distinct part number, for the chip MPN picker."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        samsung = ChipBrand.objects.create(name='Samsung')
+        a, b = MPN.objects.create(name='SP#0WW9TT'), MPN.objects.create(name='SP#123456-789')
+        Chip.objects.create(mpn=a, chip_mpn='K4B1G1646G-BCH9', brand=samsung, chip_type='DRAM',
+                            item_group='Memory', description='DDR3 1Gb', packaging_type='tray')
+        Chip.objects.create(mpn=b, chip_mpn=' k4b1g1646g-bch9 ', chip_type='')        # same part, sloppier copy
+        Chip.objects.create(mpn=a, chip_mpn='SLKM8', chip_type='PCH', packaging_type='bag')
+        Chip.objects.create(mpn=b, chip_mpn='')                                      # no part number: skipped
+
+    def test_one_entry_per_part_with_its_details(self):
+        data = self.client.get('/product/chips/catalog/').json()
+        self.assertEqual([d['chip_mpn'] for d in data], ['K4B1G1646G-BCH9', 'SLKM8'])
+        k4b = data[0]
+        self.assertEqual((k4b['brand_name'], k4b['chip_type'], k4b['item_group'], k4b['description']),
+                         ('Samsung', 'DRAM', 'Memory', 'DDR3 1Gb'))
+        self.assertEqual(data[1]['packaging_type'], 'bag')
+
+    def test_requires_auth(self):
+        from rest_framework.test import APIClient
+        self.assertIn(APIClient().get('/product/chips/catalog/').status_code, (401, 403))
