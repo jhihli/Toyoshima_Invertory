@@ -182,23 +182,27 @@ export default function MPNDetailPage() {
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'stretch', flexWrap: 'wrap' }}>
+              <div>
+                {/* Eight equal columns spanning the card, then the note on its own row — fixed
+                    widths left a gap and a dangling divider on the right and wrapped the note. */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, minmax(0, 1fr))', borderBottom: '1px solid var(--hair)' }}>
                 {[
-                  { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', mono: false, flex: '0 0 112px' },
-                  { label: 'After Cut Wt', value: mpn.aftercut_weight ?? '—', mono: false, flex: '0 0 112px' },
-                  { label: 'Slots', value: nSlots, mono: false, flex: '0 0 70px' },
-                  { label: 'Chips / Board', value: chipsPerBoard, mono: false, flex: '0 0 96px' },
-                  { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false, flex: '0 0 110px' },
-                  { label: 'Boards', value: mpn.board_count ?? 0, mono: false, flex: '0 0 120px' },
-                  { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false, flex: '0 0 100px' },
-                  { label: 'Part Type', value: mpn.part_type || '—', mono: true, flex: '0 0 120px' },
-                ].map((item, i) => (
-                  <div key={item.label} style={{ flex: item.flex, padding: '8px 14px', borderRight: '1px solid var(--hair)' }}>
+                  { label: 'Before Cut Wt', value: mpn.beforecut_weight ?? '—', mono: false },
+                  { label: 'After Cut Wt', value: mpn.aftercut_weight ?? '—', mono: false },
+                  { label: 'Slots', value: nSlots, mono: false },
+                  { label: 'Chips / Board', value: chipsPerBoard, mono: false },
+                  { label: 'Cutboard Cost', value: mpn.cutboard_cost ?? '—', mono: false },
+                  { label: 'Boards', value: mpn.board_count ?? 0, mono: false },
+                  { label: 'Created', value: mpn.created_at?.slice(0, 10) || '—', mono: false },
+                  { label: 'Part Type', value: mpn.part_type || '—', mono: true },
+                ].map((item, i, all) => (
+                  <div key={item.label} style={{ padding: '8px 14px', minWidth: 0, borderRight: i < all.length - 1 ? '1px solid var(--hair)' : 'none' }}>
                     <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.label}</div>
-                    <div className={item.mono ? 'mono' : 'num'} style={{ fontSize: 13, color: 'var(--ink)' }}>{item.value}</div>
+                    <div className={item.mono ? 'mono' : 'num'} style={{ fontSize: 13, color: 'var(--ink)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.value}</div>
                   </div>
                 ))}
-                <div style={{ flex: '1 1 160px', padding: '8px 14px' }}>
+                </div>
+                <div style={{ padding: '8px 14px' }}>
                   <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Note</div>
                   <div style={{ fontSize: 13, color: mpn.note ? 'var(--ink-2)' : 'var(--ink-5)', whiteSpace: 'pre-wrap', lineHeight: 1.5, fontStyle: mpn.note ? 'normal' : 'italic', fontWeight: mpn.note ? 600 : 400 }}>
                     {mpn.note || '—'}
