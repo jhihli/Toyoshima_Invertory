@@ -328,7 +328,7 @@ export default function SODetailPage() {
       wsDesc.addRow(['In-Outbound report', 'E-E tracking of inbound and outbound material, per PO, per LP', 'Recycling reporting', 'inbound, day of receiving. Outbound, day of sending. Ongoing']);
       wsDesc.addRow(['Processing PCB', "Tracking of processed PCB's and harvested chips qty., per PO, per LP, per MPN", 'Billing, harvested chips', 'per month (cadence of invoicing)']);
       wsDesc.addRow(['Processing chips', 'Tracking of processed Chips for defined services, per Chip MPN, per Service', 'Billing, chips processing and packaging', 'per month (cadence of invoicing)']);
-      wsDesc.addRow(['Inventory', 'Tracking of all processed chips ready for shipping, per UID container, MPN, processed type, packaging type', 'RFQ and transaction, inventory management', 'on going, review monthly, expected updated immediately, expected monthly cycle count(for now)']);
+      wsDesc.addRow(['Checklist', 'Tracking of all processed chips ready for shipping, per UID container, MPN, processed type, packaging type', 'RFQ and transaction, inventory management', 'on going, review monthly, expected updated immediately, expected monthly cycle count(for now)']);
       wsDesc.addRow(['Board BOM', 'Bill of material for PCB, per MPN, each Chip for harvest', 'Material insight, validation', 'on going, each processed Board present before end of month']);
       wsDesc.addRow(['Chip BOM', 'Bill of material for chips, per Chip MPN, Chip type, Chip description, chip picture', 'Material insight, validation, RFQ', 'on going, each processed Chip present before end of month']);
       wsDesc.addRow(['Price list', 'Agreed pricing per provided service', 'Billing', 'fixed, mutual agreement for change.']);
@@ -404,7 +404,7 @@ export default function SODetailPage() {
       //   Chips processed = every Inventory qty for the slot's chip MPNs (good + NG)
       //   Chips failed    = only the rows whose Container UID (col B) is "NG"
       // A memory slot bundles several alternate MPNs into one line, so each sums per alternate.
-      const INV_NG_QTY = 'Inventory!$F:$F', INV_NG_UID = 'Inventory!$B:$B', INV_NG_MPN = 'Inventory!$C:$C';
+      const INV_NG_QTY = 'Checklist!$F:$F', INV_NG_UID = 'Checklist!$B:$B', INV_NG_MPN = 'Checklist!$C:$C';
       const xq = (m: string) => `"${m.replace(/"/g, '""')}"`;
       // Only chips the checklist / NG actually name: each MPN contributes the chips present on
       // at least one of its pallets (so a BOM chip no batch had gets no 0-row).
@@ -432,12 +432,13 @@ export default function SODetailPage() {
         row.getCell(6).numFmt = '0.00%';
       }
 
-      // ── Sheet 5: Inventory ───────────────────────────────────────
+      // ── Sheet 5: Checklist (was "Inventory") ─────────────────────
+      // Every other sheet's chip quantities are formulas over this sheet, by its name.
       // Filled from the system (GET /sos/<id>/inventory/): per pallet, every checklist line
       // (Container UID = its barcode; unfilled lines stay blank), then one "NG" row per chip
       // with failures, then the pallet's Tantalum row ("73g"). The other sheets' formulas read
       // this sheet, so correcting a value here in Excel updates them too.
-      const wsInventory = workbook.addWorksheet('Inventory');
+      const wsInventory = workbook.addWorksheet('Checklist');
       wsInventory.columns = [{ width: 10 }, { width: 34 }, { width: 24 }, { width: 18 }, { width: 16 }, { width: 8 }];
       styleHdr(wsInventory.addRow(['Pallet', 'Container UID', 'Chip MPN', 'Processed type', 'Packaging type', 'Qty.']));
       const invBorder: Partial<ExcelJS.Borders> = {
@@ -574,9 +575,9 @@ export default function SODetailPage() {
       // Inventory Qty of every row whose Chip MPN matches, EXCEPT the "NG" rows — failed chips
       // are not stock that can be bid on or shipped.
       // Inventory layout: A=Pallet, B=Container UID, C=Chip MPN, D=Processed, E=Packaging, F=Qty.
-      const INV_MPN_COL = 'Inventory!$C:$C';
-      const INV_QTY_COL = 'Inventory!$F:$F';
-      const INV_UID_COL = 'Inventory!$B:$B';
+      const INV_MPN_COL = 'Checklist!$C:$C';
+      const INV_QTY_COL = 'Checklist!$F:$F';
+      const INV_UID_COL = 'Checklist!$B:$B';
       const goodQty = (cell: string) => `SUMIFS(${INV_QTY_COL},${INV_MPN_COL},${cell},${INV_UID_COL},"<>${NG_UID}")`;
 
       // ── Sheet 8: Chip BOM (with embedded photos) ──────────────────
@@ -732,7 +733,7 @@ export default function SODetailPage() {
       // MUST be an array formula: SUBSTITUTE/VALUE are scalar, so a regular formula makes modern
       // Excel insert implicit-intersection "@" on the range (collapsing it to one cell → wrong
       // total). Writing it as t="array" forces whole-range evaluation, no "@".
-      const TA_UID = 'Inventory!$B$2:$B$10000', TA_QTY = 'Inventory!$F$2:$F$10000';
+      const TA_UID = 'Checklist!$B$2:$B$10000', TA_QTY = 'Checklist!$F$2:$F$10000';
       const taRow = wsBidTa.addRow(['No part number', 'Grams of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, 0, HARVEST_STATE]);
       taRow.getCell(7).value = {
         formula: `SUMPRODUCT((${TA_UID}="Tantalum")*IFERROR(VALUE(SUBSTITUTE(${TA_QTY},"g","")),0))`,
