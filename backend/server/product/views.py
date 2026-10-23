@@ -690,6 +690,11 @@ def so_inventory(request, so_pk):
         label = p.gateload_number or str(p.pallet_seq)
         base = {'pallet_id': p.id, 'pallet_label': label}
         for c in p.checklists.all():
+            # An NG-flagged line is failed stock, not good: it is reported as the aggregated
+            # "NG" row below (its qty is already summed into PalletChipNG), so skipping it here
+            # keeps it out of the good-stock totals the export sums from the non-"NG" rows.
+            if c.is_ng:
+                continue
             out.append({**base, 'kind': 'checklist', 'container_uid': c.barcode, 'chip_mpn': c.model or '',
                         'brand': c.brand or '', 'date': c.created_at.date().isoformat(),
                         'processed_type': processed(c.chip), 'packaging_type': c.chip.packaging_type if c.chip else '',

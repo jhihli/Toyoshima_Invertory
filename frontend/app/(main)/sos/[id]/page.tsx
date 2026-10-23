@@ -1434,7 +1434,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 <th style={thS}>Material Type</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Pallet Qty</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
-                <th style={{ ...thS, textAlign: 'right' }} title="Failed chips — click a value to edit">NG</th>
+                <th style={{ ...thS, textAlign: 'center' }} title="Failed chips — set on the Checklist page; click to view">NG</th>
                 <th style={{ ...thS, textAlign: 'right' }}></th>
               </tr>
             </thead>
@@ -1484,9 +1484,10 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                     {p.board_qty != null ? p.board_qty : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                     {p.board_qty_is_legacy && <Badge tone="neutral" style={{ marginLeft: 6, fontSize: 10 }}>Legacy</Badge>}
                   </td>
-                  {/* Reads like the other number columns; the whole cell is the click target. */}
-                  <td className="num ng-cell" title="Edit NG (failed chips)"
-                    style={{ ...tdS, textAlign: 'right', cursor: 'pointer' }}
+                  {/* A status column: the badge/dash is centered so rows line up, and the whole
+                      cell opens the read-only NG breakdown (NG is edited on the Checklist page). */}
+                  <td className="num ng-cell" title="View NG (failed chips — set on the Checklist page)"
+                    style={{ ...tdS, textAlign: 'center', cursor: 'pointer' }}
                     onClick={e => { e.stopPropagation(); setNgPallet({ id: p.id, label: ngLabel(p) }); }}>
                     {p.ng_qty
                       ? <Badge tone="err" style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums' }}>{p.ng_qty}</Badge>

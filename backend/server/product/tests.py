@@ -1122,6 +1122,17 @@ class ChecklistNgTests(TestCase):
         ng = [r for r in rows if r['kind'] == 'ng']
         self.assertEqual([(r['chip_mpn'], r['qty']) for r in ng], [('MT27528A0FCCR-FV', 58)])
 
+    def test_ng_line_is_not_double_counted_in_inventory(self):
+        """A flagged line is failed stock only: it drops out of the good checklist rows and
+        shows once as the aggregated NG row, so good + failed don't count its qty twice."""
+        self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        rows = self.client.get(f'/product/sos/{self.so.id}/inventory/').json()
+        uids = [r['container_uid'] for r in rows]
+        self.assertNotIn(self.ngrow.barcode, uids)    # the NG line is not a good checklist row
+        self.assertIn(self.good.barcode, uids)        # the good line still is
+        good = [r for r in rows if r['kind'] == 'checklist' and r['chip_mpn'] == 'MT27528A0FCCR-FV']
+        self.assertEqual(sum(r['qty'] for r in good), 6950)   # good excludes the 58 NG
+
     def test_changing_a_lines_chip_moves_the_ng(self):
         chip2 = Chip.objects.create(mpn=self.mpn, chip_mpn='OTHER')
         self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
