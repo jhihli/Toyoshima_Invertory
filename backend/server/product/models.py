@@ -233,6 +233,12 @@ class Checklist(models.Model):
         help_text="The chip this line counts. brand/model are copied from it on save; rows "
                   "from before chips were selectable keep free text and a null chip."
     )
+    is_ng = models.BooleanField(
+        default=False,
+        help_text="This line's chips failed the cut (NG). When set, its qty counts as NG for "
+                  "its chip; a pallet's per-chip NG (PalletChipNG) is the sum of its NG lines. "
+                  "Only meaningful on a line that names a chip."
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -493,6 +499,22 @@ class PalletChipNG(models.Model):
 
     def __str__(self):
         return f"{self.pallet} · NG {self.chip.chip_mpn} ×{self.qty}"
+
+    @staticmethod
+    def recompute(pallet, chip):
+        """Rebuild this (pallet, chip)'s NG count from the pallet's NG checklist lines.
+
+        Checklist lines own NG: a line flagged is_ng contributes its qty. The sum is cached
+        here so the pallet table, the Inventory export and the read-only NG views all keep
+        reading one number. A zero sum deletes the row (0 is never stored). A None chip (a
+        free-text line with no chip) has no per-chip target and is a no-op."""
+        if chip is None:
+            return
+        total = pallet.checklists.filter(is_ng=True, chip=chip).aggregate(s=Sum('qty'))['s'] or 0
+        if total > 0:
+            PalletChipNG.objects.update_or_create(pallet=pallet, chip=chip, defaults={'qty': total})
+        else:
+            PalletChipNG.objects.filter(pallet=pallet, chip=chip).delete()
 
 
 class MPNReportConfig(models.Model):

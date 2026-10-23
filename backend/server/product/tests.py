@@ -1033,12 +1033,10 @@ class PalletNgTests(TestCase):
         self.assertEqual(data[0]['mpn_name'], 'SP#0WW9TT')
         self.assertEqual({c['chip_mpn']: c['qty'] for c in data[0]['chips']}, {'SLKM8': 0, 'AST1050': 0})
 
-    def test_put_sets_and_clears(self):
-        resp = self.client.put(self.url, {'items': [{'chip': self.slk.id, 'qty': 19}, {'chip': self.ast.id, 'qty': 0}]}, format='json')
-        self.assertEqual(resp.status_code, 200)
-        self.assertEqual(PalletChipNG.objects.get(pallet=self.p, chip=self.slk).qty, 19)
-        self.assertFalse(PalletChipNG.objects.filter(chip=self.ast).exists())
-        self.client.put(self.url, {'items': [{'chip': self.slk.id, 'qty': None}]}, format='json')
+    def test_put_is_read_only(self):
+        """NG is edited on the checklist now; the pallet NG endpoint is GET-only."""
+        resp = self.client.put(self.url, {'items': [{'chip': self.slk.id, 'qty': 19}]}, format='json')
+        self.assertEqual(resp.status_code, 405)
         self.assertFalse(PalletChipNG.objects.exists())
 
     def test_pallet_api_shows_ng_total(self):
@@ -1046,16 +1044,6 @@ class PalletNgTests(TestCase):
         PalletChipNG.objects.create(pallet=self.p, chip=self.ast, qty=2)
         p = next(x for x in self.client.get(f'/product/sos/{self.so.id}/').json()['pallets'] if x['id'] == self.p.id)
         self.assertEqual(p['ng_qty'], 21)
-
-    def test_chip_not_on_pallet_rejected(self):
-        resp = self.client.put(f'/product/pallets/{self.p2.id}/ng/', {'items': [{'chip': self.slk.id, 'qty': 3}]}, format='json')
-        self.assertEqual(resp.status_code, 400)
-        self.assertFalse(PalletChipNG.objects.exists())
-
-    def test_bad_qty_rejected(self):
-        for bad in (-1, 'x', 1.5):
-            resp = self.client.put(self.url, {'items': [{'chip': self.slk.id, 'qty': bad}]}, format='json')
-            self.assertEqual(resp.status_code, 400, bad)
 
     def test_mpn_removal_blocked_by_ng(self):
         PalletChipNG.objects.create(pallet=self.p, chip=self.slk, qty=1)
@@ -1067,6 +1055,79 @@ class PalletNgTests(TestCase):
         PalletChipNG.objects.create(pallet=self.p, chip=self.slk, qty=1)
         resp = self.client.delete(f'/product/mpns/{self.mpn.id}/chips/{self.slk.id}/')
         self.assertEqual(resp.status_code, 400)
+
+
+class ChecklistNgTests(TestCase):
+    """NG is owned by checklist lines: flagging a line NG drives the pallet's per-chip NG."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.so, (self.p, self.p2) = make_so_with_pallets()
+        self.mpn = MPN.objects.create(name='M')
+        self.chip = Chip.objects.create(mpn=self.mpn, chip_mpn='MT27528A0FCCR-FV',
+                                        brand=ChipBrand.objects.create(name='Mellanox'))
+        PalletMPN.objects.create(pallet=self.p, mpn=self.mpn, board_qty=7008)
+        # Two lines for the SAME chip — the case per-chip editing could not express.
+        self.good = Checklist.objects.create(pallet=self.p, barcode='S-1-1', chip=self.chip,
+                                             brand='Mellanox', model='MT27528A0FCCR-FV', qty=6950)
+        self.ngrow = Checklist.objects.create(pallet=self.p, barcode='S-1-2', chip=self.chip,
+                                              brand='Mellanox', model='MT27528A0FCCR-FV', qty=58)
+        self.url = lambda row: f'/product/pallets/{self.p.id}/checklists/{row.id}/'
+
+    def _pallet_ng_qty(self):
+        p = next(x for x in self.client.get(f'/product/sos/{self.so.id}/').json()['pallets']
+                 if x['id'] == self.p.id)
+        return p['ng_qty']
+
+    def test_flagging_a_line_ng_sets_pallet_ng(self):
+        resp = self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.json()['is_ng'])
+        self.assertEqual(PalletChipNG.objects.get(pallet=self.p, chip=self.chip).qty, 58)
+        self.assertEqual(self._pallet_ng_qty(), 58)
+
+    def test_two_lines_of_one_chip_sum(self):
+        self.client.put(self.url(self.good), {'is_ng': True}, format='json')
+        self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        self.assertEqual(PalletChipNG.objects.get(pallet=self.p, chip=self.chip).qty, 6950 + 58)
+
+    def test_unflagging_clears_pallet_ng(self):
+        self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        self.client.put(self.url(self.ngrow), {'is_ng': False}, format='json')
+        self.assertFalse(PalletChipNG.objects.filter(pallet=self.p, chip=self.chip).exists())
+        self.assertEqual(self._pallet_ng_qty(), 0)
+
+    def test_changing_qty_recomputes(self):
+        self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        self.client.put(self.url(self.ngrow), {'qty': 60}, format='json')
+        self.assertEqual(PalletChipNG.objects.get(pallet=self.p, chip=self.chip).qty, 60)
+
+    def test_deleting_an_ng_line_recomputes(self):
+        self.client.put(self.url(self.good), {'is_ng': True}, format='json')
+        self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        self.client.delete(self.url(self.ngrow))
+        self.assertEqual(PalletChipNG.objects.get(pallet=self.p, chip=self.chip).qty, 6950)
+
+    def test_read_only_pallet_ng_view_reflects_it(self):
+        self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        data = self.client.get(f'/product/pallets/{self.p.id}/ng/').json()
+        qty = {c['chip_mpn']: c['qty'] for g in data for c in g['chips']}
+        self.assertEqual(qty['MT27528A0FCCR-FV'], 58)
+
+    def test_inventory_export_reflects_checklist_ng(self):
+        self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        rows = self.client.get(f'/product/sos/{self.so.id}/inventory/').json()
+        ng = [r for r in rows if r['kind'] == 'ng']
+        self.assertEqual([(r['chip_mpn'], r['qty']) for r in ng], [('MT27528A0FCCR-FV', 58)])
+
+    def test_changing_a_lines_chip_moves_the_ng(self):
+        chip2 = Chip.objects.create(mpn=self.mpn, chip_mpn='OTHER')
+        self.client.put(self.url(self.ngrow), {'is_ng': True}, format='json')
+        self.client.put(self.url(self.ngrow), {'chip': chip2.id}, format='json')
+        self.assertFalse(PalletChipNG.objects.filter(pallet=self.p, chip=self.chip).exists())
+        self.assertEqual(PalletChipNG.objects.get(pallet=self.p, chip=chip2).qty, 58)
 
 
 class SoInventoryTests(TestCase):

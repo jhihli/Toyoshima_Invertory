@@ -3,11 +3,13 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api, apiErrorMessage } from '@/app/lib/api';
 import type { PalletMPN, PalletNgGroup } from '@/interface/IDatatable';
 
-/** "Boards & NG" block of the Edit pallet dialog: board qty per MPN and NG per chip.
+/** "Boards & NG" block of the Edit pallet dialog: board qty per MPN (editable) and NG per
+ *  chip (read only).
  *
- *  The pallet's Board Qty and NG are sums of these (Pallet.effective_board_qty / ng_qty),
- *  so they are edited at that level. Adding or removing an MPN stays on the Boards tab.
- *  The dialog calls `save()` from the hook before saving the pallet itself. */
+ *  Board Qty is a sum of these per-MPN counts (Pallet.effective_board_qty), edited here.
+ *  NG is owned by the pallet's checklist lines now (flag a line as NG on the Checklist
+ *  page), so it is shown here but not editable. Adding or removing an MPN stays on the
+ *  Boards tab. The dialog calls `save()` from the hook before saving the pallet itself. */
 
 const WHOLE = /^\d+$/;
 
@@ -35,11 +37,11 @@ export function usePalletBoardsNg(palletId: number, open: boolean) {
     return () => { cancelled = true; };
   }, [palletId, open]);
 
-  /** Saves only what changed. Returns an error message, or '' on success. */
+  /** Saves only the board qty changes (NG is read only here). Returns an error message, or '' on success. */
   const save = useCallback(async (): Promise<string> => {
     if (!rows) return '';
-    for (const v of [...Object.values(boardQty), ...Object.values(ng)]) {
-      if (v.trim() && !WHOLE.test(v.trim())) return 'Board qty and NG must be whole numbers, 0 or more';
+    for (const v of Object.values(boardQty)) {
+      if (v.trim() && !WHOLE.test(v.trim())) return 'Board qty must be a whole number, 0 or more';
     }
     try {
       for (const { pm } of rows) {
@@ -47,17 +49,11 @@ export function usePalletBoardsNg(palletId: number, open: boolean) {
         const next = t ? +t : null;
         if (next !== pm.board_qty) await api.pallets.mpns.update(palletId, pm.id, { board_qty: next });
       }
-      const original = new Map(rows.flatMap(r => r.chips.map(c => [c.id, c.qty])));
-      const items = [...original.keys()].map(id => {
-        const t = (ng[id] ?? '').trim();
-        return { chip: id, qty: t ? +t : null };
-      });
-      if (items.some(i => (i.qty ?? 0) !== (original.get(i.chip) ?? 0))) await api.pallets.ng.save(palletId, items);
       return '';
     } catch (e) {
-      return apiErrorMessage(e) || 'Failed to save boards & NG';
+      return apiErrorMessage(e) || 'Failed to save board qty';
     }
-  }, [rows, boardQty, ng, palletId]);
+  }, [rows, boardQty, palletId]);
 
   return { rows, boardQty, setBoardQty, ng, setNg, loadError, save };
 }
@@ -76,7 +72,7 @@ export default function PalletBoardsNgSection({ state, listMaxHeight = 280, flus
   /** No top margin (when the block heads its own column). */
   flush?: boolean;
 }) {
-  const { rows, boardQty, setBoardQty, ng, setNg, loadError } = state;
+  const { rows, boardQty, setBoardQty, ng, loadError } = state;
   const [collapsed, setCollapsed] = useState<Record<number, boolean>>({});
   const totalBoards = Object.values(boardQty).reduce((n, v) => n + num(v), 0);
   const totalNg = Object.values(ng).reduce((n, v) => n + num(v), 0);
@@ -127,9 +123,11 @@ export default function PalletBoardsNgSection({ state, listMaxHeight = 280, flus
                       <span className="mono">{c.chip_mpn || `Chip #${c.id}`}</span>
                     </span>
                     <span style={{ fontSize: 10.5, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>NG</span>
-                    <input type="text" inputMode="numeric" placeholder="0" value={ng[c.id] ?? ''}
-                      onChange={e => { const v = e.target.value; setNg(s => ({ ...s, [c.id]: v })); }}
-                      style={inputSty} />
+                    <span className="num" title="Set on the Checklist page (flag a line as NG)"
+                      style={{ width: 76, textAlign: 'right', fontSize: 12.5, fontVariantNumeric: 'tabular-nums',
+                        color: num(ng[c.id] ?? '') ? 'var(--err)' : 'var(--ink-5)' }}>
+                      {num(ng[c.id] ?? '')}
+                    </span>
                   </div>
                 ))}
                 {open && chips.length === 0 && (

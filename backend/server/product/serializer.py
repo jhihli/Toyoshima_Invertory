@@ -109,7 +109,7 @@ class BoxSerializer(serializers.ModelSerializer):
 class ChecklistSerializer(serializers.ModelSerializer):
     class Meta:
         model = Checklist
-        fields = ['id', 'pallet', 'barcode', 'chip', 'brand', 'model', 'qty', 'created_at']
+        fields = ['id', 'pallet', 'barcode', 'chip', 'brand', 'model', 'qty', 'is_ng', 'created_at']
         # barcode is composed server-side; a client editing it would break next_index().
         read_only_fields = ['pallet', 'barcode', 'created_at']
 

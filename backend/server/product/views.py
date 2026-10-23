@@ -510,14 +510,22 @@ def checklist_list(request, pallet_pk):
 @api_view(['PUT', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def checklist_detail(request, pallet_pk, pk):
-    row = get_object_or_404(Checklist, pk=pk, pallet_id=pallet_pk)
+    row = get_object_or_404(Checklist.objects.select_related('pallet'), pk=pk, pallet_id=pallet_pk)
     if request.method == 'PUT':
+        old_chip = row.chip
         serializer = ChecklistSerializer(row, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
+            # NG lives on the checklist line now: keep the pallet's per-chip NG cache in step,
+            # for the line's chip before and after the edit (its qty, is_ng, or the chip itself
+            # may have changed).
+            for chip in {old_chip, serializer.instance.chip}:
+                PalletChipNG.recompute(row.pallet, chip)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    pallet, chip = row.pallet, row.chip
     row.delete()
+    PalletChipNG.recompute(pallet, chip)
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -649,40 +657,16 @@ def _pallet_ng_payload(pallet):
     } for r in rows]
 
 
-@api_view(['GET', 'PUT'])
+@api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def pallet_ng(request, pallet_pk):
-    """Failed chips per chip on one pallet.
+    """Failed chips per chip on one pallet — read only.
 
-    PUT {"items": [{"chip": id, "qty": n}]} sets each listed chip's count; 0 or blank
-    removes it. All or nothing: one bad item rejects the whole request.
+    NG is entered on the pallet's checklist lines (flag a line as NG on the Checklist page);
+    this view just reports the resulting per-chip totals for display. Editing moved there so
+    a chip appearing on several checklist lines keeps a per-line count instead of one lump.
     """
     pallet = get_object_or_404(Pallet, pk=pallet_pk)
-    if request.method == 'PUT':
-        items = request.data.get('items') if isinstance(request.data, dict) else None
-        if not isinstance(items, list):
-            return Response({'error': 'items must be a list'}, status=status.HTTP_400_BAD_REQUEST)
-        clean = []
-        for item in items:
-            if not isinstance(item, dict):
-                return Response({'error': 'each item must be an object'}, status=status.HTTP_400_BAD_REQUEST)
-            raw = item.get('qty')
-            if raw in (None, ''):
-                qty = 0
-            elif isinstance(raw, bool) or not isinstance(raw, (int, str)) or not str(raw).strip().isdigit():
-                return Response({'error': 'qty must be a whole number, 0 or more'}, status=status.HTTP_400_BAD_REQUEST)
-            else:
-                qty = int(raw)
-            chip = Chip.objects.filter(pk=_as_int(item.get('chip'), 0)).first()
-            if chip is None or not Checklist.chip_allowed(pallet, chip):
-                return Response({'error': 'chip is not on a board assigned to this pallet'}, status=status.HTTP_400_BAD_REQUEST)
-            clean.append((chip, qty))
-        with transaction.atomic():
-            for chip, qty in clean:
-                if qty:
-                    PalletChipNG.objects.update_or_create(pallet=pallet, chip=chip, defaults={'qty': qty})
-                else:
-                    PalletChipNG.objects.filter(pallet=pallet, chip=chip).delete()
     return Response(_pallet_ng_payload(pallet))
 
 

@@ -102,6 +102,8 @@ export interface Checklist {
   brand: string;
   model: string;
   qty: number | null;
+  /** This line's chips failed the cut (NG); its qty counts as NG for its chip. */
+  is_ng: boolean;
   created_at: string;
 }
 

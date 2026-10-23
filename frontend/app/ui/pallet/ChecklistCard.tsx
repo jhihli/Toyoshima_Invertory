@@ -174,7 +174,7 @@ function AddModal({ open, palletBarcode, nextSeq, chipGroups, boardsHref, onClos
 }
 
 // ── Edit modal ──────────────────────────────────────────────────────────────────
-type EditPayload = { brand?: string; model?: string; chip?: number | null; qty: number | null };
+type EditPayload = { brand?: string; model?: string; chip?: number | null; qty: number | null; is_ng?: boolean };
 
 function EditModal({ row, chipGroups, boardsHref, onClose, onSubmit }: {
   row: Checklist | null;
@@ -186,6 +186,7 @@ function EditModal({ row, chipGroups, boardsHref, onClose, onSubmit }: {
   const [model, setModel] = useState('');
   const [chip, setChip] = useState('');
   const [qty, setQty] = useState('');
+  const [isNg, setIsNg] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const chipMode = chipGroups !== null;
@@ -194,7 +195,8 @@ function EditModal({ row, chipGroups, boardsHref, onClose, onSubmit }: {
     if (row) {
       setBrand(row.brand || ''); setModel(row.model || '');
       setChip(row.chip == null ? '' : String(row.chip));
-      setQty(row.qty == null ? '' : String(row.qty)); setError('');
+      setQty(row.qty == null ? '' : String(row.qty));
+      setIsNg(!!row.is_ng); setError('');
     }
   }, [row]);
 
@@ -203,7 +205,7 @@ function EditModal({ row, chipGroups, boardsHref, onClose, onSubmit }: {
     try {
       await onSubmit(chipMode
         // No chip picked: send nothing for it, so a legacy row keeps its text.
-        ? { ...(chip ? { chip: +chip } : {}), qty: parseQty(qty) }
+        ? { ...(chip ? { chip: +chip } : {}), qty: parseQty(qty), is_ng: isNg }
         : { brand: brand.trim(), model: model.trim(), qty: parseQty(qty) });
       onClose();
     } catch (e: any) { setError(apiErrorMessage(e) || e.message || 'Failed to save'); }
@@ -247,11 +249,36 @@ function EditModal({ row, chipGroups, boardsHref, onClose, onSubmit }: {
             <div style={FieldLabel}>Qty</div>
             <input type="number" value={qty} onChange={e => setQty(e.target.value)} style={InputSty} />
           </div>
+          {chipMode && (
+            <div style={{ marginTop: 14 }}>
+              <div style={FieldLabel}>NG status</div>
+              <select value={isNg ? 'ng' : ''} onChange={e => setIsNg(e.target.value === 'ng')}
+                style={{ ...InputSty, cursor: 'pointer' }}>
+                <option value="">— Not NG</option>
+                <option value="ng">NG — chips failed the cut</option>
+              </select>
+              {isNg && (
+                <div style={{ marginTop: 5, fontSize: 11.5, color: 'var(--ink-4)' }}>
+                  This line&apos;s <b className="mono" style={{ color: 'var(--ink-3)' }}>{qty.trim() || '0'}</b> chips count as NG for its chip on this pallet.
+                </div>
+              )}
+            </div>
+          )}
         </div>
         <ModalFoot onClose={onClose} onSubmit={handleSubmit} saving={saving}
           label="Save changes" savingLabel="Saving…" />
       </div>
     </Overlay>
+  );
+}
+
+/** Small red pill marking a checklist line whose chips failed the cut (NG). */
+function NgPill() {
+  return (
+    <span style={{ marginLeft: 7, fontSize: 10.5, fontWeight: 800, letterSpacing: '0.04em', padding: '1px 6px',
+      borderRadius: 99, background: 'var(--err-light, #fdecec)', color: 'var(--err)', verticalAlign: 'middle' }}>
+      NG
+    </span>
   );
 }
 
@@ -375,7 +402,7 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, minWidth: 0 }}>
                   <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSel(r.id)}
                     aria-label={`Select ${r.barcode}`} style={{ cursor: 'pointer', accentColor: 'var(--accent)', marginTop: 3, flexShrink: 0 }} />
-                  <span className="mono" style={{ fontWeight: 700, fontSize: 13.5, wordBreak: 'break-all', lineHeight: 1.4 }}>{r.barcode}</span>
+                  <span className="mono" style={{ fontWeight: 700, fontSize: 13.5, wordBreak: 'break-all', lineHeight: 1.4 }}>{r.barcode}{r.is_ng && <NgPill />}</span>
                 </div>
                 {r.qty != null && (
                   <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--ink-2)', whiteSpace: 'nowrap', flexShrink: 0 }}>×{r.qty}</span>
@@ -416,7 +443,7 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
                     <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleSel(r.id)}
                       aria-label={`Select ${r.barcode}`} style={{ cursor: 'pointer', accentColor: 'var(--accent)' }} />
                   </td>
-                  <td style={Td}><span className="mono" style={{ fontWeight: 600, fontSize: 13.5 }}>{r.barcode}</span></td>
+                  <td style={Td}><span className="mono" style={{ fontWeight: 600, fontSize: 13.5 }}>{r.barcode}</span>{r.is_ng && <NgPill />}</td>
                   <td style={{ ...Td, color: r.brand ? 'var(--ink-2)' : 'var(--ink-5)' }}>{r.brand || '—'}</td>
                   <td style={{ ...Td, color: r.model ? 'var(--ink-2)' : 'var(--ink-5)' }}>{r.model || '—'}</td>
                   <td style={{ ...TdR, color: r.qty == null ? 'var(--ink-5)' : 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>{r.qty ?? '—'}</td>
