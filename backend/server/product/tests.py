@@ -1264,3 +1264,44 @@ class ChipCatalogTests(TestCase):
     def test_requires_auth(self):
         from rest_framework.test import APIClient
         self.assertIn(APIClient().get('/product/chips/catalog/').status_code, (401, 403))
+
+
+class VariableQtyModuleTests(TestCase):
+    """A variable-qty module (RAM stick: 0, 1 or 2 per switch) is priced per piece on its own,
+    so it is not a cut slot: it never divides the board's cut cost or counts in chips/board."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.mpn = MPN.objects.create(name='DCS-7060CX-32S')
+        self.bcm = Chip.objects.create(mpn=self.mpn, chip_mpn='BCM56960B1KFSBG')
+        self.alt = Chip.objects.create(mpn=self.mpn, chip_mpn='EP4CGX30CF23C8N')
+        self.tosh = Chip.objects.create(mpn=self.mpn, chip_mpn='THGBMFG6C1LBAIL', slot_group='Memory')
+        self.jy = Chip.objects.create(mpn=self.mpn, chip_mpn='JY995', slot_group='Memory')
+        # Tagged Memory like the DRAMs, but must NOT join their slot.
+        self.ram = Chip.objects.create(mpn=self.mpn, chip_mpn='RAM-8G-PC3', slot_group='Memory',
+                                       variable_qty=True, chip_cost='0.5000')
+
+    def test_module_is_not_a_cut_slot(self):
+        self.assertEqual(self.mpn.slot_count, 3)
+        self.assertEqual(self.mpn.chips_per_board, 3)
+
+    def test_pallet_chips_per_board_skips_module(self):
+        so, (p, _) = make_so_with_pallets()
+        PalletMPN.objects.create(pallet=p, mpn=self.mpn, board_qty=40)
+        for i, m in enumerate(['BCM56960B1KFSBG', 'JY995', 'RAM-8G-PC3']):
+            Checklist.objects.create(pallet=p, barcode=f'b-{i}', model=m, qty=33)
+        r = self.client.get(f'/product/pallets/{p.id}/mpns/').json()[0]
+        self.assertEqual((r['chips_per_board'], r['bom_chips_per_board']), (2, 3))
+
+    def test_api_round_trips_flag_and_unit_cost(self):
+        r = self.client.get(f'/product/mpns/{self.mpn.id}/').json()
+        ram = next(c for c in r['chips'] if c['chip_mpn'] == 'RAM-8G-PC3')
+        self.assertEqual((ram['variable_qty'], float(ram['chip_cost'])), (True, 0.5))
+        self.assertEqual(r['slot_count'], 3)
+
+    def test_catalog_carries_module_flag_and_cost(self):
+        data = {d['chip_mpn']: d for d in self.client.get('/product/chips/catalog/').json()}
+        self.assertEqual((data['RAM-8G-PC3']['variable_qty'], data['RAM-8G-PC3']['chip_cost']), (True, '0.5000'))
+        self.assertEqual((data['JY995']['variable_qty'], data['JY995']['chip_cost']), (False, None))

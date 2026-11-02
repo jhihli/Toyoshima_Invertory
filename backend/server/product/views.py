@@ -794,6 +794,8 @@ def chip_catalog(request):
         'description': c.description,
         'processed_type': c.processed_type,
         'packaging_type': c.packaging_type,
+        'variable_qty': c.variable_qty,
+        'chip_cost': str(c.chip_cost) if c.chip_cost is not None else None,
     } for c in best.values()]
     out.sort(key=lambda d: d['chip_mpn'].upper())
     return Response(out)

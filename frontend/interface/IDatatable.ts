@@ -169,7 +169,11 @@ export interface Chip {
   /** Chips sharing a slot_group are interchangeable alternates in one board slot. */
   slot_group: string;
   item_group: string;
-  chip_cost: number | null;
+  /** A plug-in module (RAM stick) whose count per board varies: not a cut slot, billed per
+   *  piece at chip_cost from the checklist qty. */
+  variable_qty: boolean;
+  /** Per-piece cost of a variable-qty module (a Decimal, so it arrives as a string). */
+  chip_cost: number | string | null;
   description: string;
   processed_type: string;
   packaging_type: string;
@@ -400,4 +404,6 @@ export interface ChipCatalogEntry {
   description: string;
   processed_type: string;
   packaging_type: string;
+  variable_qty: boolean;
+  chip_cost: string | null;
 }

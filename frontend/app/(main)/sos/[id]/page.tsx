@@ -13,7 +13,7 @@ import {
 import { crumbCache, palletCrumb } from '@/app/lib/crumbCache';
 import { api } from '@/app/lib/api';
 import {
-  buildSlots, buildGlobalSlots, slotCount, bomTotalQty, normalizeChipMpn,
+  buildSlots, buildGlobalSlots, slotCount, bomTotalQty, chipTypesPerBoard, normalizeChipMpn,
   CIRCULAR_CENTER, HARVEST_STATE, NG_UID,
   type MpnEntry,
 } from '@/app/lib/chipSlots';
@@ -296,19 +296,38 @@ export default function SODetailPage() {
 
       // Chips actually harvested per (pallet, MPN), from the checklist quantities: each pallet's
       // rows add up to exactly its checklist total (shared / hand-typed parts split by boards).
-      const harvested = splitChecklistByBoard(
-        allBoardData.filter(b => b.mpn).map(b => ({
-          key: `${b.pallet}|${b.mpn.id}`, palletId: b.pallet, boards: b.qty,
-          chipKeys: new Set((b.bomChips ?? []).map(c => normalizeChipMpn(c.chip_mpn))),
-        })),
-        invRows.filter(r => r.kind === 'checklist' && typeof r.qty === 'number')
-          .map(r => ({ palletId: r.pallet_id, chipKey: normalizeChipMpn(r.chip_mpn), qty: r.qty as number })),
-      );
+      const splitRows = allBoardData.filter(b => b.mpn).map(b => ({
+        key: `${b.pallet}|${b.mpn.id}`, palletId: b.pallet, boards: b.qty,
+        chipKeys: new Set((b.bomChips ?? []).map(c => normalizeChipMpn(c.chip_mpn))),
+      }));
+      const checklistLines = invRows.filter(r => r.kind === 'checklist' && typeof r.qty === 'number')
+        .map(r => ({ palletId: r.pallet_id, chipKey: normalizeChipMpn(r.chip_mpn), qty: r.qty as number }));
+      const harvested = splitChecklistByBoard(splitRows, checklistLines);
       const harvestedByMpn = new Map<number, number>();
       for (const b of allBoardData) {
         if (!b.mpn) continue;
         harvestedByMpn.set(b.mpn.id, (harvestedByMpn.get(b.mpn.id) ?? 0) + (harvested.get(`${b.pallet}|${b.mpn.id}`) ?? 0));
       }
+      // Variable-qty modules (RAM sticks: 0, 1 or 2 per switch) are billed per piece, apart from
+      // the cut chips. Their checklist pieces per board type, split the same way:
+      //   moduleQty      `${mpnId}|${chipKey}` → pieces of that module on that board type
+      //   moduleQtyByMpn mpnId → all module pieces (taken out of the cut-chip total)
+      const moduleKeys = new Set<string>();
+      for (const b of allBoardData) {
+        for (const c of b.bomChips ?? []) if (c.variable_qty) moduleKeys.add(normalizeChipMpn(c.chip_mpn));
+      }
+      const moduleQty = new Map<string, number>();
+      const moduleQtyByMpn = new Map<number, number>();
+      for (const mk of moduleKeys) {
+        const split = splitChecklistByBoard(splitRows, checklistLines.filter(l => l.chipKey === mk));
+        for (const b of allBoardData) {
+          if (!b.mpn) continue;
+          const q = split.get(`${b.pallet}|${b.mpn.id}`) ?? 0;
+          moduleQty.set(`${b.mpn.id}|${mk}`, (moduleQty.get(`${b.mpn.id}|${mk}`) ?? 0) + q);
+          moduleQtyByMpn.set(b.mpn.id, (moduleQtyByMpn.get(b.mpn.id) ?? 0) + q);
+        }
+      }
+      const modulePieces = (mpnId: number, c: Chip) => moduleQty.get(`${mpnId}|${normalizeChipMpn(c.chip_mpn)}`) ?? 0;
 
       /** Board-weighted per-board figures — exact totals divided by boards, so a pallet whose
        *  batch lacks a chip pulls them down. With no boards yet, the full BOM. */
@@ -376,7 +395,8 @@ export default function SODetailPage() {
         entry.chipTotal += harvested.get(`${b.pallet}|${b.mpn.id}`) ?? 0;
         // Whole chips per board: the slots this pallet's checklist names (a slot group such as
         // 1G memory counts once) — the same figure as the Boards tab's Chips column.
-        entry.chipsPerBoard = Math.max(entry.chipsPerBoard, bomTotalQty(b.chips));
+        // A variable-qty module (RAM stick) still counts as one type of part.
+        entry.chipsPerBoard = Math.max(entry.chipsPerBoard, chipTypesPerBoard(b.chips));
         if (processedOn > entry.date) entry.date = processedOn;
       }
       const pcbRows = [...pcbMap.values()].sort((a, b) => a.lpNo.localeCompare(b.lpNo));
@@ -486,8 +506,9 @@ export default function SODetailPage() {
         let total = 0;
         for (let i = 0; i < maxSlots; i++) {
           const slot = slots[i];
-          row.push(slot?.label ?? '', slot ? slot.qtyPerBoard : '');
-          if (slot) total += slot.qtyPerBoard;
+          // A variable-qty module has no fixed count per board: "varies", left out of the total.
+          row.push(slot?.label ?? '', slot ? (slot.variable ? 'varies' : slot.qtyPerBoard) : '');
+          if (slot && !slot.variable) total += slot.qtyPerBoard;
         }
         row.push(total || '');
         wsBoardBom.addRow(row);
@@ -540,7 +561,8 @@ export default function SODetailPage() {
         // # chips per board = whole slots the checklist names on this board (slot groups count
         // once); Total Chips Harvested = the checklist quantities, not boards × that.
         bpnRow.getCell(6).value = bomTotalQty(pb.presentChips);
-        bpnRow.getCell(7).value = harvestedByMpn.get(entry.mpn.id) ?? 0;
+        // Cut chips only — variable-qty modules are billed on their own row below.
+        bpnRow.getCell(7).value = (harvestedByMpn.get(entry.mpn.id) ?? 0) - (moduleQtyByMpn.get(entry.mpn.id) ?? 0);
         // Total cost = harvested chips × per-chip total service cost (this block's Total row, col B).
         bpnRow.getCell(8).value = { formula: `G${bpnNum}*B${bpnNum + 6}` };
         bpnRow.getCell(8).numFmt = ACCOUNTING_FMT;   // "$" at the left of the value
@@ -563,6 +585,21 @@ export default function SODetailPage() {
         totalRow.getCell(2).value = { formula: `SUM(B${dataStartRow}:B${dataEndRow})` };
         totalRow.getCell(1).font = { bold: true };
         abcLastTotalRow = totalRow;
+
+        // Variable-qty modules (RAM sticks): pieces from the checklist × their own unit cost,
+        // separate from the cut cost. Each row's H joins the grand total.
+        for (const slot of buildSlots(pb.presentChips).filter(s => s.variable)) {
+          const chip = slot.chips[0];
+          const mRow = wsActivityCost.addRow([
+            `Module: ${slot.label}`, chip.chip_cost != null ? r3(Number(chip.chip_cost)) : '',
+            'The cost to remove a single module, per piece (qty varies per board)',
+            '', '', 'varies', modulePieces(entry.mpn.id, chip),
+          ]);
+          mRow.getCell(1).font = { bold: true };
+          mRow.getCell(8).value = { formula: `G${mRow.number}*B${mRow.number}` };
+          mRow.getCell(8).numFmt = ACCOUNTING_FMT;
+          abcHCells.push(`H${mRow.number}`);
+        }
 
         // Spacer between MPN blocks
         wsActivityCost.addRow([]);
@@ -694,7 +731,10 @@ export default function SODetailPage() {
         let chipStartRow = 0;
         let chipEndRow = 0;
         for (const slot of slots) {
-          const chipRow = addSceRow(wsSCE, [slot.label, unitChipCost, '', '', '', '', 0, inv, 0]);
+          // A variable-qty module: its own per-piece cost × the pieces actually removed.
+          const chipRow = slot.variable
+            ? addSceRow(wsSCE, [slot.label, r3(Number(slot.chips[0].chip_cost ?? 0)), '', '', '', '', 0, modulePieces(entry.mpn.id, slot.chips[0]), 0])
+            : addSceRow(wsSCE, [slot.label, unitChipCost, '', '', '', '', 0, inv, 0]);
           if (!chipStartRow) chipStartRow = chipRow.number;
           chipEndRow = chipRow.number;
         }

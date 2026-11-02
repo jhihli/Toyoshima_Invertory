@@ -48,7 +48,8 @@ export const normalizeChipMpn = (s: string | null | undefined) =>
 /** BOM qty of a chip on ONE board. Blank (not yet entered) counts as 1. */
 export const qtyPerBoard = (c: Chip) => c.qty ?? 1;
 
-const group = (c: Chip) => (c.slot_group ?? '').trim();
+/** Variable-qty modules (RAM sticks) never share a slot, even when tagged Memory. */
+const group = (c: Chip) => (c.variable_qty ? '' : (c.slot_group ?? '').trim());
 
 /** Per-MPN slot key: same slot_group on the same MPN => one slot. Blank => its own slot. */
 export const mpnSlotKey = (c: Chip) => (group(c) ? `g:${group(c)}` : `c:${c.id}`);
@@ -69,6 +70,9 @@ export interface Slot {
   label: string;
   /** How many chips this slot contributes per board (normally 1). */
   qtyPerBoard: number;
+  /** A variable-qty module (RAM stick): its count per board varies, so it is no cut slot and
+   *  its qtyPerBoard is meaningless — sheets show "varies" and bill it per piece. */
+  variable: boolean;
 }
 
 /** Per-MPN slots. Chips are sorted by id so slash-join order follows insertion order. */
@@ -80,7 +84,7 @@ export function buildSlots(chips: Chip[] | null | undefined): Slot[] {
     const key = mpnSlotKey(c);
     let slot = slots.get(key);
     if (!slot) {
-      slot = { key, chips: [], chipMpns: [], label: '', qtyPerBoard: 0 };
+      slot = { key, chips: [], chipMpns: [], label: '', qtyPerBoard: 0, variable: !!c.variable_qty };
       slots.set(key, slot);
     }
     slot.chips.push(c);
@@ -95,12 +99,20 @@ export function buildSlots(chips: Chip[] | null | undefined): Slot[] {
   return [...slots.values()];
 }
 
-/** Number of physical chip slots on one board of this MPN. The chip-cut cost divisor. */
-export const slotCount = (chips: Chip[] | null | undefined) => buildSlots(chips).length;
+/** Number of physical chip slots on one board of this MPN. The chip-cut cost divisor.
+ *  Variable-qty modules are priced per piece, so they are not slots. */
+export const slotCount = (chips: Chip[] | null | undefined) =>
+  buildSlots(chips).filter(s => !s.variable).length;
 
-/** Total chips harvested from ONE board of this MPN. Board BOM's "Chip Total Qty.". */
+/** Total chips harvested from ONE board of this MPN. Board BOM's "Chip Total Qty.".
+ *  Fixed chips only — a variable-qty module has no per-board count. */
 export const bomTotalQty = (chips: Chip[] | null | undefined) =>
-  buildSlots(chips).reduce((n, s) => n + s.qtyPerBoard, 0);
+  buildSlots(chips).reduce((n, s) => n + (s.variable ? 0 : s.qtyPerBoard), 0);
+
+/** Kinds of part harvested from one board — Processing PCB's "Chip types per board". Unlike
+ *  bomTotalQty, a variable-qty module counts (once): it is still a part taken off the board. */
+export const chipTypesPerBoard = (chips: Chip[] | null | undefined) =>
+  buildSlots(chips).reduce((n, s) => n + (s.variable ? 1 : s.qtyPerBoard), 0);
 
 export interface MpnEntry {
   /** Only these fields are read; the export passes the lite MPN from /pallet-mpns/. */
@@ -150,7 +162,7 @@ export function buildGlobalSlots(
   const groupOfChipMpn = new Map<string, string>();
   for (const entry of ordered) {
     for (const c of entry.chips ?? []) {
-      const g = (c.slot_group ?? '').trim();
+      const g = group(c);
       const m = normalizeChipMpn(c.chip_mpn);
       if (g && m && !groupOfChipMpn.has(m)) groupOfChipMpn.set(m, g);
     }
@@ -161,7 +173,7 @@ export function buildGlobalSlots(
       // Every chip in a per-MPN slot shares the same slot_group, so any member yields
       // the same global key. An untagged chip adopts the group its MPN uses elsewhere.
       const head = slot.chips[0];
-      const adopted = (head.slot_group ?? '').trim()
+      const adopted = group(head) || head.variable_qty
         ? null
         : groupOfChipMpn.get(normalizeChipMpn(head.chip_mpn));
       const key = adopted ? `g:${adopted}` : globalSlotKey(head);

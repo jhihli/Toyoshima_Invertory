@@ -7,7 +7,7 @@ import {
   useToast, thS, tdS, ghostBtn, Empty,
 } from '@/app/ui/components';
 import { api, apiErrorMessage } from '@/app/lib/api';
-import { buildSlots, bomTotalQty, ITEM_GROUP_OPTIONS, MEMORY_SLOT_GROUP } from '@/app/lib/chipSlots';
+import { buildSlots, bomTotalQty, slotCount, ITEM_GROUP_OPTIONS, MEMORY_SLOT_GROUP } from '@/app/lib/chipSlots';
 import type { MPN, Chip, ChipBrand, ChipCatalogEntry } from '@/interface/IDatatable';
 import ChipMpnInput from '@/app/ui/mpn/ChipMpnInput';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
@@ -47,7 +47,9 @@ export default function MPNDetailPage() {
   // Slots, not chip rows: interchangeable alternates (5 DRAMs that can fill one socket)
   // are ONE slot. Every derived number — cut cost, chips per board — divides by slots.
   const slots = buildSlots(chips);
-  const nSlots = slots.length;
+  // Cut slots only — a variable-qty module (RAM stick) is billed per piece, not from the cut cost.
+  const nSlots = slotCount(chips);
+  const nModules = chips.filter(c => c.variable_qty).length;
   const chipsPerBoard = bomTotalQty(chips);
 
   const handleUpdateMPN = async (patch: Partial<MPN>) => {
@@ -68,6 +70,7 @@ export default function MPNDetailPage() {
         slot_group: data.slotGroup, item_group: data.itemGroup,
         chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
         processed_type: data.processedType, packaging_type: data.packagingType,
+        variable_qty: data.variableQty, chip_cost: data.variableQty && data.unitCost !== '' ? data.unitCost : null,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnId, chip.id, data.photoFile);
       setMpn(m => m ? { ...m, chips: [...(m.chips ?? []), chip] } : m);
@@ -84,6 +87,7 @@ export default function MPNDetailPage() {
         slot_group: data.slotGroup, item_group: data.itemGroup,
         chip_mpn: data.chipMpn, chip_type: data.chipType, description: data.description,
         processed_type: data.processedType, packaging_type: data.packagingType,
+        variable_qty: data.variableQty, chip_cost: data.variableQty && data.unitCost !== '' ? data.unitCost : null,
       } as any);
       if (data.photoFile) chip = await api.mpns.chips.uploadPhoto(mpnId, chipId, data.photoFile);
       else if (data.clearPhoto) { await api.mpns.chips.deletePhoto(mpnId, chipId); chip = { ...chip, chip_photo_url: null }; }
@@ -221,6 +225,7 @@ export default function MPNDetailPage() {
                   {' '}({slots.filter(s => s.chips.length > 1).map(s => `${s.chips.length} alternates share one ${s.chips[0].slot_group} slot`).join(', ')})
                 </span>
               )}
+              {nModules > 0 && <span style={{ color: 'var(--ink-4)' }}> + {nModules} variable-qty module{nModules !== 1 ? 's' : ''}</span>}
               {' · '}{chips.filter(c => c.chip_photo_url).length}/{chips.length} with photo
             </span>
             <div style={{ flex: 1 }} />
@@ -288,10 +293,15 @@ export default function MPNDetailPage() {
                       />
                     </td>
                     <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
-                      {chip.qty != null ? chip.qty : <span style={{ color: 'var(--ink-4)' }}>—</span>}
+                      {chip.variable_qty
+                        ? <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>varies</span>
+                        : chip.qty != null ? chip.qty : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
-                    <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
-                      {mpn.cutboard_cost != null && nSlots > 0
+                    <td style={{ ...chipTdS, textAlign: 'right' }} className="num"
+                      title={chip.variable_qty ? 'Per piece — billed separately from the board cut cost' : undefined}>
+                      {chip.variable_qty
+                        ? (chip.chip_cost != null ? Number(chip.chip_cost).toFixed(3) : <span style={{ color: 'var(--ink-4)' }}>—</span>)
+                        : mpn.cutboard_cost != null && nSlots > 0
                         ? (Number(mpn.cutboard_cost) / nSlots).toFixed(3)
                         : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
@@ -471,7 +481,7 @@ function EditMPNModal({ open, mpn, onClose, onSave }: {
   );
 }
 
-type ChipFormData = { brandId: string; qty: string; slotGroup: string; itemGroup: string; chipMpn: string; chipType: string; description: string; processedType: string; packagingType: string; photoFile?: File | null; clearPhoto?: boolean; };
+type ChipFormData = { brandId: string; qty: string; slotGroup: string; itemGroup: string; chipMpn: string; chipType: string; description: string; processedType: string; packagingType: string; variableQty: boolean; unitCost: string; photoFile?: File | null; clearPhoto?: boolean; };
 
 function ChipPhotoSquare({ value, onChange }: { value: { src: string; name?: string; file?: File } | null; onChange: (v: { src: string; name: string; file: File } | null) => void; }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -606,6 +616,9 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
   const [itemGroup, setItemGroup] = useState('');
   const [processedType, setProcessedType] = useState('harvested');
   const [packagingType, setPackagingType] = useState('tray');
+  // A RAM stick and the like: 0, 1 or 2 per board, billed per piece at its own unit cost.
+  const [variableQty, setVariableQty] = useState(false);
+  const [unitCost, setUnitCost] = useState('');
   // Slot Group lives in a collapsed "Advanced" section — most chips have their own slot
   // and never touch it. Open it automatically when a slot group is actually set.
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -632,6 +645,8 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
       setAdvancedOpen((initial?.slot_group ?? '').trim() !== '');
       setProcessedType(initial?.processed_type ?? 'harvested');
       setPackagingType(initial?.packaging_type ?? 'tray');
+      setVariableQty(!!initial?.variable_qty);
+      setUnitCost(initial?.chip_cost != null ? String(Number(initial.chip_cost)) : '');
       setPhoto(initial?.chip_photo_url ? { src: initial.chip_photo_url, name: initial.chip_photo_url.split('/').pop() } : null);
     }
   }, [open, initial, mode]);
@@ -639,10 +654,16 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
   // Memory chips are the interchangeable ones on these boards, so tagging a chip Memory
   // pre-fills its slot group. Written into the visible field rather than applied as a
   // hidden rule, so a board with two distinct Memory sockets can still split them.
-  const changeItemGroup = (next: string) => {
+  // A variable-qty module never shares a slot, so tagging it Memory leaves the slot alone.
+  const changeItemGroup = (next: string, module = variableQty) => {
     setItemGroup(next);
-    if (next === 'Memory' && slotGroup.trim() === '') setSlotGroup(MEMORY_SLOT_GROUP);
-    else if (next !== 'Memory' && slotGroup.trim() === MEMORY_SLOT_GROUP) setSlotGroup('');
+    if (next === 'Memory' && !module && slotGroup.trim() === '') setSlotGroup(MEMORY_SLOT_GROUP);
+    else if ((next !== 'Memory' || module) && slotGroup.trim() === MEMORY_SLOT_GROUP) setSlotGroup('');
+  };
+  const changeVariableQty = (on: boolean) => {
+    setVariableQty(on);
+    if (on && slotGroup.trim() === MEMORY_SLOT_GROUP) setSlotGroup('');
+    else if (!on && itemGroup === 'Memory' && slotGroup.trim() === '') setSlotGroup(MEMORY_SLOT_GROUP);
   };
 
   // Picking an existing part copies its details; every field stays editable afterwards.
@@ -653,13 +674,16 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
     setDescription(e.description || '');
     if (e.processed_type) setProcessedType(e.processed_type);
     if (e.packaging_type) setPackagingType(e.packaging_type);
-    changeItemGroup(e.item_group || '');   // Memory → pre-fills the slot group, as when chosen by hand
+    setVariableQty(!!e.variable_qty);
+    setUnitCost(e.chip_cost != null ? String(Number(e.chip_cost)) : '');
+    // Memory → pre-fills the slot group, as when chosen by hand (not for a module)
+    changeItemGroup(e.item_group || '', !!e.variable_qty);
   };
 
   const submit = () => {
     onAdd({
-      brandId, qty, slotGroup: slotGroup.trim(), itemGroup, chipMpn, chipType, description,
-      processedType, packagingType,
+      brandId, qty, slotGroup: variableQty ? '' : slotGroup.trim(), itemGroup, chipMpn, chipType, description,
+      processedType, packagingType, variableQty, unitCost: unitCost.trim(),
       photoFile: photo?.file ?? null,
       clearPhoto: !photo && !!initialPhotoUrl,
     });
@@ -683,13 +707,29 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
             <Field label="Item Group"><Select value={itemGroup} onChange={changeItemGroup} options={ITEM_GROUP_OPTIONS} /></Field>
             <Field label="Processed Type"><Select value={processedType} onChange={setProcessedType} options={PROCESSED_TYPE_OPTIONS} /></Field>
             <Field label="Packaging Type"><Select value={packagingType} onChange={setPackagingType} options={PACKAGING_TYPE_OPTIONS} /></Field>
-            <Field label="Qty / Board"><Input value={qty} onChange={setQty} type="number" placeholder="1" /></Field>
+            {variableQty
+              ? <Field label="Unit Cost ($ / pc)"><Input value={unitCost} onChange={setUnitCost} type="number" placeholder="e.g. 0.50" /></Field>
+              : <Field label="Qty / Board"><Input value={qty} onChange={setQty} type="number" placeholder="1" /></Field>}
             <Field label="Description"><Input value={description} onChange={setDescription} placeholder="Optional" /></Field>
           </div>
           <div style={{ fontSize: 11, marginTop: 8, color: 'var(--ink-4)', lineHeight: 1.55 }}>
             <b style={{ color: 'var(--ink-3)' }}>Item Group</b> classifies the chip for the customer&apos;s bid sheet — picking <b style={{ color: 'var(--ink-3)' }}>Memory</b> pre-fills the slot below.
             {' '}<b style={{ color: 'var(--ink-3)' }}>Qty / Board</b> is per single board, almost always 1.
           </div>
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginTop: 12, padding: '10px 12px', cursor: 'pointer',
+            border: `1px solid ${variableQty ? 'var(--accent)' : 'var(--hair)'}`, borderRadius: 3,
+            background: variableQty ? 'var(--accent-light)' : 'transparent' }}>
+            <input type="checkbox" checked={variableQty} onChange={e => changeVariableQty(e.target.checked)}
+              style={{ marginTop: 2, accentColor: 'var(--accent)' }} />
+            <span style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
+              <b>Variable qty module</b> <span style={{ color: 'var(--ink-4)' }}>(e.g. RAM stick)</span><br />
+              <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
+                0, 1 or 2 per board — counted from the checklist and billed per piece at its own unit cost,
+                not from the board&apos;s cut cost. Never shares a slot with other chips.
+              </span>
+            </span>
+          </label>
 
           <div style={{ marginTop: 16, borderTop: '1px solid var(--hair)', paddingTop: 12 }}>
             <button

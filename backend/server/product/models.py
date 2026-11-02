@@ -311,10 +311,13 @@ class MPN(models.Model):
 
         Returns {slot_key: qty_per_board}. Alternates take the max, not the sum — only one
         of them is physically present on any given board.
+
+        Variable-qty modules (Chip.variable_qty) are not slots at all: they are priced per
+        piece, so they never divide the cut cost or count toward chips per board.
         """
         slots = {}
         for c in self.chips.all():
-            if c.id in exclude:
+            if c.id in exclude or c.variable_qty:
                 continue
             group = (c.slot_group or '').strip()
             key = f'g:{group}' if group else f'c:{c.id}'
@@ -443,7 +446,14 @@ class Chip(models.Model):
                   "string across MPNs — exports union a group SO-wide."
     )
     item_group = models.CharField(max_length=20, choices=ITEM_GROUP_CHOICES, blank=True)
+    variable_qty = models.BooleanField(
+        default=False,
+        help_text="A plug-in module (e.g. a RAM stick) whose count per board varies (0, 1, 2...). "
+                  "Not a cut slot: it is billed per piece at chip_cost, from the checklist qty."
+    )
     cut_fail = models.IntegerField(null=True, blank=True)
+    # Per-piece cost of a variable-qty module (unused for ordinary chips, whose cost is the
+    # board's cut cost split across its slots).
     chip_cost = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     description = models.TextField(blank=True)
     processed_type = models.CharField(max_length=50, choices=PROCESSED_TYPE_CHOICES, default='harvested')
