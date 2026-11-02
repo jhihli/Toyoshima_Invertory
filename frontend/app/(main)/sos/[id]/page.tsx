@@ -1548,6 +1548,14 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
 }
 
 // ─── Edit Pallet Modal ────────────────────────────────────────────
+/** Pallet tare: Out Weight Net = Out Weight Gross − 75 lb. Filled in whenever the gross is
+ *  typed; the net field stays editable for the odd pallet that differs. */
+const OUT_TARE_LB = 75;
+const netFromGross = (gross: string) => {
+  const n = parseFloat(gross);
+  return gross.trim() === '' || isNaN(n) ? '' : Math.max(n - OUT_TARE_LB, 0).toFixed(2);
+};
+
 function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   open: boolean; pallet: Pallet; effectiveRule: string;
   onClose: () => void; onSave: (patch: Partial<Pallet>) => Promise<void>;
@@ -1559,6 +1567,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   const [actualWeight, setActualWeight] = useState(pallet.actual_weight ? parseFloat(pallet.actual_weight).toFixed(2) : '');
   const [outWeightGross, setOutWeightGross] = useState(pallet.out_weight_gross ? parseFloat(pallet.out_weight_gross).toFixed(2) : '');
   const [outWeightNet, setOutWeightNet] = useState(pallet.out_weight_net ? parseFloat(pallet.out_weight_net).toFixed(2) : '');
+  const changeOutWeightGross = (v: string) => { setOutWeightGross(v); setOutWeightNet(netFromGross(v)); };
   const [tantalumWt, setTantalumWt] = useState(pallet.tantalum_wt ? parseFloat(pallet.tantalum_wt).toFixed(2) : '');
   const [matType, setMatType] = useState(pallet.material_type);
   const [qty, setQty] = useState(String(pallet.qty));
@@ -1579,7 +1588,9 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
       setInWeightGross(parseFloat(pallet.in_weight_gross).toFixed(2));
       setActualWeight(pallet.actual_weight ? parseFloat(pallet.actual_weight).toFixed(2) : '');
       setOutWeightGross(pallet.out_weight_gross ? parseFloat(pallet.out_weight_gross).toFixed(2) : '');
-      setOutWeightNet(pallet.out_weight_net ? parseFloat(pallet.out_weight_net).toFixed(2) : '');
+      // A pallet saved before the net was auto-filled gets it from its gross on open.
+      setOutWeightNet(pallet.out_weight_net ? parseFloat(pallet.out_weight_net).toFixed(2)
+        : pallet.out_weight_gross ? netFromGross(String(pallet.out_weight_gross)) : '');
       setTantalumWt(pallet.tantalum_wt ? parseFloat(pallet.tantalum_wt).toFixed(2) : '');
       setMatType(pallet.material_type);
       setQty(String(pallet.qty));
@@ -1661,7 +1672,7 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
           <Input value={actualWeight} onChange={setActualWeight} type="number" placeholder="Optional" />
         </Field>
         <Field label="Out Weight Gross (lb)">
-          <Input value={outWeightGross} onChange={setOutWeightGross} type="number" placeholder="Optional" />
+          <Input value={outWeightGross} onChange={changeOutWeightGross} type="number" placeholder="Optional" />
         </Field>
         <Field label="Out Weight Net (lb)">
           <Input value={outWeightNet} onChange={setOutWeightNet} type="number" placeholder="Optional" />
@@ -1845,7 +1856,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
               <Input value={actualW} onChange={setActualW} type="number" placeholder="0.00" />
             </Field>
             <Field label="Out Weight Gross (lb)">
-              <Input value={outWGross} onChange={setOutWGross} type="number" placeholder="Optional" />
+              <Input value={outWGross} onChange={v => { setOutWGross(v); setOutWNet(netFromGross(v)); }} type="number" placeholder="Optional" />
             </Field>
             <Field label="Out Weight Net (lb)">
               <Input value={outWNet} onChange={setOutWNet} type="number" placeholder="Optional" />
@@ -1908,7 +1919,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
                       type="number" placeholder="0.00" align="right" />
                     <BulkCellP value={r.actual_weight} onChange={v => updateRow(i, { actual_weight: v })}
                       type="number" placeholder="0.00" align="right" />
-                    <BulkCellP value={r.out_weight_gross} onChange={v => updateRow(i, { out_weight_gross: v })}
+                    <BulkCellP value={r.out_weight_gross} onChange={v => updateRow(i, { out_weight_gross: v, out_weight_net: netFromGross(v) })}
                       type="number" placeholder="—" align="right" />
                     <BulkCellP value={r.out_weight_net} onChange={v => updateRow(i, { out_weight_net: v })}
                       type="number" placeholder="—" align="right" />
