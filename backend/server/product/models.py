@@ -163,6 +163,99 @@ class Pallet(models.Model):
         """Failed chips on this pallet, all chips together. Reuses a 'chip_ngs' prefetch."""
         return sum(r.qty for r in self.chip_ngs.all())
 
+    def checklist_check(self):
+        """Does the checklist agree with the board qty? Checked per chip SLOT.
+
+        Every board yields one chip per slot (times its qty per board), so a slot's checklist
+        pieces — good and NG lines alike, matched by part number — should equal
+        Σ boards × qty over the pallet's MPNs that have it. Interchangeable alternates (same
+        slot_group) are one slot; a part grouped on any of the pallet's MPNs is in that group.
+
+        status: 'none'       no checklist lines, or no boards assigned
+                'incomplete' a line still has no model or no qty (labels are printed first)
+                'mismatch'   a slot's pieces differ from its boards, or a line names a part
+                             that is in none of the pallet's BOMs
+                'ok'         otherwise
+        A slot with no lines at all is 'absent' (this batch lacks the chip), not a mismatch.
+        Variable-qty modules (RAM sticks) have no per-board count: listed, never checked.
+        Iterates .all() so prefetches of checklists / pallet_mpns__mpn__chips are reused.
+        """
+        norm = lambda v: ' '.join((v or '').split()).upper()
+        lines = list(self.checklists.all())
+        rows = [r for r in self.pallet_mpns.all() if r.mpn_id]
+
+        group_of, module_of, part_label = {}, set(), {}
+        for r in rows:
+            for c in r.mpn.chips.all():
+                k = norm(c.chip_mpn)
+                if not k:
+                    continue
+                part_label.setdefault(k, ' '.join(c.chip_mpn.split()))
+                if c.variable_qty:
+                    module_of.add(k)
+                elif (c.slot_group or '').strip():
+                    group_of.setdefault(k, c.slot_group.strip())
+
+        def slot_key(k):
+            g = group_of.get(k)
+            return (f'g:{g}', g) if g else (f'm:{k}', part_label[k])
+
+        slots = {}   # key -> {label, expected, actual, parts}
+        order = []
+        for r in rows:
+            per_board = {}
+            for c in r.mpn.chips.all():
+                k = norm(c.chip_mpn)
+                if not k or k in module_of:
+                    continue
+                key, label = slot_key(k)
+                if key not in slots:
+                    slots[key] = {'label': label, 'expected': 0, 'actual': 0, 'parts': {}}
+                    order.append(key)
+                per_board[key] = max(per_board.get(key, 0), c.qty if c.qty is not None else 1)
+            for key, q in per_board.items():
+                slots[key]['expected'] += (r.board_qty or 0) * q
+
+        modules, unmatched, incomplete = {}, [], False
+        for ln in lines:
+            k = norm(ln.model)
+            if not k or ln.qty is None:
+                incomplete = True
+                continue
+            if k in module_of:
+                modules[part_label[k]] = modules.get(part_label[k], 0) + ln.qty
+            elif k in part_label:
+                s = slots[slot_key(k)[0]]
+                s['actual'] += ln.qty
+                s['parts'][part_label[k]] = s['parts'].get(part_label[k], 0) + ln.qty
+            else:
+                unmatched.append({'model': ' '.join(ln.model.split()), 'qty': ln.qty})
+
+        out_slots = []
+        for key in order:
+            s = slots[key]
+            st = 'absent' if not s['parts'] else ('ok' if s['actual'] == s['expected'] else 'mismatch')
+            out_slots.append({
+                'label': s['label'], 'expected': s['expected'], 'actual': s['actual'],
+                'diff': s['actual'] - s['expected'], 'status': st,
+                'parts': [{'chip_mpn': m, 'qty': q} for m, q in s['parts'].items()],
+            })
+
+        if not lines or not rows:
+            status = 'none'
+        elif incomplete:
+            status = 'incomplete'
+        elif unmatched or any(s['status'] == 'mismatch' for s in out_slots):
+            status = 'mismatch'
+        else:
+            status = 'ok'
+        return {
+            'status': status,
+            'slots': out_slots,
+            'modules': [{'label': m, 'actual': q} for m, q in modules.items()],
+            'unmatched': unmatched,
+        }
+
 
 class PalletPhoto(models.Model):
     pallet = models.ForeignKey(Pallet, on_delete=models.CASCADE, related_name='photos')

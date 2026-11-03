@@ -70,7 +70,29 @@ export interface Pallet {
   ng_qty: number;
   box_count?: number;
   checklist_count?: number;
+  /** Checklist vs board qty (see ChecklistCheck). Absent on endpoints that don't compute it. */
+  checklist_status?: ChecklistCheckStatus;
   created_at: string;
+}
+
+/** 'none' no checklist / no boards · 'incomplete' a line lacks model or qty ·
+ *  'mismatch' a slot's pieces ≠ its boards, or a part in no BOM · 'ok' everything agrees. */
+export type ChecklistCheckStatus = 'ok' | 'mismatch' | 'incomplete' | 'none';
+
+/** GET pallets/<id>/checklist-check/: each chip slot's checklist pieces (NG included) against
+ *  Σ boards × qty per board. Alternates in one slot (e.g. Memory) are one row. */
+export interface ChecklistCheck {
+  status: ChecklistCheckStatus;
+  slots: {
+    label: string; expected: number; actual: number; diff: number;
+    /** 'absent' = no line names it (this batch lacks the chip) — not an error. */
+    status: 'ok' | 'mismatch' | 'absent';
+    parts: { chip_mpn: string; qty: number }[];
+  }[];
+  /** Variable-qty modules (RAM sticks): pieces only, never checked. */
+  modules: { label: string; actual: number }[];
+  /** Lines whose model is in none of the pallet's BOMs (likely a typo). */
+  unmatched: { model: string; qty: number }[];
 }
 
 export interface Box {

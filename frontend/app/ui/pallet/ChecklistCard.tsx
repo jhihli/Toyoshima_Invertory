@@ -1,5 +1,6 @@
 'use client';
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import ChecklistCheckPanel from './ChecklistCheckPanel';
 import Link from 'next/link';
 import { api, apiErrorMessage } from '@/app/lib/api';
 import type { Checklist, ChipOptionGroup } from '@/interface/IDatatable';
@@ -298,11 +299,14 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
   const [bulkOpen, setBulkOpen] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [chipGroups, setChipGroups] = useState<ChipOptionGroup[] | 'error' | null>(null);
+  // Bumped on every reload so the board-qty check below re-runs after each edit.
+  const [version, setVersion] = useState(0);
 
   const load = useCallback(async () => {
     try {
       setRows((await api.pallets.checklists.list(palletId)) || []);
       setSelected(new Set());
+      setVersion(v => v + 1);
     } catch { showToast('Failed to load checklist', 'err'); }
     // Separate from the rows: a chip-list failure must not read as "no boards on this pallet".
     if (chipMode) {
@@ -378,6 +382,7 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
   const describe = (r: Checklist) => [r.brand, r.model].filter(Boolean).join(' ');
 
   return (
+    <>
     <div style={CardSty}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, flexWrap: 'wrap', padding: '12px 16px', borderBottom: rows.length ? '1px solid var(--hair)' : 'none' }}>
         <h2 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>Checklist</h2>
@@ -472,5 +477,8 @@ export default function ChecklistCard({ palletId, soNumber, palletLabel, palletB
         body={<>The <b>{selected.size}</b> selected checklist line{selected.size > 1 ? 's' : ''} will be permanently removed.</>}
         onClose={() => setBulkOpen(false)} onConfirm={handleBulkDelete} />
     </div>
+    {/* MSFT pallets: checklist pieces vs boards × slots (the paper checklist's per-board figures). */}
+    {chipMode && <ChecklistCheckPanel palletId={palletId} version={version} boardsHref={boardsHref} />}
+    </>
   );
 }

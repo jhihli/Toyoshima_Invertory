@@ -1305,3 +1305,114 @@ class VariableQtyModuleTests(TestCase):
         data = {d['chip_mpn']: d for d in self.client.get('/product/chips/catalog/').json()}
         self.assertEqual((data['RAM-8G-PC3']['variable_qty'], data['RAM-8G-PC3']['chip_cost']), (True, '0.5000'))
         self.assertEqual((data['JY995']['variable_qty'], data['JY995']['chip_cost']), (False, None))
+
+
+class ChecklistCheckTests(TestCase):
+    """Checklist vs board qty, per chip slot: a slot's checklist pieces (NG lines included)
+    should equal Σ boards × its qty per board. Pallet 05LP00081784 of S05-000617."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        _, (self.p, self.p2) = make_so_with_pallets()
+        a, b = MPN.objects.create(name='SP#0WW9TT'), MPN.objects.create(name='SP#841631-001')
+        Chip.objects.create(mpn=a, chip_mpn='SLKM8')
+        for m in ('K4B1G1646G-BCH9', 'D9SFT', 'NT5CB64M16FP'):
+            Chip.objects.create(mpn=a, chip_mpn=m, slot_group='Memory')
+        Chip.objects.create(mpn=b, chip_mpn='EP4CE1SF23C9LN')
+        Chip.objects.create(mpn=b, chip_mpn='SLKM8')
+        for m in ('D9SFT', 'NT5CB64M16FP'):
+            Chip.objects.create(mpn=b, chip_mpn=m, slot_group='Memory')
+        self.ram = Chip.objects.create(mpn=b, chip_mpn='RAM-8G-PC3', slot_group='Memory', variable_qty=True)
+        PalletMPN.objects.create(pallet=self.p, mpn=a, board_qty=31)
+        PalletMPN.objects.create(pallet=self.p, mpn=b, board_qty=355)
+        self.n = 0
+
+    def line(self, model, qty, **kw):
+        self.n += 1
+        return Checklist.objects.create(pallet=self.p, barcode=f'b-{self.n}', model=model, qty=qty, **kw)
+
+    def fill(self, slkm8=386):
+        self.line('SLKM8', slkm8)
+        self.line('D9SFT', 356)
+        self.line('K4B1G1646G-BCH9', 28)
+        self.line('NT5CB64M16FP', 2)
+        self.line('EP4CE1SF23C9LN', 355)
+
+    def slots(self, check):
+        return {s['label']: (s['expected'], s['actual'], s['status']) for s in check['slots']}
+
+    def test_matching_checklist_is_ok(self):
+        self.fill()
+        c = self.p.checklist_check()
+        self.assertEqual(c['status'], 'ok')
+        self.assertEqual(self.slots(c), {
+            'SLKM8': (386, 386, 'ok'), 'Memory': (386, 386, 'ok'), 'EP4CE1SF23C9LN': (355, 355, 'ok'),
+        })
+
+    def test_short_slot_is_a_mismatch(self):
+        self.fill(slkm8=380)
+        c = self.p.checklist_check()
+        self.assertEqual(c['status'], 'mismatch')
+        self.assertEqual(self.slots(c)['SLKM8'], (386, 380, 'mismatch'))
+
+    def test_ng_lines_count_toward_the_slot(self):
+        self.fill(slkm8=380)
+        self.line('SLKM8', 6, is_ng=True)
+        self.assertEqual(self.p.checklist_check()['status'], 'ok')
+
+    def test_slot_missing_from_checklist_is_absent_not_mismatch(self):
+        """A batch without a chip (no line for it at all) is not an error."""
+        self.line('SLKM8', 386)
+        c = self.p.checklist_check()
+        self.assertEqual(c['status'], 'ok')
+        self.assertEqual(self.slots(c)['Memory'], (386, 0, 'absent'))
+
+    def test_blank_qty_is_incomplete(self):
+        self.fill()
+        self.line('D9SFT', None)
+        self.assertEqual(self.p.checklist_check()['status'], 'incomplete')
+
+    def test_part_in_no_bom_is_a_mismatch(self):
+        self.fill()
+        self.line('SLKM9', 5)
+        c = self.p.checklist_check()
+        self.assertEqual(c['status'], 'mismatch')
+        self.assertEqual(c['unmatched'], [{'model': 'SLKM9', 'qty': 5}])
+
+    def test_module_is_listed_not_checked(self):
+        self.fill()
+        self.line('RAM-8G-PC3', 33)
+        c = self.p.checklist_check()
+        self.assertEqual(c['status'], 'ok')
+        self.assertEqual(c['modules'], [{'label': 'RAM-8G-PC3', 'actual': 33}])
+
+    def test_no_checklist_is_none(self):
+        self.assertEqual(self.p.checklist_check()['status'], 'none')
+        self.assertEqual(self.p2.checklist_check()['status'], 'none')   # no boards either
+
+    def test_api_detail_and_pallet_status(self):
+        self.fill(slkm8=380)
+        r = self.client.get(f'/product/pallets/{self.p.id}/checklist-check/').json()
+        self.assertEqual(r['status'], 'mismatch')
+        so = self.p.so_id
+        pallets = {x['id']: x for x in self.client.get(f'/product/sos/{so}/').json()['pallets']}
+        self.assertEqual(pallets[self.p.id]['checklist_status'], 'mismatch')
+        self.assertEqual(pallets[self.p2.id]['checklist_status'], 'none')
+
+    def test_so_detail_query_count_does_not_grow_per_pallet(self):
+        self.fill()
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        url = f'/product/sos/{self.p.so_id}/'
+        with CaptureQueriesContext(connection) as two:
+            self.client.get(url)
+        _, more = make_so_with_pallets(n=1, so_number='OTHER')   # unrelated SO
+        for i in range(3, 8):
+            p = Pallet.objects.create(so=self.p.so, pallet_seq=i, qty=1)
+            PalletMPN.objects.create(pallet=p, mpn=MPN.objects.get(name='SP#0WW9TT'), board_qty=1)
+            Checklist.objects.create(pallet=p, barcode=f'x-{i}', model='SLKM8', qty=1)
+        with CaptureQueriesContext(connection) as seven:
+            self.client.get(url)
+        self.assertLessEqual(len(seven), len(two) + 5 * 3)   # boxes/checklist counts stay per pallet

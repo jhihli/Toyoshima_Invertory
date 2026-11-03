@@ -89,7 +89,7 @@ export function apiErrorMessage(e: unknown): string {
 // ─── Typed wrappers ───────────────────────────────────────────────
 import type {
   Vendor, SO, SODetail, SOPhoto, Pallet, PalletPhoto, ChipBrand, Chip, MPN,
-  PalletMPN, ChipOptionGroup, PalletMpnExportRow, MpnBoardsBySo, PalletNgGroup, InventoryRow, ChipCatalogEntry,
+  PalletMPN, ChipOptionGroup, PalletMpnExportRow, MpnBoardsBySo, PalletNgGroup, InventoryRow, ChipCatalogEntry, ChecklistCheck,
   PaginatedResult, DashboardStats,
   MPNReportConfig, MPNReportStatus, MPNReportLastSend,
   PalletChipContainer, Box, BoxSearchResult, Checklist, ChecklistSearchResult,
@@ -179,6 +179,7 @@ export const api = {
       delete: (palletId: number, id: number) => apiDelete(`/pallets/${palletId}/mpns/${id}/`),
     },
     chipOptions: (palletId: number) => apiGet<ChipOptionGroup[]>(`/pallets/${palletId}/chip-options/`),
+    checklistCheck: (palletId: number) => apiGet<ChecklistCheck>(`/pallets/${palletId}/checklist-check/`),
     ng: {
       get: (palletId: number) => apiGet<PalletNgGroup[]>(`/pallets/${palletId}/ng/`),
       save: (palletId: number, items: { chip: number; qty: number | null }[]) =>

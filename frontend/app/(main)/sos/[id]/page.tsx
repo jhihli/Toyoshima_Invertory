@@ -42,6 +42,8 @@ export default function SODetailPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletePalletId, setDeletePalletId] = useState<number | null>(null);
   const [actionMenuOpen, setActionMenuOpen] = useState(false);
+  // Pallets to warn about before exporting (see handleExport); null = no warning open.
+  const [exportWarn, setExportWarn] = useState<Pallet[] | null>(null);
   const [photosMenuOpen, setPhotosMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const actionMenuRef = useRef<HTMLDivElement>(null);
@@ -234,7 +236,16 @@ export default function SODetailPage() {
     } catch { toast('Failed to delete SO'); }
   };
 
-  const handleExport = async () => {
+  // Pallets whose checklist disagrees with their board qty (or is unfinished): their per-board
+  // figures in the export would be a best guess, so ask before exporting.
+  const handleExport = () => {
+    const flagged = (so?.pallets ?? []).filter(p => p.checklist_status === 'mismatch' || p.checklist_status === 'incomplete');
+    if (flagged.length) setExportWarn(flagged);
+    else runExport();
+  };
+
+  const runExport = async () => {
+    setExportWarn(null);
     toast('Preparing export…');
     try {
       const [pmRows, invRows] = await Promise.all([api.sos.palletMpns(soId), api.sos.inventory(soId)]);
@@ -296,10 +307,22 @@ export default function SODetailPage() {
 
       // Chips actually harvested per (pallet, MPN), from the checklist quantities: each pallet's
       // rows add up to exactly its checklist total (shared / hand-typed parts split by boards).
-      const splitRows = allBoardData.filter(b => b.mpn).map(b => ({
-        key: `${b.pallet}|${b.mpn.id}`, palletId: b.pallet, boards: b.qty,
-        chipKeys: new Set((b.bomChips ?? []).map(c => normalizeChipMpn(c.chip_mpn))),
-      }));
+      // Each board type's slots cap its share of a shared part (boards × qty per board), so
+      // 0WW9TT's memory slots already filled by K4B1G don't take D9SFT that 841631 needs.
+      const splitRows = allBoardData.filter(b => b.mpn).map(b => {
+        const slotOf = new Map<string, string>();
+        const slotCap = new Map<string, number>();
+        for (const s of buildSlots(b.bomChips)) {
+          if (s.variable) continue;   // modules have no per-board count: split by boards
+          slotCap.set(s.key, b.qty * s.qtyPerBoard);
+          for (const c of s.chips) slotOf.set(normalizeChipMpn(c.chip_mpn), s.key);
+        }
+        return {
+          key: `${b.pallet}|${b.mpn.id}`, palletId: b.pallet, boards: b.qty,
+          chipKeys: new Set((b.bomChips ?? []).map(c => normalizeChipMpn(c.chip_mpn))),
+          slotOf, slotCap,
+        };
+      });
       const checklistLines = invRows.filter(r => r.kind === 'checklist' && typeof r.qty === 'number')
         .map(r => ({ palletId: r.pallet_id, chipKey: normalizeChipMpn(r.chip_mpn), qty: r.qty as number }));
       const harvested = splitChecklistByBoard(splitRows, checklistLines);
@@ -1063,6 +1086,7 @@ export default function SODetailPage() {
             onDelete={setDeletePalletId}
             onGoToBoards={palletId => { setBoardsPalletId(palletId); setTab('boards'); }}
             onGoToBoxes={palletId => router.push(`/sos/${soId}/pallets/${palletId}`)}
+            onGoToChecklist={palletId => router.push(`/sos/${soId}/pallets/${palletId}/checklist`)}
             onNgSaved={loadSO}
           />
         )}
@@ -1127,6 +1151,27 @@ export default function SODetailPage() {
 
       {/* Edit meta modal */}
       <EditSOModal open={editMeta} so={so} vendors={vendors} onClose={() => setEditMeta(false)} onSave={handleSaveMeta} />
+      <Modal open={!!exportWarn} onClose={() => setExportWarn(null)} title="Checklist doesn't match the boards" width={520}
+        footer={<>
+          <Button variant="ghost" onClick={() => setExportWarn(null)}>Cancel</Button>
+          <Button variant="primary" onClick={runExport}>Export anyway</Button>
+        </>}>
+        <div style={{ fontSize: 13, color: 'var(--ink-2)', lineHeight: 1.55 }}>
+          On these pallets the checklist pieces don&apos;t add up to the board qty × chips per board,
+          so their per-board figures (Processing PCB, Activity cost) would be estimated. Fix the
+          checklist or the Boards tab first, or export anyway.
+        </div>
+        <div style={{ marginTop: 12, border: '1px solid var(--hair)', borderRadius: 3 }}>
+          {(exportWarn ?? []).map(p => (
+            <button key={p.id} onClick={() => router.push(`/sos/${soId}/pallets/${p.id}/checklist`)}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 12px', border: 0, borderBottom: '1px solid var(--hair)', background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+              <span className="mono" style={{ fontSize: 12.5, fontWeight: 600 }}>#{String(p.pallet_seq).padStart(2, '0')} · {p.licence_number || '—'}</span>
+              <ChecklistFlag status={p.checklist_status} />
+              <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--accent-2)' }}>Open checklist →</span>
+            </button>
+          ))}
+        </div>
+      </Modal>
 
       {/* Add pallet modal */}
       <AddPalletModal open={addPalletOpen} rule={effectiveRule} onClose={() => setAddPalletOpen(false)} onAdd={handleAddPallet} onAddBulk={handleAddPalletsBulk} />
@@ -1358,12 +1403,31 @@ function palletImgs(p: Pallet) {
 }
 
 // ─── Pallets Tab ──────────────────────────────────────────────────
-function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards, onGoToBoxes, onNgSaved }: {
+/** Red / amber pill for a pallet whose checklist disagrees with its board qty (mismatch) or
+ *  still has lines without a model or qty (incomplete). Nothing when it agrees or is empty. */
+function ChecklistFlag({ status, onClick }: { status?: Pallet['checklist_status']; onClick?: () => void }) {
+  if (status !== 'mismatch' && status !== 'incomplete') return null;
+  const bad = status === 'mismatch';
+  return (
+    <span role={onClick ? 'button' : undefined}
+      onClick={onClick ? e => { e.stopPropagation(); onClick(); } : undefined}
+      title={bad ? "Checklist doesn't match the board qty — click to open the checklist"
+                 : 'Checklist has lines without a model or qty — click to open the checklist'}
+      style={{ display: 'inline-block', marginLeft: 6, padding: '0 6px', borderRadius: 99, fontSize: 10.5, fontWeight: 700,
+        fontFamily: 'inherit', lineHeight: '17px', cursor: onClick ? 'pointer' : 'default', verticalAlign: 'middle',
+        background: bad ? '#fde8e8' : '#fff4d6', color: bad ? '#b91c1c' : '#a86b00' }}>
+      {bad ? '! Check' : '… Pending'}
+    </span>
+  );
+}
+
+function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards, onGoToBoxes, onGoToChecklist, onNgSaved }: {
   pallets: Pallet[]; effectiveRule: string; ruleIsOverride: boolean; vendorName: string;
   palletTotal: { weight: number; qty: number; boardQty: number; outWeightGross: number; outWeightNet: number; tantalumWt: number }; addDisabled: boolean;
   onAdd: () => void; onUpdate: (id: number, p: Partial<Pallet>) => void; onDelete: (id: number) => void;
   onGoToBoards: (palletId: number) => void;
   onGoToBoxes: (palletId: number) => void;
+  onGoToChecklist: (palletId: number) => void;
   /** NG counts were saved — refresh the SO so the NG column updates. */
   onNgSaved: () => void;
 }) {
@@ -1426,6 +1490,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   </Badge>
                 )}
                 {(p.licence_number || p.gateload_number) && <span style={{ color: 'var(--hair-strong)' }}>·</span>}
+                <ChecklistFlag status={p.checklist_status} onClick={() => onGoToChecklist(p.id)} />
                 <span>Pallet qty <span className="num" style={{ color: 'var(--ink-2)' }}>{p.qty}</span></span>
                 {p.board_qty != null && <><span style={{ color: 'var(--hair-strong)' }}>·</span><span>Boards <span className="num" style={{ color: 'var(--ink-2)' }}>{p.board_qty}</span></span>{p.board_qty_is_legacy && <Badge tone="neutral" style={{ fontSize: 10 }}>Legacy</Badge>}</>}
                 <span style={{ color: 'var(--hair-strong)' }}>·</span>
@@ -1505,7 +1570,10 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                       );
                     })()}
                   </td>
-                  <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.licence_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
+                  <td style={{ ...tdS, fontSize: 12 }} className="mono">
+                    {p.licence_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}
+                    <ChecklistFlag status={p.checklist_status} onClick={() => onGoToChecklist(p.id)} />
+                  </td>
                   <td style={{ ...tdS, fontSize: 12 }} className="mono">{p.gateload_number || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{parseFloat(p.in_weight_gross).toFixed(2)}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">
