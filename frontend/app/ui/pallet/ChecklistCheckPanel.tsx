@@ -35,7 +35,6 @@ export default function ChecklistCheckPanel({ palletId, version, boardsHref }: {
 
   const mark = (s: ChecklistCheck['slots'][number]) =>
     s.status === 'ok' ? <span style={{ color: 'var(--accent-2)', fontWeight: 700 }}>✓</span>
-      : s.status === 'absent' ? <span style={{ color: 'var(--ink-4)', fontSize: 12 }}>not in checklist</span>
       : <span style={{ color: '#b91c1c', fontWeight: 700 }}>{s.diff > 0 ? `+${s.diff}` : s.diff}</span>;
 
   return (
@@ -58,7 +57,8 @@ export default function ChecklistCheckPanel({ palletId, version, boardsHref }: {
             </tr>
           </thead>
           <tbody>
-            {check.slots.map(s => (
+            {/* A slot no line names (this batch lacks the chip, e.g. no AST1050) is not shown. */}
+            {check.slots.filter(s => s.status !== 'absent').map(s => (
               <tr key={s.label} style={{ background: s.status === 'mismatch' ? '#fef2f2' : 'transparent' }}>
                 <td style={Td}>
                   <span style={{ fontWeight: 600 }}>{s.label}</span>
@@ -69,7 +69,7 @@ export default function ChecklistCheckPanel({ palletId, version, boardsHref }: {
                   ) : null}
                 </td>
                 <td style={{ ...TdR, fontVariantNumeric: 'tabular-nums' }}>{s.expected}</td>
-                <td style={{ ...TdR, fontVariantNumeric: 'tabular-nums', color: s.status === 'absent' ? 'var(--ink-5)' : 'var(--ink-2)' }}>{s.status === 'absent' ? '—' : s.actual}</td>
+                <td style={{ ...TdR, fontVariantNumeric: 'tabular-nums', color: 'var(--ink-2)' }}>{s.actual}</td>
                 <td style={TdR}>{mark(s)}</td>
               </tr>
             ))}
