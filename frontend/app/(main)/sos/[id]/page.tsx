@@ -719,7 +719,9 @@ export default function SODetailPage() {
       };
       const sortedMpns = [...mpnMap.values()].sort((a, b) => b.boardCount - a.boardCount);
       for (const entry of sortedMpns) {
-        const cutCost = entry.mpn.cutboard_cost ?? 0;
+        // A Decimal arrives as a string ("0.8500"); written as text, Excel's SUM skips it and
+        // the MPN row's Total comes out 0. Always write it as a number.
+        const cutCost = Number(entry.mpn.cutboard_cost ?? 0);
         const inv = perBoard(entry).boards;   // On Hand Inventory: processed boards only
         const pb = perBoard(entry);
         const slots = buildSlots(pb.presentChips);   // only chips some pallet actually had
