@@ -70,6 +70,8 @@ export interface Pallet {
   ng_qty: number;
   box_count?: number;
   checklist_count?: number;
+  /** Checklist lines still without a qty. */
+  checklist_unfilled?: number;
   /** Checklist vs board qty (see ChecklistCheck). Absent on endpoints that don't compute it. */
   checklist_status?: ChecklistCheckStatus;
   created_at: string;

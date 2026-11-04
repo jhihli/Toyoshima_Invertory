@@ -1401,6 +1401,14 @@ class ChecklistCheckTests(TestCase):
         self.assertEqual(pallets[self.p.id]['checklist_status'], 'mismatch')
         self.assertEqual(pallets[self.p2.id]['checklist_status'], 'none')
 
+    def test_pallet_api_counts_lines_without_qty(self):
+        self.fill()
+        self.line('D9SFT', None)
+        self.line('', None)
+        pallets = {x['id']: x for x in self.client.get(f'/product/sos/{self.p.so_id}/').json()['pallets']}
+        self.assertEqual((pallets[self.p.id]['checklist_count'], pallets[self.p.id]['checklist_unfilled']), (7, 2))
+        self.assertEqual((pallets[self.p2.id]['checklist_count'], pallets[self.p2.id]['checklist_unfilled']), (0, 0))
+
     def test_so_detail_query_count_does_not_grow_per_pallet(self):
         self.fill()
         from django.db import connection

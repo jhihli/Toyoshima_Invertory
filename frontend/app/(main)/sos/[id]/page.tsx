@@ -1403,6 +1403,19 @@ function palletImgs(p: Pallet) {
 }
 
 // ─── Pallets Tab ──────────────────────────────────────────────────
+/** Row action buttons on the Pallets table — the shared ghostBtn with a bigger hit area. */
+const rowBtn: React.CSSProperties = { ...ghostBtn, padding: 6 };
+
+/** Box & checklist icon colour: grey = no checklist yet, yellow = labels created but some
+ *  qty still blank, green = every checklist line has its qty. */
+function checklistTone(p: Pallet): { color: string; title: string } {
+  const n = p.checklist_count ?? 0;
+  const blank = p.checklist_unfilled ?? 0;
+  if (!n) return { color: 'var(--ink-3)', title: 'Boxes & checklist — no checklist yet' };
+  if (blank) return { color: '#d19a00', title: `Boxes & checklist — ${blank} of ${n} line${n !== 1 ? 's' : ''} without qty` };
+  return { color: 'var(--accent)', title: `Boxes & checklist — all ${n} line${n !== 1 ? 's' : ''} filled` };
+}
+
 /** Red / amber pill for a pallet whose checklist disagrees with its board qty (mismatch) or
  *  still has lines without a model or qty (incomplete). Nothing when it agrees or is empty. */
 function ChecklistFlag({ status, onClick }: { status?: Pallet['checklist_status']; onClick?: () => void }) {
@@ -1478,9 +1491,9 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   </Badge>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={ghostBtn} title="Boxes & checklist"><BoxIcon /></button>
-                  <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={ghostBtn} title="Edit"><EditIcon /></button>
-                  <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                  <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={{ ...rowBtn, color: checklistTone(p).color }} title={checklistTone(p).title}><BoxIcon size={17} /></button>
+                  <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={rowBtn} title="Edit"><EditIcon size={17} /></button>
+                  <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={rowBtn} title="Delete"><TrashIcon size={17} /></button>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: 11.5, color: 'var(--ink-3)', flexWrap: 'wrap' }}>
@@ -1605,9 +1618,9 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   </td>
                   <td style={{ ...tdS, textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
-                      <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={ghostBtn} title="Boxes & checklist"><BoxIcon /></button>
-                      <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={ghostBtn} title="Edit"><EditIcon /></button>
-                      <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={ghostBtn} title="Delete"><TrashIcon /></button>
+                      <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={{ ...rowBtn, color: checklistTone(p).color }} title={checklistTone(p).title}><BoxIcon size={17} /></button>
+                      <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={rowBtn} title="Edit"><EditIcon size={17} /></button>
+                      <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={rowBtn} title="Delete"><TrashIcon size={17} /></button>
                     </div>
                   </td>
                 </tr>
@@ -2129,8 +2142,8 @@ const PlusIcon = () => (
     <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
-const EditIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const EditIcon = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
   </svg>
@@ -2147,16 +2160,16 @@ const UploadIcon = () => (
     <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
   </svg>
 );
-const TrashIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const TrashIcon = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <polyline points="3 6 5 6 21 6" />
     <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
     <path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
   </svg>
 );
 
-const BoxIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+const BoxIcon = ({ size = 13 }: { size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
     <polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" />
   </svg>

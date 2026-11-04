@@ -64,6 +64,8 @@ class PalletSerializer(serializers.ModelSerializer):
     ng_qty = serializers.SerializerMethodField(read_only=True)
     box_count = serializers.SerializerMethodField(read_only=True)
     checklist_count = serializers.SerializerMethodField(read_only=True)
+    # Checklist lines still without a qty (labels are printed first, filled in later).
+    checklist_unfilled = serializers.SerializerMethodField(read_only=True)
     # Checklist vs board qty (Pallet.checklist_check): 'ok' / 'mismatch' / 'incomplete' / 'none'.
     checklist_status = serializers.SerializerMethodField(read_only=True)
     photo_url = serializers.SerializerMethodField(read_only=True)
@@ -71,7 +73,7 @@ class PalletSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_qty_is_legacy', 'ng_qty', 'box_count', 'checklist_count', 'checklist_status', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'tantalum_wt', 'material_type', 'qty', 'board_qty', 'board_qty_is_legacy', 'ng_qty', 'box_count', 'checklist_count', 'checklist_unfilled', 'checklist_status', 'created_at']
         read_only_fields = ['created_at', 'photo_url', 'photos']
 
     def get_board_qty(self, obj):
@@ -86,8 +88,12 @@ class PalletSerializer(serializers.ModelSerializer):
     def get_box_count(self, obj):
         return obj.boxes.count()
 
+    # Both read .all() so a 'checklists' prefetch (SO detail) is reused.
     def get_checklist_count(self, obj):
-        return obj.checklists.count()
+        return len(obj.checklists.all())
+
+    def get_checklist_unfilled(self, obj):
+        return sum(1 for c in obj.checklists.all() if c.qty is None)
 
     def get_checklist_status(self, obj):
         return obj.checklist_check()['status']
