@@ -88,9 +88,9 @@ export default function ChecklistCheckPanel({ palletId, version, boardsHref }: {
               <tr key={`m${m.label}`}>
                 <td style={Td}>
                   <span style={{ fontWeight: 600 }}>{m.label}</span>
-                  <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2 }}>Variable qty module — count varies per board, not checked</div>
+                  <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 2 }}>Counted per piece — no fixed qty per board, not checked</div>
                 </td>
-                <td style={{ ...TdR, color: 'var(--ink-5)' }}>varies</td>
+                <td style={{ ...TdR, color: 'var(--ink-5)' }}>NA</td>
                 <td style={{ ...TdR, fontVariantNumeric: 'tabular-nums' }}>{m.actual}</td>
                 <td style={TdR}></td>
               </tr>

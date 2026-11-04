@@ -71,7 +71,7 @@ export interface Slot {
   /** How many chips this slot contributes per board (normally 1). */
   qtyPerBoard: number;
   /** A variable-qty module (RAM stick): its count per board varies, so it is no cut slot and
-   *  its qtyPerBoard is meaningless — sheets show "varies" and bill it per piece. */
+   *  its qtyPerBoard is meaningless — sheets show "NA" and bill it per piece. */
   variable: boolean;
 }
 

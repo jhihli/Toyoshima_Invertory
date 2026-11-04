@@ -49,7 +49,9 @@ export default function MPNDetailPage() {
   const slots = buildSlots(chips);
   // Cut slots only — a variable-qty module (RAM stick) is billed per piece, not from the cut cost.
   const nSlots = slotCount(chips);
-  const nModules = chips.filter(c => c.variable_qty).length;
+  const nModules = chips.filter(c => c.variable_qty).length;   // counted per piece
+  const nPerBoard = chips.length - nModules;
+  const sharedSlots = slots.filter(s => s.chips.length > 1);
   const chipsPerBoard = bomTotalQty(chips);
 
   const handleUpdateMPN = async (patch: Partial<MPN>) => {
@@ -219,13 +221,16 @@ export default function MPNDetailPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
             <span style={{ fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--ink-4)', fontWeight: 500 }}>Chips</span>
             <span style={{ fontSize: 12, color: 'var(--ink-3)' }}>
-              {chips.length} part{chips.length !== 1 ? 's' : ''} in {nSlots} slot{nSlots !== 1 ? 's' : ''}
-              {chips.length > nSlots && (
-                <span style={{ color: 'var(--ink-4)' }}>
-                  {' '}({slots.filter(s => s.chips.length > 1).map(s => `${s.chips.length} alternates share one ${s.chips[0].slot_group} slot`).join(', ')})
-                </span>
-              )}
-              {nModules > 0 && <span style={{ color: 'var(--ink-4)' }}> + {nModules} variable-qty module{nModules !== 1 ? 's' : ''}</span>}
+              {nPerBoard > 0 && <>
+                {nPerBoard} per-board part{nPerBoard !== 1 ? 's' : ''} in {nSlots} slot{nSlots !== 1 ? 's' : ''}
+                {sharedSlots.length > 0 && (
+                  <span style={{ color: 'var(--ink-4)' }}>
+                    {' '}({sharedSlots.map(s => `${s.chips.length} alternates share one ${s.chips[0].slot_group} slot`).join(', ')})
+                  </span>
+                )}
+              </>}
+              {nModules > 0 && <>{nPerBoard > 0 ? ' + ' : ''}{nModules} per-piece part{nModules !== 1 ? 's' : ''}</>}
+              {chips.length === 0 && 'No parts yet'}
               {' · '}{chips.filter(c => c.chip_photo_url).length}/{chips.length} with photo
             </span>
             <div style={{ flex: 1 }} />
@@ -294,7 +299,7 @@ export default function MPNDetailPage() {
                     </td>
                     <td style={{ ...chipTdS, textAlign: 'right' }} className="num">
                       {chip.variable_qty
-                        ? <span style={{ color: 'var(--ink-3)', fontSize: 12 }}>varies</span>
+                        ? <span style={{ color: 'var(--ink-3)', fontSize: 12 }} title="Counted per piece — no fixed qty per board">NA</span>
                         : chip.qty != null ? chip.qty : <span style={{ color: 'var(--ink-4)' }}>—</span>}
                     </td>
                     <td style={{ ...chipTdS, textAlign: 'right' }} className="num"
@@ -713,23 +718,33 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
             <Field label="Description"><Input value={description} onChange={setDescription} placeholder="Optional" /></Field>
           </div>
           <div style={{ fontSize: 11, marginTop: 8, color: 'var(--ink-4)', lineHeight: 1.55 }}>
-            <b style={{ color: 'var(--ink-3)' }}>Item Group</b> classifies the chip for the customer&apos;s bid sheet — picking <b style={{ color: 'var(--ink-3)' }}>Memory</b> pre-fills the slot below.
-            {' '}<b style={{ color: 'var(--ink-3)' }}>Qty / Board</b> is per single board, almost always 1.
+            <b style={{ color: 'var(--ink-3)' }}>Item Group</b> classifies the chip for the customer&apos;s bid sheet{variableQty ? '.' : <> — picking <b style={{ color: 'var(--ink-3)' }}>Memory</b> pre-fills the slot below.</>}
+            {!variableQty && <>{' '}<b style={{ color: 'var(--ink-3)' }}>Qty / Board</b> is per single board, almost always 1.</>}
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 9, marginTop: 12, padding: '10px 12px', cursor: 'pointer',
-            border: `1px solid ${variableQty ? 'var(--accent)' : 'var(--hair)'}`, borderRadius: 3,
-            background: variableQty ? 'var(--accent-light)' : 'transparent' }}>
-            <input type="checkbox" checked={variableQty} onChange={e => changeVariableQty(e.target.checked)}
-              style={{ marginTop: 2, accentColor: 'var(--accent)' }} />
-            <span style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.5 }}>
-              <b>Variable qty module</b> <span style={{ color: 'var(--ink-4)' }}>(e.g. RAM stick)</span><br />
-              <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>
-                0, 1 or 2 per board — counted from the checklist and billed per piece at its own unit cost,
-                not from the board&apos;s cut cost. Never shares a slot with other chips.
-              </span>
-            </span>
-          </label>
+          {/* How the part is counted. Per board: a fixed qty on every board, checked against the
+              board qty and sharing the board's cut cost. Per piece (Chip.variable_qty): only the
+              checklist count, billed at its own unit cost — RAM sticks, parts from devices. */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6, fontWeight: 500 }}>How is it counted?</div>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
+              {[
+                { on: false, title: 'Per board', sub: 'Same qty on every board. Checked against the board qty; shares the board\'s cut cost.' },
+                { on: true, title: 'Per piece', sub: 'Qty varies (e.g. RAM sticks, parts from devices). Counted from the checklist; priced per piece.' },
+              ].map(o => (
+                <label key={o.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '9px 11px', cursor: 'pointer', borderRadius: 3,
+                  border: `1px solid ${variableQty === o.on ? 'var(--accent)' : 'var(--hair)'}`,
+                  background: variableQty === o.on ? 'var(--accent-light)' : 'transparent' }}>
+                  <input type="radio" name="chip-counting" checked={variableQty === o.on} onChange={() => changeVariableQty(o.on)}
+                    style={{ marginTop: 2, accentColor: 'var(--accent)' }} />
+                  <span style={{ fontSize: 12, color: 'var(--ink-2)', lineHeight: 1.45 }}>
+                    <b>{o.title}</b><br />
+                    <span style={{ fontSize: 11, color: 'var(--ink-4)' }}>{o.sub}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
 
           <div style={{ marginTop: 16, borderTop: '1px solid var(--hair)', paddingTop: 12 }}>
             <button

@@ -529,8 +529,8 @@ export default function SODetailPage() {
         let total = 0;
         for (let i = 0; i < maxSlots; i++) {
           const slot = slots[i];
-          // A variable-qty module has no fixed count per board: "varies", left out of the total.
-          row.push(slot?.label ?? '', slot ? (slot.variable ? 'varies' : slot.qtyPerBoard) : '');
+          // A per-piece part has no fixed count per board: "NA", left out of the total.
+          row.push(slot?.label ?? '', slot ? (slot.variable ? 'NA' : slot.qtyPerBoard) : '');
           if (slot && !slot.variable) total += slot.qtyPerBoard;
         }
         row.push(total || '');
@@ -614,9 +614,9 @@ export default function SODetailPage() {
         for (const slot of buildSlots(pb.presentChips).filter(s => s.variable)) {
           const chip = slot.chips[0];
           const mRow = wsActivityCost.addRow([
-            `Module: ${slot.label}`, chip.chip_cost != null ? r3(Number(chip.chip_cost)) : '',
-            'The cost to remove a single module, per piece (qty varies per board)',
-            '', '', 'varies', modulePieces(entry.mpn.id, chip),
+            `Per piece: ${slot.label}`, chip.chip_cost != null ? r3(Number(chip.chip_cost)) : '',
+            'The cost per piece (no fixed qty per board)',
+            '', '', 'NA', modulePieces(entry.mpn.id, chip),
           ]);
           mRow.getCell(1).font = { bold: true };
           mRow.getCell(8).value = { formula: `G${mRow.number}*B${mRow.number}` };
