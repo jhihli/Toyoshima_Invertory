@@ -37,6 +37,7 @@ export default function SODetailPage() {
   const [tab, setTab] = useState<'pallets' | 'boards'>('pallets');
   const { data: session } = useSession();
   const [editMeta, setEditMeta] = useState(false);
+  const [outboundOpen, setOutboundOpen] = useState(false);
   const [addPalletOpen, setAddPalletOpen] = useState(false);
   const [lightbox, setLightbox] = useState<SODetail['photos'][0] | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -851,6 +852,7 @@ export default function SODetailPage() {
                 minWidth: 148, overflow: 'hidden',
               }}>
                 {([
+                  ...(so.pallets.length ? [{ label: '出庫 Outbound', icon: <TruckIcon />, danger: false, action: () => { setOutboundOpen(true); setActionMenuOpen(false); } }] : []),
                   { label: 'Edit', icon: <EditIcon />, danger: false, action: () => { setEditMeta(true); setActionMenuOpen(false); } },
                   { label: 'Export', icon: <DownloadIcon />, danger: false, action: () => { handleExport(); setActionMenuOpen(false); } },
                   { label: 'Upload photo', icon: <UploadIcon />, danger: false, action: () => { fileInputRef.current?.click(); setActionMenuOpen(false); } },
@@ -1016,6 +1018,7 @@ export default function SODetailPage() {
             </div>
             {/* Actions */}
             <div style={{ flex: 1, padding: '6px 12px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
+              <Button variant="primary" icon={<TruckIcon />} onClick={() => setOutboundOpen(true)} disabled={!so.pallets.length}>出庫 Outbound</Button>
               <Button variant="danger" icon={<TrashIcon />} onClick={() => setDeleteConfirmOpen(true)}>Delete</Button>
               <Button variant="outline" icon={<DownloadIcon />} onClick={handleExport}>Export</Button>
               <Button variant="outline" icon={<EditIcon />} onClick={() => setEditMeta(true)}>Edit</Button>
@@ -1151,6 +1154,8 @@ export default function SODetailPage() {
 
       {/* Edit meta modal */}
       <EditSOModal open={editMeta} so={so} vendors={vendors} onClose={() => setEditMeta(false)} onSave={handleSaveMeta} />
+      <OutboundModal open={outboundOpen} so={so} onClose={() => setOutboundOpen(false)}
+        onDone={async () => { await loadSO(); setOutboundOpen(false); }} />
       <Modal open={!!exportWarn} onClose={() => setExportWarn(null)} title="Checklist doesn't match the boards" width={520}
         footer={<>
           <Button variant="ghost" onClick={() => setExportWarn(null)}>Cancel</Button>
@@ -1871,6 +1876,106 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
   );
 }
 
+// ─── Outbound (出庫) Modal ────────────────────────────────────────
+/** One-shot 出庫: the outbound date plus every pallet's Out Wt Gross, typed straight off the
+ *  weighing sheet (rows in gateload order, Enter jumps to the next). Confirm stays disabled
+ *  until all are filled; the server re-checks and derives Out Wt Net. */
+function OutboundModal({ open, so, onClose, onDone }: {
+  open: boolean; so: SODetail; onClose: () => void; onDone: () => Promise<void>;
+}) {
+  const toast = useToast();
+  const isMobile = useIsMobile();
+  const [date, setDate] = useState('');
+  const [gross, setGross] = useState<Record<number, string>>({});
+  const [saving, setSaving] = useState(false);
+  const inputs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const rows = [...so.pallets].sort((a, b) =>
+    (a.gateload_number || '').localeCompare(b.gateload_number || '', undefined, { numeric: true })
+    || a.pallet_seq - b.pallet_seq);
+
+  useEffect(() => {
+    if (!open) return;
+    setDate(so.outbound_date || new Date().toISOString().slice(0, 10));
+    setGross(Object.fromEntries(so.pallets.map(p => [p.id, p.out_weight_gross ? parseFloat(p.out_weight_gross).toFixed(2) : ''])));
+  }, [open]);
+
+  const valid = (v: string | undefined) => !!v && v.trim() !== '' && parseFloat(v) > 0;
+  const filled = rows.filter(p => valid(gross[p.id])).length;
+  const ready = !!date && rows.length > 0 && filled === rows.length;
+
+  const confirm = async () => {
+    if (!ready) return;
+    setSaving(true);
+    try {
+      await api.sos.outbound(so.id, {
+        outbound_date: date,
+        pallets: rows.map(p => ({ id: p.id, out_weight_gross: gross[p.id].trim() })),
+      });
+      await onDone();
+      toast('Marked as 出庫');
+    } catch { toast('Failed to save 出庫'); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title={`出庫 ${so.so_number}`} width={isMobile ? 560 : 620}
+      footer={<>
+        <span style={{ marginRight: 'auto', fontSize: 12.5, color: ready ? 'var(--ink-3)' : '#b8782a' }} className="num">
+          {filled} / {rows.length} weighed
+        </span>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" icon={<TruckIcon />} onClick={confirm} disabled={!ready || saving}>
+          {saving ? 'Saving…' : 'Confirm 出庫'}
+        </Button>
+      </>}>
+      <div style={{ maxWidth: 220, marginBottom: 14 }}>
+        <Field label="Outbound Date"><Input value={date} onChange={setDate} type="date" /></Field>
+      </div>
+      <div style={{ border: '1px solid var(--hair)', borderRadius: 3, maxHeight: '55vh', overflowY: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead style={{ position: 'sticky', top: 0, background: 'var(--surface)', zIndex: 1 }}>
+            <tr>
+              <th style={{ ...thS, width: 90 }}>Gateload No</th>
+              <th style={thS}>Licence No</th>
+              <th style={{ ...thS, textAlign: 'right', width: 170 }}>Out Wt Gross (lb)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((p, i) => {
+              const v = gross[p.id] ?? '';
+              const bad = v.trim() !== '' && !valid(v);
+              return (
+                <tr key={p.id} style={{ borderTop: '1px solid var(--hair)' }}>
+                  <td style={{ ...tdS, fontSize: 15, fontWeight: 600 }} className="num">{p.gateload_number || '—'}</td>
+                  <td style={{ ...tdS, fontSize: 12.5 }} className="mono">{p.licence_number || '—'}</td>
+                  <td style={{ ...tdS, padding: '4px 10px' }}>
+                    <input ref={el => { inputs.current[i] = el; }} value={v} inputMode="decimal"
+                      autoFocus={i === 0 && !valid(v)}
+                      onChange={e => setGross(g => ({ ...g, [p.id]: e.target.value }))}
+                      onKeyDown={e => {
+                        if (e.key !== 'Enter') return;
+                        e.preventDefault();
+                        const next = inputs.current[i + 1];
+                        if (next) { next.focus(); next.select(); } else confirm();
+                      }}
+                      style={{
+                        width: '100%', padding: '6px 8px', borderRadius: 3, outline: 'none',
+                        border: `1px solid ${bad ? 'var(--err)' : v.trim() === '' ? '#d9a15a' : 'var(--hair-strong)'}`,
+                        background: 'var(--surface)', color: 'var(--ink)', fontSize: 14,
+                        fontFamily: 'inherit', textAlign: 'right', fontVariantNumeric: 'tabular-nums',
+                      }} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Add Pallet Modal ─────────────────────────────────────────────
 type PalletRowData = { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string };
 
@@ -2152,6 +2257,12 @@ const DownloadIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
     <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
+const TruckIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="1" y="3" width="15" height="13" /><polygon points="16 8 20 8 23 11 23 16 16 16 16 8" />
+    <circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" />
   </svg>
 );
 const UploadIcon = () => (

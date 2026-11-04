@@ -268,6 +268,67 @@ def so_detail(request, pk):
     return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def so_outbound(request, pk):
+    """One-shot 出庫: body { outbound_date, pallets: [{ id, out_weight_gross }] }.
+
+    Every pallet of the SO must be listed with a gross weight > 0; net is derived
+    (gross − Pallet.OUT_TARE_LB). All-or-nothing: any problem → 400, nothing saved.
+    """
+    from datetime import date as _date
+    from decimal import Decimal, InvalidOperation
+
+    try:
+        so = SO.objects.get(pk=pk)
+    except SO.DoesNotExist:
+        return Response({'error': 'SO not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    errors = {}
+    try:
+        outbound_date = _date.fromisoformat(str(request.data.get('outbound_date') or ''))
+    except ValueError:
+        errors['outbound_date'] = ['A valid date is required.']
+
+    so_pallets = {p.pk: p for p in so.pallets.all()}
+    gross_by_id = {}
+    seen = set()
+    bad = []
+    for row in request.data.get('pallets') or []:
+        pid = row.get('id') if isinstance(row, dict) else None
+        seen.add(pid)
+        if pid not in so_pallets:
+            bad.append(f'Pallet {pid} does not belong to this SO.')
+            continue
+        try:
+            gross = Decimal(str(row.get('out_weight_gross'))).quantize(Decimal('0.01'))
+        except (InvalidOperation, ValueError):
+            gross = None
+        if gross is None or not gross.is_finite() or gross <= 0:
+            bad.append(f'Gateload {so_pallets[pid].gateload_number or pid}: out weight gross must be > 0.')
+            continue
+        gross_by_id[pid] = gross
+    missing = [p for pid, p in so_pallets.items() if pid not in seen]
+    if missing:
+        bad.append('Missing out weight gross for gateload ' +
+                   ', '.join(p.gateload_number or str(p.pk) for p in missing) + '.')
+    if bad:
+        errors['pallets'] = bad
+    if errors:
+        return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+    tare = Decimal(Pallet.OUT_TARE_LB)
+    with transaction.atomic():
+        for pid, gross in gross_by_id.items():
+            p = so_pallets[pid]
+            p.out_weight_gross = gross
+            p.out_weight_net = max(gross - tare, Decimal('0.00'))
+            p.save(update_fields=['out_weight_gross', 'out_weight_net'])
+        so.outbound_date = outbound_date
+        so.save(update_fields=['outbound_date'])
+    return Response(SOSerializer(so).data)
+
+
 # ─────────────────────────────────────────────────── SO Photos
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

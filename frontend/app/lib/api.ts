@@ -117,6 +117,9 @@ export const api = {
     chipContainers: (soId: number) => apiGet<PalletChipContainer[]>(`/sos/${soId}/chip-containers/`),
     palletMpns: (soId: number) => apiGet<PalletMpnExportRow[]>(`/sos/${soId}/pallet-mpns/`),
     inventory: (soId: number) => apiGet<InventoryRow[]>(`/sos/${soId}/inventory/`),
+    // One-shot 出庫: date + every pallet's out gross weight; the server derives net.
+    outbound: (soId: number, d: { outbound_date: string; pallets: { id: number; out_weight_gross: string }[] }) =>
+      apiPost<SO>(`/sos/${soId}/outbound/`, d),
   },
 
   // Pallets

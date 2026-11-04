@@ -91,6 +91,9 @@ class SOPhoto(models.Model):
 
 
 class Pallet(models.Model):
+    # Pallet tare: out_weight_net = out_weight_gross − 75 lb (floored at 0).
+    OUT_TARE_LB = 75
+
     so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='pallets')
     pallet_seq = models.IntegerField()
     licence_number = models.CharField(max_length=50, blank=True)

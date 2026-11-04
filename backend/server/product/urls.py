@@ -20,6 +20,7 @@ urlpatterns = [
     # SOs
     path('sos/', views.so_list, name='so-list'),
     path('sos/<int:pk>/', views.so_detail, name='so-detail'),
+    path('sos/<int:pk>/outbound/', views.so_outbound, name='so-outbound'),
     path('sos/<int:so_pk>/photos/', views.so_photo_upload, name='so-photo-upload'),
     path('sos/<int:so_pk>/photos/<int:pk>/', views.so_photo_delete, name='so-photo-delete'),
     path('sos/<int:so_pk>/pallets/', views.pallet_list, name='pallet-list'),

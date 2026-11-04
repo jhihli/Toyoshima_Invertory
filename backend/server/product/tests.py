@@ -1424,3 +1424,82 @@ class ChecklistCheckTests(TestCase):
         with CaptureQueriesContext(connection) as seven:
             self.client.get(url)
         self.assertLessEqual(len(seven), len(two) + 5 * 3)   # boxes/checklist counts stay per pallet
+
+
+class SoOutboundTests(TestCase):
+    """POST sos/<id>/outbound/ — one-shot 出庫: date + every pallet's out gross weight."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        vendor = Vendor.objects.create(name='MSFT')
+        self.so = SO.objects.create(so_number='S06-1', vendor=vendor, inbound_date=date(2026, 11, 1))
+        self.p1 = Pallet.objects.create(so=self.so, pallet_seq=1, gateload_number='1', qty=1)
+        self.p2 = Pallet.objects.create(so=self.so, pallet_seq=2, gateload_number='2', qty=1)
+        self.url = f'/product/sos/{self.so.pk}/outbound/'
+
+    def post(self, body):
+        return self.client.post(self.url, body, format='json')
+
+    def test_saves_date_gross_and_net(self):
+        resp = self.post({'outbound_date': '2026-11-04', 'pallets': [
+            {'id': self.p1.pk, 'out_weight_gross': '1100'},
+            {'id': self.p2.pk, 'out_weight_gross': '838.5'},
+        ]})
+        self.assertEqual(resp.status_code, 200)
+        self.so.refresh_from_db(); self.p1.refresh_from_db(); self.p2.refresh_from_db()
+        self.assertEqual(self.so.outbound_date, date(2026, 11, 4))
+        self.assertEqual(str(self.p1.out_weight_gross), '1100.00')
+        self.assertEqual(str(self.p1.out_weight_net), '1025.00')
+        self.assertEqual(str(self.p2.out_weight_net), '763.50')
+
+    def test_net_never_negative(self):
+        self.post({'outbound_date': '2026-11-04', 'pallets': [
+            {'id': self.p1.pk, 'out_weight_gross': '50'},
+            {'id': self.p2.pk, 'out_weight_gross': '100'},
+        ]})
+        self.p1.refresh_from_db()
+        self.assertEqual(str(self.p1.out_weight_net), '0.00')
+
+    def test_missing_pallet_rejected_and_nothing_saved(self):
+        resp = self.post({'outbound_date': '2026-11-04', 'pallets': [
+            {'id': self.p1.pk, 'out_weight_gross': '1100'},
+        ]})
+        self.assertEqual(resp.status_code, 400)
+        self.so.refresh_from_db(); self.p1.refresh_from_db()
+        self.assertIsNone(self.so.outbound_date)
+        self.assertIsNone(self.p1.out_weight_gross)
+
+    def test_blank_or_zero_gross_rejected(self):
+        for bad in ['', '0', '-5', 'abc', None]:
+            resp = self.post({'outbound_date': '2026-11-04', 'pallets': [
+                {'id': self.p1.pk, 'out_weight_gross': '1100'},
+                {'id': self.p2.pk, 'out_weight_gross': bad},
+            ]})
+            self.assertEqual(resp.status_code, 400, bad)
+        self.p1.refresh_from_db()
+        self.assertIsNone(self.p1.out_weight_gross)
+
+    def test_date_required(self):
+        resp = self.post({'outbound_date': '', 'pallets': [
+            {'id': self.p1.pk, 'out_weight_gross': '1100'},
+            {'id': self.p2.pk, 'out_weight_gross': '900'},
+        ]})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_pallet_of_another_so_rejected(self):
+        other = SO.objects.create(so_number='S06-2', vendor=self.so.vendor, inbound_date=date(2026, 11, 1))
+        foreign = Pallet.objects.create(so=other, pallet_seq=1, qty=1)
+        resp = self.post({'outbound_date': '2026-11-04', 'pallets': [
+            {'id': self.p1.pk, 'out_weight_gross': '1100'},
+            {'id': self.p2.pk, 'out_weight_gross': '900'},
+            {'id': foreign.pk, 'out_weight_gross': '900'},
+        ]})
+        self.assertEqual(resp.status_code, 400)
+        foreign.refresh_from_db()
+        self.assertIsNone(foreign.out_weight_gross)
+
+    def test_missing_so_404(self):
+        resp = self.client.post('/product/sos/999999/outbound/', {}, format='json')
+        self.assertEqual(resp.status_code, 404)
