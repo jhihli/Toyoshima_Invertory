@@ -729,8 +729,8 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
             <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-3)', marginBottom: 6, fontWeight: 500 }}>How is it counted?</div>
             <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8 }}>
               {[
-                { on: false, title: 'Per board', sub: 'Same qty on every board. Checked against the board qty; shares the board\'s cut cost.' },
-                { on: true, title: 'Per piece', sub: 'Qty varies (e.g. RAM sticks, parts from devices). Counted from the checklist; priced per piece.' },
+                { on: false, title: 'Per board', sub: '有板子的芯片' },
+                { on: true, title: 'Per piece', sub: '內存條 or 沒有板子的芯片' },
               ].map(o => (
                 <label key={o.title} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '9px 11px', cursor: 'pointer', borderRadius: 3,
                   border: `1px solid ${variableQty === o.on ? 'var(--accent)' : 'var(--hair)'}`,
