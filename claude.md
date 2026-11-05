@@ -112,6 +112,20 @@ see `docs/SECURITY.md`. The deploy directory is `~/Toyoshima_Invertory` (misspel
 
 ### Update procedure
 
+Automated: after `git push origin main`, run `ssh toyoshima '~/Toyoshima_Invertory/scripts/deploy.sh'`
+from the dev PC (add `--migrate` when it reports new migrations). See `docs/DEPLOY.md`.
+
+**Standing instruction from the user (2026-11-05):** when the user asks to update / deploy the
+server (更新服务器), Claude does the whole thing without asking again — commit, `git push origin main`,
+run `deploy.sh`, report the result. The only exception: if `deploy.sh` exits 2 (new migrations),
+read them and confirm with the user before rerunning with `--migrate`.
+
+Connectivity: `ssh toyoshima` uses the office LAN (`192.168.1.196`). From outside the office, the
+server is reached over Tailscale instead (switch the alias `HostName` to the server's `100.x` IP);
+never forward port 22 on the router.
+
+The manual steps the script performs:
+
 ```bash
 cd ~/Toyoshima_Invertory      # note: repo/dir name is misspelled "Invertory"
 git pull origin main
