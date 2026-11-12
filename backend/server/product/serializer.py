@@ -262,7 +262,7 @@ class SOSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'so_number', 'vendor', 'vendor_name', 'vendor_weight_rule',
             'weight_rule', 'effective_weight_rule',
-            'inbound_date', 'outbound_date', 'tantalum_lb', 'note', 'created_at',
+            'inbound_date', 'outbound_date', 'tantalum_weight', 'tantalum_unit', 'note', 'created_at',
             'total_pallet_count', 'pallet_record_count', 'total_pallet_weight',
             'total_board_count', 'total_board_qty',
         ]

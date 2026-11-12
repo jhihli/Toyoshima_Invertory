@@ -1184,20 +1184,26 @@ class SoTantalumTests(TestCase):
         self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
         self.so, _ = make_so_with_pallets()
 
-    def test_so_api_reads_and_writes_tantalum_lb(self):
-        r = self.client.put(f'/product/sos/{self.so.id}/', {'tantalum_lb': '4.5'}, format='json')
+    def test_so_api_reads_and_writes_weight_and_unit(self):
+        r = self.client.put(f'/product/sos/{self.so.id}/', {'tantalum_weight': '2268', 'tantalum_unit': 'g'}, format='json')
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(self.client.get(f'/product/sos/{self.so.id}/').json()['tantalum_lb'], '4.50')
+        so = self.client.get(f'/product/sos/{self.so.id}/').json()
+        self.assertEqual((so['tantalum_weight'], so['tantalum_unit']), ('2268.00', 'g'))
 
-    def test_blank_is_allowed(self):
-        self.assertIsNone(self.client.get(f'/product/sos/{self.so.id}/').json()['tantalum_lb'])
+    def test_blank_weight_defaults_to_pounds(self):
+        so = self.client.get(f'/product/sos/{self.so.id}/').json()
+        self.assertEqual((so['tantalum_weight'], so['tantalum_unit']), (None, 'lb'))
+
+    def test_unknown_unit_rejected(self):
+        r = self.client.put(f'/product/sos/{self.so.id}/', {'tantalum_unit': 'kg'}, format='json')
+        self.assertEqual(r.status_code, 400)
 
     def test_pallet_has_no_tantalum_field(self):
         pallet = self.client.get(f'/product/sos/{self.so.id}/').json()['pallets'][0]
         self.assertNotIn('tantalum_wt', pallet)
 
     def test_inventory_has_no_tantalum_rows(self):
-        self.so.tantalum_lb = '5'; self.so.save()
+        self.so.tantalum_weight = '5'; self.so.save()
         rows = self.client.get(f'/product/sos/{self.so.id}/inventory/').json()
         self.assertEqual([r for r in rows if r['kind'] == 'tantalum'], [])
 

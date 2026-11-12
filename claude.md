@@ -228,7 +228,7 @@ Key field notes:
   MSFT checklists pick a chip; Sales Orders checklists stay free text.
 - `PalletChipNG` — failed (NG) chips per (pallet, chip), edited from the Pallets table's NG column.
   The SO export's Inventory sheet is built by `GET sos/<id>/inventory/` (checklist lines → NG rows,
-  per pallet; tantalum is one SO-level weight, `SO.tantalum_lb`, reported in grams on
+  per pallet; tantalum is one SO-level weight, `SO.tantalum_weight` + `tantalum_unit` (lb|g), reported as entered on
   Bid_Template_Tantalum); every other sheet's chip quantities are formulas over that sheet.
 - `Pallet.board_qty` — legacy hand-typed board count, read only as the fallback in
   `effective_board_qty`; never written by the UI any more

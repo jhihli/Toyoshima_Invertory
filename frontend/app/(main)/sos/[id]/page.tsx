@@ -578,14 +578,21 @@ export default function SODetailPage() {
         // MPN name + the E–H roll-up cells sit on a light blue band (col A stays dark teal).
         for (let c = 2; c <= 8; c++) bpnRow.getCell(c).fill = ABC_MPN_FILL;
         const bpnNum = bpnRow.number;
+        const presentSlots = buildSlots(pb.presentChips);
+        const perPieceSlots = presentSlots.filter(s => s.variable);
+        // A block with nothing to cut (e.g. DEVICE-MIXED: parts from devices, all per piece) has
+        // no per-chip service rows — only its per-piece lines, then the Total.
+        const hasCut = presentSlots.some(s => !s.variable);
+        const modulePieceTotal = moduleQtyByMpn.get(entry.mpn.id) ?? 0;
         bpnRow.getCell(5).value = pb.boards;                    // Qty of Boards Processed: pallets with a checklist only
         // # chips per board = whole slots the checklist names on this board (slot groups count
         // once); Total Chips Harvested = the checklist quantities, not boards × that.
-        bpnRow.getCell(6).value = bomTotalQty(pb.presentChips);
-        // Cut chips only — variable-qty modules are billed on their own row below.
-        bpnRow.getCell(7).value = (harvestedByMpn.get(entry.mpn.id) ?? 0) - (moduleQtyByMpn.get(entry.mpn.id) ?? 0);
-        // Total cost = harvested chips × per-chip total service cost (this block's Total row, col B).
-        bpnRow.getCell(8).value = { formula: `G${bpnNum}*B${bpnNum + 6}` };
+        bpnRow.getCell(6).value = hasCut ? bomTotalQty(pb.presentChips) : 'NA';
+        // Cut chips only — per-piece parts are billed on their own rows below. For an
+        // all-per-piece block, every piece.
+        bpnRow.getCell(7).value = hasCut
+          ? (harvestedByMpn.get(entry.mpn.id) ?? 0) - modulePieceTotal
+          : modulePieceTotal;
         bpnRow.getCell(8).numFmt = ACCOUNTING_FMT;   // "$" at the left of the value
         abcHCells.push(`H${bpnNum}`);
 
@@ -593,23 +600,21 @@ export default function SODetailPage() {
         const subHdr = wsActivityCost.addRow(['Service', 'Cost', 'Definition']);
         subHdr.eachCell(cell => { cell.fill = HDR_FILL; cell.font = HDR_FONT; });
 
-        // Data rows — track row range for Total formula
-        const dataStartRow = wsActivityCost.lastRow!.number + 1;
-        wsActivityCost.addRow(['Chip Cut Out',        chipCutCost ?? '', cutDef]);
-        wsActivityCost.addRow(['Chip Reball',         '', 'The cost to reball a single chip by chip type']);
-        wsActivityCost.addRow(['Chip Test',           '', 'The cost to test a single chip by chip type']);
-        wsActivityCost.addRow(['Chip Packaging tray', '', 'The cost to pack out a single chip by chip type']);
-        const dataEndRow = wsActivityCost.lastRow!.number;
+        // Per-chip service rows — track their range for the Total formula
+        let dataStartRow = 0, dataEndRow = 0;
+        if (hasCut) {
+          dataStartRow = wsActivityCost.lastRow!.number + 1;
+          wsActivityCost.addRow(['Chip Cut Out',        chipCutCost ?? '', cutDef]);
+          wsActivityCost.addRow(['Chip Reball',         '', 'The cost to reball a single chip by chip type']);
+          wsActivityCost.addRow(['Chip Test',           '', 'The cost to test a single chip by chip type']);
+          wsActivityCost.addRow(['Chip Packaging tray', '', 'The cost to pack out a single chip by chip type']);
+          dataEndRow = wsActivityCost.lastRow!.number;
+        }
 
-        // Total row
-        const totalRow = wsActivityCost.addRow(['Total', '', '']);
-        totalRow.getCell(2).value = { formula: `SUM(B${dataStartRow}:B${dataEndRow})` };
-        totalRow.getCell(1).font = { bold: true };
-        abcLastTotalRow = totalRow;
-
-        // Variable-qty modules (RAM sticks): pieces from the checklist × their own unit cost,
-        // separate from the cut cost. Each row's H joins the grand total.
-        for (const slot of buildSlots(pb.presentChips).filter(s => s.variable)) {
+        // Per-piece parts (RAM sticks, parts from devices): pieces from the checklist × their own
+        // unit cost, separate from the cut cost.
+        const pieceH: string[] = [];
+        for (const slot of perPieceSlots) {
           const chip = slot.chips[0];
           const mRow = wsActivityCost.addRow([
             `Per piece: ${slot.label}`, chip.chip_cost != null ? r3(Number(chip.chip_cost)) : '',
@@ -619,7 +624,21 @@ export default function SODetailPage() {
           mRow.getCell(1).font = { bold: true };
           mRow.getCell(8).value = { formula: `G${mRow.number}*B${mRow.number}` };
           mRow.getCell(8).numFmt = ACCOUNTING_FMT;
-          abcHCells.push(`H${mRow.number}`);
+          pieceH.push(`H${mRow.number}`);
+        }
+
+        // Total row — last in the block
+        const totalRow = wsActivityCost.addRow(['Total', '', '']);
+        totalRow.getCell(1).font = { bold: true };
+        abcLastTotalRow = totalRow;
+        if (hasCut) {
+          totalRow.getCell(2).value = { formula: `SUM(B${dataStartRow}:B${dataEndRow})` };
+          // Total cost = cut chips × per-chip total service cost; per-piece rows join the grand total.
+          bpnRow.getCell(8).value = { formula: `G${bpnNum}*B${totalRow.number}` };
+          abcHCells.push(...pieceH);
+        } else {
+          // All per piece: the block's cost is the sum of its per-piece lines.
+          bpnRow.getCell(8).value = pieceH.length ? { formula: `SUM(${pieceH.join(',')})` } : 0;
         }
 
         // Spacer between MPN blocks
@@ -793,12 +812,13 @@ export default function SODetailPage() {
       const wsBidTa = workbook.addWorksheet('Bid_Template_Tantalum');
       wsBidTa.columns = BID_COLS;
       styleHdr(wsBidTa.addRow(BID_HEADER));
-      // Tantalum is weighed once for the whole SO, in pounds (SO.tantalum_lb); the customer's
-      // template reports grams, so convert (1 lb = 453.59237 g) and round to whole grams.
-      const taGrams = so.tantalum_lb ? Math.round(parseFloat(so.tantalum_lb) * 453.59237) : 0;
-      const taRow = wsBidTa.addRow(['No part number', 'Grams of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, taGrams, HARVEST_STATE]);
+      // Tantalum is weighed once for the whole SO and reported as entered, in the unit chosen
+      // with it in Edit SO (SO.tantalum_weight + tantalum_unit: "lb" or "g").
+      const taGrams = so.tantalum_unit === 'g';
+      const taQty = so.tantalum_weight ? parseFloat(so.tantalum_weight) : 0;
+      const taRow = wsBidTa.addRow(['No part number', taGrams ? 'Grams of tantalum' : 'Pounds of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, taQty, HARVEST_STATE]);
       const bidTaTotal = wsBidTa.addRow(['', '', '', '', '', '', '', '']);
-      bidTaTotal.getCell(6).value = 'Total (grams)';
+      bidTaTotal.getCell(6).value = taGrams ? 'Total (grams)' : 'Total (lb)';
       bidTaTotal.getCell(7).value = { formula: `SUM(G${taRow.number})` };
 
       const buf = await workbook.xlsx.writeBuffer();
@@ -897,7 +917,7 @@ export default function SODetailPage() {
             </div>
             <div style={{ flex: 1, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Tantalum</span>
-              <span className="num" style={{ fontSize: 13, color: so.tantalum_lb ? 'var(--ink)' : 'var(--ink-5)' }}>{so.tantalum_lb ? `${parseFloat(so.tantalum_lb)} lb` : '—'}</span>
+              <span className="num" style={{ fontSize: 13, color: so.tantalum_weight ? 'var(--ink)' : 'var(--ink-5)' }}>{so.tantalum_weight ? `${parseFloat(so.tantalum_weight)} ${so.tantalum_unit}` : '—'}</span>
             </div>
           </div>
           {/* Note row — hidden when empty */}
@@ -962,7 +982,7 @@ export default function SODetailPage() {
             {/* Tantalum — one weight for the whole SO, edited in Edit SO */}
             <div style={{ flex: '0 0 96px', padding: '6px 12px', borderRight: '1px solid var(--hair)' }}>
               <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Tantalum</div>
-              <div className="num" style={{ fontSize: 13, color: so.tantalum_lb ? 'var(--ink)' : 'var(--ink-5)' }}>{so.tantalum_lb ? `${parseFloat(so.tantalum_lb)} lb` : '—'}</div>
+              <div className="num" style={{ fontSize: 13, color: so.tantalum_weight ? 'var(--ink)' : 'var(--ink-5)' }}>{so.tantalum_weight ? `${parseFloat(so.tantalum_weight)} ${so.tantalum_unit}` : '—'}</div>
             </div>
             {/* Photos dropdown */}
             <div ref={photosMenuRef} style={{ flex: '0 0 auto', padding: '6px 12px', position: 'relative', display: 'flex', alignItems: 'center', borderRight: '1px solid var(--hair)' }}>
@@ -1831,20 +1851,22 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
   const [inboundDate, setInboundDate] = useState(so.inbound_date);
   const [outboundDate, setOutboundDate] = useState(so.outbound_date ?? '');
   const [note, setNote] = useState(so.note);
-  const [tantalumLb, setTantalumLb] = useState(so.tantalum_lb ? String(parseFloat(so.tantalum_lb)) : '');
+  const [tantalumWeight, setTantalumWeight] = useState(so.tantalum_weight ? String(parseFloat(so.tantalum_weight)) : '');
+  const [tantalumUnit, setTantalumUnit] = useState<string>(so.tantalum_unit || 'lb');
   useEffect(() => {
     if (open) {
       setSoNumber(so.so_number); setVendorId(String(so.vendor));
       setInboundDate(so.inbound_date); setOutboundDate(so.outbound_date ?? '');
       setNote(so.note);
-      setTantalumLb(so.tantalum_lb ? String(parseFloat(so.tantalum_lb)) : '');
+      setTantalumWeight(so.tantalum_weight ? String(parseFloat(so.tantalum_weight)) : '');
+      setTantalumUnit(so.tantalum_unit || 'lb');
     }
   }, [open]);
   return (
     <Modal open={open} onClose={onClose} title={`Edit ${so.so_number}`} width={560}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" onClick={() => onSave({ so_number: soNumber, vendor: +vendorId, inbound_date: inboundDate, outbound_date: outboundDate || null, tantalum_lb: tantalumLb.trim() || null, note } as any)}>Save</Button>
+        <Button variant="primary" onClick={() => onSave({ so_number: soNumber, vendor: +vendorId, inbound_date: inboundDate, outbound_date: outboundDate || null, tantalum_weight: tantalumWeight.trim() || null, tantalum_unit: tantalumUnit, note } as any)}>Save</Button>
       </>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="SO Number"><Input value={soNumber} onChange={setSoNumber} /></Field>
@@ -1854,7 +1876,12 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
         </Field>
         <Field label="Inbound Date"><Input value={inboundDate} onChange={setInboundDate} type="date" /></Field>
         <Field label="Outbound Date"><Input value={outboundDate} onChange={setOutboundDate} type="date" /></Field>
-        <Field label="Tantalum (lb)"><Input value={tantalumLb} onChange={setTantalumLb} type="number" placeholder="Total for the SO" /></Field>
+        <Field label="Tantalum">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 84px', gap: 8 }}>
+            <Input value={tantalumWeight} onChange={setTantalumWeight} type="number" placeholder="Total for the SO" />
+            <Select value={tantalumUnit} onChange={setTantalumUnit} options={[{ value: 'lb', label: 'lb' }, { value: 'g', label: 'g' }]} />
+          </div>
+        </Field>
         <Field label="Note" span={2}>
           <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
             style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--hair-strong)', background: 'var(--surface)', borderRadius: 3, fontFamily: 'inherit', fontSize: 13, resize: 'vertical', outline: 'none', color: 'var(--ink)' }} />

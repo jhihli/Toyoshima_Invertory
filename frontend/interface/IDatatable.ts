@@ -15,8 +15,9 @@ export interface SO {
   effective_weight_rule: 'per_pallet' | 'aggregated';
   inbound_date: string;
   outbound_date: string | null;
-  /** Tantalum for the whole SO, in pounds (Decimal string); null = not weighed. */
-  tantalum_lb: string | null;
+  /** Tantalum for the whole SO (Decimal string), in `tantalum_unit`; null = not weighed. */
+  tantalum_weight: string | null;
+  tantalum_unit: 'lb' | 'g';
   note: string;
   created_at: string;
   total_pallet_count: number;

@@ -31,9 +31,11 @@ class SO(models.Model):
     weight_rule = models.CharField(max_length=20, blank=True)
     inbound_date = models.DateField()
     outbound_date = models.DateField(null=True, blank=True)
-    # Tantalum is weighed once for the whole order, in pounds. The export's
-    # Bid_Template_Tantalum reports it in grams (x 453.59237).
-    tantalum_lb = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    # Tantalum is weighed once for the whole order, in the unit chosen with it. The export's
+    # Bid_Template_Tantalum reports it as entered, in that unit.
+    TANTALUM_UNIT_CHOICES = [('lb', 'lb'), ('g', 'g')]
+    tantalum_weight = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    tantalum_unit = models.CharField(max_length=2, choices=TANTALUM_UNIT_CHOICES, default='lb')
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
