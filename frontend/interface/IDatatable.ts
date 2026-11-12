@@ -15,6 +15,8 @@ export interface SO {
   effective_weight_rule: 'per_pallet' | 'aggregated';
   inbound_date: string;
   outbound_date: string | null;
+  /** Tantalum for the whole SO, in pounds (Decimal string); null = not weighed. */
+  tantalum_lb: string | null;
   note: string;
   created_at: string;
   total_pallet_count: number;
@@ -59,7 +61,6 @@ export interface Pallet {
   actual_weight: string | null;
   out_weight_gross: string | null;
   out_weight_net: string | null;
-  tantalum_wt: string | null;
   material_type: string;
   qty: number;
   /** Sum of this pallet's MPN board_qty, or the legacy value. Read-only. */

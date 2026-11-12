@@ -748,7 +748,7 @@ def so_inventory(request, so_pk):
     """Rows for the export's Inventory sheet, pallet by pallet.
 
     Per pallet: every checklist line (unfilled ones too, blank), then one "NG" row per
-    chip with failures, then a Tantalum row when the pallet has a tantalum weight.
+    chip with failures. Tantalum is an SO-level weight (SO.tantalum_lb), not a row here.
     """
     so = get_object_or_404(SO, pk=so_pk)
     pallets = so.pallets.prefetch_related('checklists__chip', 'chip_ngs__chip__brand').order_by('pallet_seq')
@@ -776,10 +776,6 @@ def so_inventory(request, so_pk):
                         'brand': ng.chip.brand.name if ng.chip.brand_id else '', 'date': None,
                         'processed_type': processed(ng.chip), 'packaging_type': ng.chip.packaging_type,
                         'qty': ng.qty})
-        if p.tantalum_wt:
-            grams = format(p.tantalum_wt.normalize(), 'f')
-            out.append({**base, 'kind': 'tantalum', 'container_uid': 'Tantalum', 'chip_mpn': '', 'brand': '', 'date': None,
-                        'processed_type': 'Harvested', 'packaging_type': 'bag', 'qty': f'{grams}g'})
     return Response(out)
 
 

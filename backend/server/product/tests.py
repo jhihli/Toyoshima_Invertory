@@ -1147,7 +1147,7 @@ class SoInventoryTests(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
         self.so, (self.p1, self.p2) = make_so_with_pallets()
-        self.p1.gateload_number = '7'; self.p1.tantalum_wt = '73.00'; self.p1.save()
+        self.p1.gateload_number = '7'; self.p1.save()
         mpn = MPN.objects.create(name='M')
         self.slk = Chip.objects.create(mpn=mpn, chip_mpn='SLKM8', processed_type='harvested', packaging_type='tray')
         PalletMPN.objects.create(pallet=self.p1, mpn=mpn)
@@ -1164,7 +1164,6 @@ class SoInventoryTests(TestCase):
             ('7', 'checklist', 'S-1-1', 'SLKM8', 'Harvested', 'tray', 331),
             ('7', 'checklist', 'S-1-2', '', '', '', None),
             ('7', 'ng', 'NG', 'SLKM8', 'Harvested', 'tray', 19),
-            ('7', 'tantalum', 'Tantalum', '', 'Harvested', 'bag', '73g'),
             ('2', 'checklist', 'S-2-1', 'X9', '', '', 4),
         ])
 
@@ -1174,12 +1173,33 @@ class SoInventoryTests(TestCase):
         self.assertEqual(by_uid['S-2-1']['brand'], 'Dell')                 # free-text line keeps its brand
         self.assertEqual(by_uid['S-1-1']['date'], Checklist.objects.get(barcode='S-1-1').created_at.date().isoformat())
         self.assertIsNone(by_uid['NG']['date'])
-        self.assertIsNone([r for r in rows if r['kind'] == 'tantalum'][0]['date'])
 
-    def test_fractional_tantalum_kept(self):
-        self.p1.tantalum_wt = '72.50'; self.p1.save()
+
+class SoTantalumTests(TestCase):
+    """Tantalum is weighed once per SO (pounds), not per pallet."""
+
+    def setUp(self):
+        from rest_framework.test import APIClient
+        self.client = APIClient()
+        self.client.force_authenticate(user=get_user_model().objects.create_user(username='u', password='p'))
+        self.so, _ = make_so_with_pallets()
+
+    def test_so_api_reads_and_writes_tantalum_lb(self):
+        r = self.client.put(f'/product/sos/{self.so.id}/', {'tantalum_lb': '4.5'}, format='json')
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(self.client.get(f'/product/sos/{self.so.id}/').json()['tantalum_lb'], '4.50')
+
+    def test_blank_is_allowed(self):
+        self.assertIsNone(self.client.get(f'/product/sos/{self.so.id}/').json()['tantalum_lb'])
+
+    def test_pallet_has_no_tantalum_field(self):
+        pallet = self.client.get(f'/product/sos/{self.so.id}/').json()['pallets'][0]
+        self.assertNotIn('tantalum_wt', pallet)
+
+    def test_inventory_has_no_tantalum_rows(self):
+        self.so.tantalum_lb = '5'; self.so.save()
         rows = self.client.get(f'/product/sos/{self.so.id}/inventory/').json()
-        self.assertEqual([r['qty'] for r in rows if r['kind'] == 'tantalum'], ['72.5g'])
+        self.assertEqual([r for r in rows if r['kind'] == 'tantalum'], [])
 
 
 class PalletChipsPerBoardAutoTests(TestCase):

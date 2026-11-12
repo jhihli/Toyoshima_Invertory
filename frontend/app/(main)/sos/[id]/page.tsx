@@ -121,8 +121,7 @@ export default function SODetailPage() {
     boardQty: acc.boardQty + (p.board_qty ?? 0),
     outWeightGross: acc.outWeightGross + (p.out_weight_gross ? parseFloat(p.out_weight_gross) : 0),
     outWeightNet: acc.outWeightNet + (p.out_weight_net ? parseFloat(p.out_weight_net) : 0),
-    tantalumWt: acc.tantalumWt + (p.tantalum_wt ? parseFloat(p.tantalum_wt) : 0),
-  }), { weight: 0, qty: 0, boardQty: 0, outWeightGross: 0, outWeightNet: 0, tantalumWt: 0 });
+  }), { weight: 0, qty: 0, boardQty: 0, outWeightGross: 0, outWeightNet: 0 });
 
   const boardPalletOptions = so.pallets.map(p => {
     const parts = [p.licence_number, p.gateload_number].filter(Boolean);
@@ -149,14 +148,13 @@ export default function SODetailPage() {
     } catch { toast('Failed to delete pallet'); }
   };
 
-  const handleAddPallet = async (data: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string; pendingPhotos?: string[] }) => {
+  const handleAddPallet = async (data: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; material_type: string; qty: string; licence_number: string; gateload_number: string; pendingPhotos?: string[] }) => {
     try {
       const created = await api.pallets.create(soId, {
         in_weight_gross: data.in_weight_gross as any,
         actual_weight: data.actual_weight ? (data.actual_weight as any) : null,
         out_weight_gross: data.out_weight_gross ? (data.out_weight_gross as any) : null,
         out_weight_net: data.out_weight_net ? (data.out_weight_net as any) : null,
-        tantalum_wt: data.tantalum_wt ? (data.tantalum_wt as any) : null,
         material_type: data.material_type,
         qty: +data.qty,
         licence_number: data.licence_number,
@@ -174,7 +172,7 @@ export default function SODetailPage() {
     } catch { toast('Failed to add pallet'); }
   };
 
-  const handleAddPalletsBulk = async (rows: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string }[]) => {
+  const handleAddPalletsBulk = async (rows: { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; material_type: string; qty: string; licence_number: string; gateload_number: string }[]) => {
     let added = 0;
     for (const data of rows) {
       try {
@@ -183,7 +181,6 @@ export default function SODetailPage() {
           actual_weight: data.actual_weight ? (data.actual_weight as any) : null,
           out_weight_gross: data.out_weight_gross ? (data.out_weight_gross as any) : null,
           out_weight_net: data.out_weight_net ? (data.out_weight_net as any) : null,
-          tantalum_wt: data.tantalum_wt ? (data.tantalum_wt as any) : null,
           material_type: data.material_type,
           qty: +data.qty,
           licence_number: data.licence_number,
@@ -484,7 +481,7 @@ export default function SODetailPage() {
       // Every other sheet's chip quantities are formulas over this sheet, by its name.
       // Filled from the system (GET /sos/<id>/inventory/): per pallet, every checklist line
       // (Container UID = its barcode; unfilled lines stay blank), then one "NG" row per chip
-      // with failures, then the pallet's Tantalum row ("73g"). The other sheets' formulas read
+      // with failures. (Tantalum is one SO-level weight, reported on Bid_Template_Tantalum.) The other sheets' formulas read
       // this sheet, so correcting a value here in Excel updates them too.
       const wsInventory = workbook.addWorksheet('Checklist');
       wsInventory.columns = [{ width: 10 }, { width: 34 }, { width: 24 }, { width: 18 }, { width: 16 }, { width: 8 }];
@@ -796,20 +793,10 @@ export default function SODetailPage() {
       const wsBidTa = workbook.addWorksheet('Bid_Template_Tantalum');
       wsBidTa.columns = BID_COLS;
       styleHdr(wsBidTa.addRow(BID_HEADER));
-      // Quantity is a LIVE total off the Inventory sheet's Tantalum rows (one per pallet).
-      // Tantalum is logged there with Container UID "Tantalum" (col B) and a TEXT qty like "73g", so a
-      // plain SUMIF (which only adds numbers) returns 0 — strip the "g" and sum with SUMPRODUCT.
-      // IFERROR(VALUE(...),0) turns each blank/non-numeric cell into 0. Rows bounded generously.
-      // MUST be an array formula: SUBSTITUTE/VALUE are scalar, so a regular formula makes modern
-      // Excel insert implicit-intersection "@" on the range (collapsing it to one cell → wrong
-      // total). Writing it as t="array" forces whole-range evaluation, no "@".
-      const TA_UID = 'Checklist!$B$2:$B$10000', TA_QTY = 'Checklist!$F$2:$F$10000';
-      const taRow = wsBidTa.addRow(['No part number', 'Grams of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, 0, HARVEST_STATE]);
-      taRow.getCell(7).value = {
-        formula: `SUMPRODUCT((${TA_UID}="Tantalum")*IFERROR(VALUE(SUBSTITUTE(${TA_QTY},"g","")),0))`,
-        ref: `G${taRow.number}`,
-        shareType: 'array',
-      } as any;
+      // Tantalum is weighed once for the whole SO, in pounds (SO.tantalum_lb); the customer's
+      // template reports grams, so convert (1 lb = 453.59237 g) and round to whole grams.
+      const taGrams = so.tantalum_lb ? Math.round(parseFloat(so.tantalum_lb) * 453.59237) : 0;
+      const taRow = wsBidTa.addRow(['No part number', 'Grams of tantalum', 'Various', CIRCULAR_CENTER, 'Capacitor', 1, taGrams, HARVEST_STATE]);
       const bidTaTotal = wsBidTa.addRow(['', '', '', '', '', '', '', '']);
       bidTaTotal.getCell(6).value = 'Total (grams)';
       bidTaTotal.getCell(7).value = { formula: `SUM(G${taRow.number})` };
@@ -904,9 +891,13 @@ export default function SODetailPage() {
               <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Pallets</span>
               <span className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>{so.total_pallet_count}</span>
             </div>
-            <div style={{ flex: 1, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ flex: 1, padding: '10px 14px', borderRight: '1px solid var(--hair)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Boards</span>
               <span className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>{so.total_board_count}</span>
+            </div>
+            <div style={{ flex: 1, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)' }}>Tantalum</span>
+              <span className="num" style={{ fontSize: 13, color: so.tantalum_lb ? 'var(--ink)' : 'var(--ink-5)' }}>{so.tantalum_lb ? `${parseFloat(so.tantalum_lb)} lb` : '—'}</span>
             </div>
           </div>
           {/* Note row — hidden when empty */}
@@ -967,6 +958,11 @@ export default function SODetailPage() {
             <div style={{ flex: '0 0 90px', padding: '6px 12px', borderRight: '1px solid var(--hair)' }}>
               <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Boards</div>
               <div className="num" style={{ fontSize: 13, color: 'var(--ink)' }}>{so.total_board_count}</div>
+            </div>
+            {/* Tantalum — one weight for the whole SO, edited in Edit SO */}
+            <div style={{ flex: '0 0 96px', padding: '6px 12px', borderRight: '1px solid var(--hair)' }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--ink-4)', marginBottom: 2 }}>Tantalum</div>
+              <div className="num" style={{ fontSize: 13, color: so.tantalum_lb ? 'var(--ink)' : 'var(--ink-5)' }}>{so.tantalum_lb ? `${parseFloat(so.tantalum_lb)} lb` : '—'}</div>
             </div>
             {/* Photos dropdown */}
             <div ref={photosMenuRef} style={{ flex: '0 0 auto', padding: '6px 12px', position: 'relative', display: 'flex', alignItems: 'center', borderRight: '1px solid var(--hair)' }}>
@@ -1441,7 +1437,7 @@ function ChecklistFlag({ status, onClick }: { status?: Pallet['checklist_status'
 
 function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, palletTotal, addDisabled, onAdd, onUpdate, onDelete, onGoToBoards, onGoToBoxes, onGoToChecklist, onNgSaved }: {
   pallets: Pallet[]; effectiveRule: string; ruleIsOverride: boolean; vendorName: string;
-  palletTotal: { weight: number; qty: number; boardQty: number; outWeightGross: number; outWeightNet: number; tantalumWt: number }; addDisabled: boolean;
+  palletTotal: { weight: number; qty: number; boardQty: number; outWeightGross: number; outWeightNet: number }; addDisabled: boolean;
   onAdd: () => void; onUpdate: (id: number, p: Partial<Pallet>) => void; onDelete: (id: number) => void;
   onGoToBoards: (palletId: number) => void;
   onGoToBoxes: (palletId: number) => void;
@@ -1555,7 +1551,6 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                 <th style={{ ...thS, textAlign: 'right' }}>Actual Wt (lb)</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Out Wt Gross (lb)</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Out Wt Net (lb)</th>
-                <th style={{ ...thS, textAlign: 'right' }}>Tantalum Wt (g)</th>
                 <th style={thS}>Material Type</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Pallet Qty</th>
                 <th style={{ ...thS, textAlign: 'right' }}>Board Qty</th>
@@ -1603,9 +1598,6 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">
                     {p.out_weight_net ? parseFloat(p.out_weight_net).toFixed(2) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
                   </td>
-                  <td style={{ ...tdS, textAlign: 'right' }} className="num">
-                    {p.tantalum_wt ? parseFloat(p.tantalum_wt).toFixed(2) : <span style={{ color: 'var(--ink-5)' }}>—</span>}
-                  </td>
                   <td style={{ ...tdS }}>{p.material_type || <span style={{ color: 'var(--ink-5)' }}>—</span>}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{p.qty}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">
@@ -1639,7 +1631,6 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   <td />
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.outWeightGross > 0 ? palletTotal.outWeightGross.toFixed(2) : '—'}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.outWeightNet > 0 ? palletTotal.outWeightNet.toFixed(2) : '—'}</td>
-                  <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.tantalumWt > 0 ? palletTotal.tantalumWt.toFixed(2) : '—'}</td>
                   <td />
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.qty}</td>
                   <td style={{ ...tdS, textAlign: 'right' }} className="num">{palletTotal.boardQty || '—'}</td>
@@ -1696,7 +1687,6 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
   const [outWeightGross, setOutWeightGross] = useState(pallet.out_weight_gross ? parseFloat(pallet.out_weight_gross).toFixed(2) : '');
   const [outWeightNet, setOutWeightNet] = useState(pallet.out_weight_net ? parseFloat(pallet.out_weight_net).toFixed(2) : '');
   const changeOutWeightGross = (v: string) => { setOutWeightGross(v); setOutWeightNet(netFromGross(v)); };
-  const [tantalumWt, setTantalumWt] = useState(pallet.tantalum_wt ? parseFloat(pallet.tantalum_wt).toFixed(2) : '');
   const [matType, setMatType] = useState(pallet.material_type);
   const [qty, setQty] = useState(String(pallet.qty));
   const [saving, setSaving] = useState(false);
@@ -1719,7 +1709,6 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
       // A pallet saved before the net was auto-filled gets it from its gross on open.
       setOutWeightNet(pallet.out_weight_net ? parseFloat(pallet.out_weight_net).toFixed(2)
         : pallet.out_weight_gross ? netFromGross(String(pallet.out_weight_gross)) : '');
-      setTantalumWt(pallet.tantalum_wt ? parseFloat(pallet.tantalum_wt).toFixed(2) : '');
       setMatType(pallet.material_type);
       setQty(String(pallet.qty));
       setSaving(false);
@@ -1764,7 +1753,6 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
         actual_weight: actualWeight ? (actualWeight as any) : null,
         out_weight_gross: outWeightGross ? (outWeightGross as any) : null,
         out_weight_net: outWeightNet ? (outWeightNet as any) : null,
-        tantalum_wt: tantalumWt ? (tantalumWt as any) : null,
         material_type: matType,
         qty: +qty,
       });
@@ -1805,9 +1793,6 @@ function EditPalletModal({ open, pallet, effectiveRule, onClose, onSave }: {
         <Field label="Out Weight Net (lb)">
           <Input value={outWeightNet} onChange={setOutWeightNet} type="number" placeholder="Optional" />
         </Field>
-        <Field label="Tantalum Wt (g)">
-          <Input value={tantalumWt} onChange={setTantalumWt} type="number" placeholder="Optional" />
-        </Field>
         <Field label="Material Type">
           <Input value={matType} onChange={setMatType} placeholder="Optional" />
         </Field>
@@ -1846,18 +1831,20 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
   const [inboundDate, setInboundDate] = useState(so.inbound_date);
   const [outboundDate, setOutboundDate] = useState(so.outbound_date ?? '');
   const [note, setNote] = useState(so.note);
+  const [tantalumLb, setTantalumLb] = useState(so.tantalum_lb ? String(parseFloat(so.tantalum_lb)) : '');
   useEffect(() => {
     if (open) {
       setSoNumber(so.so_number); setVendorId(String(so.vendor));
       setInboundDate(so.inbound_date); setOutboundDate(so.outbound_date ?? '');
       setNote(so.note);
+      setTantalumLb(so.tantalum_lb ? String(parseFloat(so.tantalum_lb)) : '');
     }
   }, [open]);
   return (
     <Modal open={open} onClose={onClose} title={`Edit ${so.so_number}`} width={560}
       footer={<>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button variant="primary" onClick={() => onSave({ so_number: soNumber, vendor: +vendorId, inbound_date: inboundDate, outbound_date: outboundDate || null, note } as any)}>Save</Button>
+        <Button variant="primary" onClick={() => onSave({ so_number: soNumber, vendor: +vendorId, inbound_date: inboundDate, outbound_date: outboundDate || null, tantalum_lb: tantalumLb.trim() || null, note } as any)}>Save</Button>
       </>}>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
         <Field label="SO Number"><Input value={soNumber} onChange={setSoNumber} /></Field>
@@ -1867,6 +1854,7 @@ function EditSOModal({ open, so, vendors, onClose, onSave }: {
         </Field>
         <Field label="Inbound Date"><Input value={inboundDate} onChange={setInboundDate} type="date" /></Field>
         <Field label="Outbound Date"><Input value={outboundDate} onChange={setOutboundDate} type="date" /></Field>
+        <Field label="Tantalum (lb)"><Input value={tantalumLb} onChange={setTantalumLb} type="number" placeholder="Total for the SO" /></Field>
         <Field label="Note" span={2}>
           <textarea value={note} onChange={e => setNote(e.target.value)} rows={3}
             style={{ width: '100%', padding: '6px 10px', border: '1px solid var(--hair-strong)', background: 'var(--surface)', borderRadius: 3, fontFamily: 'inherit', fontSize: 13, resize: 'vertical', outline: 'none', color: 'var(--ink)' }} />
@@ -1977,7 +1965,7 @@ function OutboundModal({ open, so, onClose, onDone }: {
 }
 
 // ─── Add Pallet Modal ─────────────────────────────────────────────
-type PalletRowData = { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; tantalum_wt: string; material_type: string; qty: string; licence_number: string; gateload_number: string };
+type PalletRowData = { in_weight_gross: string; actual_weight: string; out_weight_gross: string; out_weight_net: string; material_type: string; qty: string; licence_number: string; gateload_number: string };
 
 function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   open: boolean; rule: string; onClose: () => void;
@@ -1993,20 +1981,19 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   const [actualW, setActualW] = useState('');
   const [outWGross, setOutWGross] = useState('');
   const [outWNet, setOutWNet] = useState('');
-  const [tanWt, setTanWt] = useState('');
   const [materialType, setMaterialType] = useState('');
   const [q, setQ] = useState('');
   const [licence, setLicence] = useState('');
   const [payload, setPayload] = useState('');
 
   // bulk
-  const blankRow = (): PalletRowData => ({ licence_number: '', gateload_number: '', in_weight_gross: '', actual_weight: '', out_weight_gross: '', out_weight_net: '', tantalum_wt: '', material_type: '', qty: aggregated ? '' : '1' });
+  const blankRow = (): PalletRowData => ({ licence_number: '', gateload_number: '', in_weight_gross: '', actual_weight: '', out_weight_gross: '', out_weight_net: '', material_type: '', qty: aggregated ? '' : '1' });
   const [rows, setRows] = useState<PalletRowData[]>(Array.from({ length: 10 }, blankRow));
 
   useEffect(() => {
     if (open) {
       setMode('single');
-      setW(''); setActualW(''); setOutWGross(''); setOutWNet(''); setTanWt(''); setMaterialType(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload('');
+      setW(''); setActualW(''); setOutWGross(''); setOutWNet(''); setMaterialType(''); setQ(aggregated ? '' : '1'); setLicence(''); setPayload('');
       setPendingPhotos([]);
       setRows(Array.from({ length: 10 }, blankRow));
     }
@@ -2025,7 +2012,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
   const dupLicences = new Set(licList.filter((l, i) => licList.indexOf(l) !== i));
 
   const submitSingle = () => {
-    onAdd({ in_weight_gross: w, actual_weight: actualW, out_weight_gross: outWGross, out_weight_net: outWNet, tantalum_wt: tanWt, material_type: materialType, qty: q, licence_number: licence, gateload_number: payload, pendingPhotos });
+    onAdd({ in_weight_gross: w, actual_weight: actualW, out_weight_gross: outWGross, out_weight_net: outWNet, material_type: materialType, qty: q, licence_number: licence, gateload_number: payload, pendingPhotos });
     onClose();
   };
   const submitBulk = () => {
@@ -2036,7 +2023,6 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
       actual_weight: r.actual_weight,
       out_weight_gross: r.out_weight_gross,
       out_weight_net: r.out_weight_net,
-      tantalum_wt: r.tantalum_wt,
       material_type: r.material_type,
       qty: aggregated ? r.qty : '1',
     })));
@@ -2089,9 +2075,6 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
             <Field label="Out Weight Net (lb)">
               <Input value={outWNet} onChange={setOutWNet} type="number" placeholder="Optional" />
             </Field>
-            <Field label="Tantalum Wt (g)">
-              <Input value={tanWt} onChange={setTanWt} type="number" placeholder="Optional" />
-            </Field>
             <Field label="Material Type">
               <Input value={materialType} onChange={setMaterialType} placeholder="Optional" />
             </Field>
@@ -2119,7 +2102,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
       {mode === 'bulk' && (
         <>
           <div style={{ border: '1px solid var(--hair)', borderRadius: 3, background: 'var(--surface)', overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '28px 1.2fr 1.2fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 24px', gap: 0, padding: '8px 10px', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: 'var(--ink-4)', background: 'var(--surface-2)', borderBottom: '1px solid var(--hair)' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '28px 1.2fr 1.2fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 24px', gap: 0, padding: '8px 10px', fontSize: 9.5, letterSpacing: '0.14em', textTransform: 'uppercase' as const, color: 'var(--ink-4)', background: 'var(--surface-2)', borderBottom: '1px solid var(--hair)' }}>
               <div>#</div>
               <div style={{ paddingLeft: 6 }}>Licence No</div>
               <div style={{ paddingLeft: 6 }}>Gateload No</div>
@@ -2127,7 +2110,6 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Actual Wt</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Out Wt Gross</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Out Wt Net</div>
-              <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Tantalum Wt</div>
               <div style={{ paddingLeft: 6 }}>Material Type</div>
               <div style={{ paddingLeft: 6, textAlign: 'right' as const }}>Pallet Qty</div>
               <div />
@@ -2136,7 +2118,7 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
               {rows.map((r, i) => {
                 const isDup = !!r.licence_number && dupLicences.has(r.licence_number.trim());
                 return (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '28px 1.2fr 1.2fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 24px', gap: 0, padding: '6px 10px', alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
+                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '28px 1.2fr 1.2fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 0.9fr 24px', gap: 0, padding: '6px 10px', alignItems: 'center', borderBottom: '1px solid var(--hair)' }}>
                     <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>
                       {String(i + 1).padStart(2, '0')}
                     </span>
@@ -2150,8 +2132,6 @@ function AddPalletModal({ open, rule, onClose, onAdd, onAddBulk }: {
                     <BulkCellP value={r.out_weight_gross} onChange={v => updateRow(i, { out_weight_gross: v, out_weight_net: netFromGross(v) })}
                       type="number" placeholder="—" align="right" />
                     <BulkCellP value={r.out_weight_net} onChange={v => updateRow(i, { out_weight_net: v })}
-                      type="number" placeholder="—" align="right" />
-                    <BulkCellP value={r.tantalum_wt} onChange={v => updateRow(i, { tantalum_wt: v })}
                       type="number" placeholder="—" align="right" />
                     <BulkCellP value={r.material_type} onChange={v => updateRow(i, { material_type: v })} />
                     {aggregated

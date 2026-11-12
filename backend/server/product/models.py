@@ -31,6 +31,9 @@ class SO(models.Model):
     weight_rule = models.CharField(max_length=20, blank=True)
     inbound_date = models.DateField()
     outbound_date = models.DateField(null=True, blank=True)
+    # Tantalum is weighed once for the whole order, in pounds. The export's
+    # Bid_Template_Tantalum reports it in grams (x 453.59237).
+    tantalum_lb = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -107,7 +110,6 @@ class Pallet(models.Model):
     board_qty = models.IntegerField(null=True, blank=True)
     out_weight_gross = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     out_weight_net = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    tantalum_wt = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
