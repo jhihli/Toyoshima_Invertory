@@ -31,15 +31,13 @@ export const ITEM_GROUP_OPTIONS = [
 ];
 
 /**
- * Slot group pre-filled when a chip is tagged Memory. On these boards the DRAMs are the
- * interchangeable part, so this saves typing it every time.
- *
- * It is only a DEFAULT written into the field, never an implicit rule — a board with two
- * genuinely different Memory sockets (say DRAM + NAND) must be able to split them, and it
- * can, by editing the value. Item Group cannot drive grouping on its own: AST1050 and
- * SLKM8 are both 'Controller' yet occupy different slots.
+ * Memory slot groups are named by CAPACITY CLASS ('1G', '2G', …), not 'Memory': memory
+ * chips of the same capacity are mixed after cutting and counted per class, and the
+ * checklist-photo reader reconciles them that way. Nothing is pre-filled any more —
+ * tagging a chip Memory doesn't say which class it is. Picking a known part from the
+ * catalog copies that part's class instead.
  */
-export const MEMORY_SLOT_GROUP = 'Memory';
+export const SLOT_GROUP_PLACEHOLDER = 'blank = own slot · memory: 1G / 2G';
 
 /** chip_mpn is free text and already carries I/1 and S/5 typos — never key off it raw. */
 export const normalizeChipMpn = (s: string | null | undefined) =>

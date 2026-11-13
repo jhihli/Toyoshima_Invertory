@@ -22,6 +22,7 @@ import { splitChecklistByBoard } from '@/app/lib/checklistSplit';
 import PalletBoardsTab from '@/app/ui/pallet/PalletBoardsTab';
 import PalletNgModal from '@/app/ui/pallet/PalletNgModal';
 import PalletBoardsNgSection, { usePalletBoardsNg } from '@/app/ui/pallet/PalletBoardsNgSection';
+import ChecklistScans from '@/app/ui/pallet/ChecklistScans';
 import type { SODetail, Pallet, PalletPhoto, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -1092,6 +1093,9 @@ export default function SODetailPage() {
       )}
 
       <div style={{ padding: isMobile ? '10px 0' : '12px 0' }}>
+        {tab === 'pallets' && (
+          <ChecklistScans soId={soId} pallets={so.pallets} onApplied={loadSO} />
+        )}
         {tab === 'pallets' && (
           <PalletsTab
             pallets={so.pallets}

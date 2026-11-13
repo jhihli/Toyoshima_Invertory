@@ -7,7 +7,7 @@ import {
   useToast, thS, tdS, ghostBtn, Empty,
 } from '@/app/ui/components';
 import { api, apiErrorMessage } from '@/app/lib/api';
-import { buildSlots, bomTotalQty, slotCount, ITEM_GROUP_OPTIONS, MEMORY_SLOT_GROUP } from '@/app/lib/chipSlots';
+import { buildSlots, bomTotalQty, slotCount, ITEM_GROUP_OPTIONS, SLOT_GROUP_PLACEHOLDER } from '@/app/lib/chipSlots';
 import type { MPN, Chip, ChipBrand, ChipCatalogEntry } from '@/interface/IDatatable';
 import ChipMpnInput from '@/app/ui/mpn/ChipMpnInput';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
@@ -656,20 +656,11 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
     }
   }, [open, initial, mode]);
 
-  // Memory chips are the interchangeable ones on these boards, so tagging a chip Memory
-  // pre-fills its slot group. Written into the visible field rather than applied as a
-  // hidden rule, so a board with two distinct Memory sockets can still split them.
-  // A variable-qty module never shares a slot, so tagging it Memory leaves the slot alone.
-  const changeItemGroup = (next: string, module = variableQty) => {
-    setItemGroup(next);
-    if (next === 'Memory' && !module && slotGroup.trim() === '') setSlotGroup(MEMORY_SLOT_GROUP);
-    else if ((next !== 'Memory' || module) && slotGroup.trim() === MEMORY_SLOT_GROUP) setSlotGroup('');
-  };
-  const changeVariableQty = (on: boolean) => {
-    setVariableQty(on);
-    if (on && slotGroup.trim() === MEMORY_SLOT_GROUP) setSlotGroup('');
-    else if (!on && itemGroup === 'Memory' && slotGroup.trim() === '') setSlotGroup(MEMORY_SLOT_GROUP);
-  };
+  // Memory slots are named by capacity class ('1G', '2G'), which tagging a chip Memory
+  // doesn't tell us — so nothing is pre-filled here. A variable-qty module never shares a
+  // slot; submit() drops its slot group.
+  const changeItemGroup = (next: string) => setItemGroup(next);
+  const changeVariableQty = (on: boolean) => setVariableQty(on);
 
   // Picking an existing part copies its details; every field stays editable afterwards.
   const pickCatalog = (e: ChipCatalogEntry) => {
@@ -681,8 +672,12 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
     if (e.packaging_type) setPackagingType(e.packaging_type);
     setVariableQty(!!e.variable_qty);
     setUnitCost(e.chip_cost != null ? String(Number(e.chip_cost)) : '');
-    // Memory → pre-fills the slot group, as when chosen by hand (not for a module)
-    changeItemGroup(e.item_group || '', !!e.variable_qty);
+    changeItemGroup(e.item_group || '');
+    // A known memory part carries its capacity class: copy it, but only into a blank field.
+    if (!e.variable_qty && e.slot_group && slotGroup.trim() === '') {
+      setSlotGroup(e.slot_group);
+      setAdvancedOpen(true);
+    }
   };
 
   const submit = () => {
@@ -778,13 +773,15 @@ function AddChipModal({ open, mode = 'add', initial, chipBrands, onClose, onAdd,
                 border: '1px solid var(--hair)', borderRadius: 3,
               }}>
                 <Field label="Slot Group">
-                  <Input value={slotGroup} onChange={setSlotGroup} placeholder="blank = its own slot" />
+                  <Input value={slotGroup} onChange={setSlotGroup} placeholder={SLOT_GROUP_PLACEHOLDER} />
                 </Field>
                 <div style={{ fontSize: 11, marginTop: 8, color: 'var(--ink-4)', lineHeight: 1.55 }}>
                   <b style={{ color: 'var(--ink-3)' }}>Where</b> this chip sits on the board. Chips with the
                   <b style={{ color: 'var(--ink-3)' }}> same slot name</b> are interchangeable in one socket and count as
                   <b style={{ color: 'var(--ink-3)' }}> one slot</b> — only one is on any given board. This drives the cut
-                  cost and chips-per-board. Leave blank if the chip has a slot to itself.
+                  cost and chips-per-board. Leave blank if the chip has a slot to itself. Memory slots are named
+                  by <b style={{ color: 'var(--ink-3)' }}>capacity</b> (1G, 2G), because memory is counted per capacity
+                  after cutting.
                 </div>
               </div>
             )}

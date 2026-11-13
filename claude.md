@@ -16,7 +16,7 @@ They communicate via JWT-authenticated REST calls. The frontend is **not** Djang
 | App | Purpose |
 |-----|---------|
 | `account` | CustomUser (AbstractUser + `role`), JWT auth, user registration |
-| `product` | All business models: Vendor, SO, Pallet, PalletMPN, MPN, Chip, ChipBrand, Box, Checklist, SOPhoto |
+| `product` | All business models: Vendor, SO, Pallet, PalletMPN, MPN, Chip, ChipBrand, Box, Checklist, SOPhoto, ChecklistScan, ChecklistCorrection |
 
 ### Key URL prefixes
 
@@ -24,7 +24,7 @@ They communicate via JWT-authenticated REST calls. The frontend is **not** Djang
 /api/token/          POST — get JWT access+refresh tokens
 /api/token/refresh/  POST — refresh access token
 /account/            User management
-/product/            All business endpoints (vendors, sos, pallets, pallet mpns, checklists, mpns, scanner, dashboard)
+/product/            All business endpoints (vendors, sos, pallets, pallet mpns, checklists, checklist scans, mpns, scanner, dashboard)
 /admin/              Django admin
 ```
 
@@ -88,6 +88,10 @@ Backend config at `backend/server/.env`. Key variables:
 - `SCANNER_API_KEY` — used by Zebra scanner endpoints
 - `MEDIA_ROOT` — local path for uploaded images (production: `/var/www/toyoshima/media`)
 - `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`
+- `ANTHROPIC_API_KEY` — checklist photo reader. Use a dedicated Anthropic workspace key with a
+  monthly spend limit (2026-08 compromise, `docs/SECURITY.md`). Unset = photo reads fail with a clear error.
+- Optional: `CHECKLIST_SCAN_MODEL` (default `claude-opus-5-5`), `CHECKLIST_SCAN_EFFORT` (`high`),
+  `CHECKLIST_SCAN_MAX_EDGE` (2000 px sent to the model; the original stays on disk)
 
 Frontend config at `frontend/.env.local`:
 - `NEXT_PUBLIC_Django_API_URL` — backend URL (e.g. `http://localhost:8000`)
@@ -138,6 +142,8 @@ pip install -r requirements.txt      # only when requirements.txt changed
 #   pg_dump -U $DB_USER -h $DB_HOST $DB_NAME > ~/backup_$(date +%F).sql
 python manage.py migrate             # only when there are new migrations
 sudo systemctl restart toyoshima-backend
+# a restart kills in-flight checklist photo reads; re-read them (billed) once it is up:
+#   python manage.py process_checklist_scans
 sudo systemctl status toyoshima-backend    # confirm active (running)
 
 # Frontend — only if frontend/ changed
@@ -209,6 +215,7 @@ Vendor → SO → Pallet → PalletMPN → MPN → Chip → ChipBrand
               Pallet → Checklist → Chip (FK, nullable)
               Pallet → Box
          SO → SOPhoto
+         SO → ChecklistScan → Pallet (nullable until identified)
 ```
 
 Key field notes:
@@ -228,6 +235,11 @@ Key field notes:
 - `Pallet.board_qty` — legacy hand-typed board count, read only as the fallback in
   `effective_board_qty`; never written by the UI any more
 - `Chip.mpn` — FK to `MPN` (nullable)
+- `Chip.slot_group` — chips sharing it are interchangeable alternates for ONE slot (one per
+  board). **Memory slots are named by capacity class: `1G`, `2G`, …** (migration 0057 renamed
+  every `Memory` to `1G`): memory of one capacity is mixed after cutting and counted per class,
+  CPU-type parts (SLKM8, EP4CE15F23C9LN, AST2400) per part number. `Pallet.checklist_check()`
+  reconciles per slot on that basis. Blank = the chip is its own slot. Nothing pre-fills it.
 - `Box.pallet` — FK to `Pallet` (`related_name='boxes'`), DB table `box`
 
 ### Barcode composition
@@ -266,6 +278,36 @@ printed first and filled in later. **Barcodes are always allocated server-side**
 (`Checklist.next_index()` + `compose_barcode()`), never composed by a client — two
 scanners each guessing the next number would both pick the same one.
 
+### Checklist photo scans (清單 photo → draft → confirm)
+
+Spec: `docs/superpowers/specs/2026-11-13-checklist-photo-autofill-design.md`. The owner photographs
+a filled-in sheet on the MSFT order's Pallets tab; nothing touches Pallet / PalletMPN / MPN / Chip /
+Checklist until they confirm the review screen.
+
+- `ChecklistScan` (`checklist_scan`): one per photo — `image` (kept, `checklist_scans/%Y/%m/`),
+  `status` processing → ready | failed → confirmed | discarded, `transcription` (the model's raw
+  reading), `draft` (server-built plan), `confirmed`, `result`, tokens + `cost_usd`, `attempts`.
+- `ChecklistCorrection` (`checklist_correction`): owner-confirmed meanings (`mpn_name`,
+  `chip_model`, `capacity_class`, `brand_abbrev`), keyed on the I/1 S/5 O/0-folded text. Fed into
+  the prompt and checked before fuzzy matching. 0058 seeds D9SFT/D9MNQ/K4B1G1646G-BCH9/
+  NT5TU64M16HG-AC = 1G, K4B2G1646Q-BCK0 = 2G, AL = ALTERA.
+- `product/scan_reader.read_sheet()` is the ONLY Anthropic API call (claude-opus-5-5, structured
+  output, adaptive thinking, effort high, `fallbacks="default"`, cached dictionary prefix). It
+  transcribes; it decides nothing. Tests must mock it — never hit the API from a test.
+- `product/scan_draft.py`: `build_draft` (matching: MPNs ignore `SP#` + case, near-matches only
+  pre-selected and yellow; parts via `scan_match.same_part`, never a near-duplicate chip),
+  `apply_draft` (the single writer, one transaction, re-validates everything; rows only via
+  `next_index()`/`compose_barcode()`; never overwrites a row with content unless `use_sheet`,
+  never deletes a row with content or a non-trailing row, never edits/deletes existing chips,
+  never removes a PalletMPN, never writes weight), `preview_check` (apply in a rolled-back
+  savepoint → `checklist_check()`; **don't write a second reconciliation**). Chip additions to an
+  existing MPN are opt-in (shared by every order).
+- Background: a daemon thread per photo, started on commit (no Celery). A restart kills in-flight
+  reads → scan stuck `processing`, stale after 10 min, retry from the UI or
+  `manage.py process_checklist_scans` (billed).
+- Eval: `manage.py eval_checklist_scans --dir "<repo>/asset/checklist screenshot" --yes`
+  (BILLED, one call per photo) scores the 4 samples per field and prints cost.
+
 ### Pallet mode rules for seed data / tests
 
 - Per Pallet vendors (MSFT, Dell, Lenovo): `qty=1` on every Pallet row
@@ -295,6 +337,10 @@ User roles: `admin`, `manager`, `vz_user`, `r2_user`, `n_user`. Role-based menu 
 - Delete success: HTTP 204 empty body
 - Validation error: HTTP 400 + `serializer.errors`
 - Missing record: HTTP 404 + `{ "error": "X not found" }`
+- Checklist scans (JWT, admin/manager only): `POST/GET sos/<id>/checklist-scans/` (multipart
+  `images`; `?pallet=`), `GET checklist-scans/<id>/`, and POSTs under `checklist-scans/<id>/`:
+  `preview/ {draft}`, `rebuild/ {pallet_id?, overrides?}`, `confirm/ {draft}` (409 = the pallet
+  changed since the draft — rebuild), `discard/`, `retry/`
 
 ---
 
@@ -355,4 +401,4 @@ Renaming these keys again requires rebuilding and redeploying the Zebra APK in l
 
 ## Media Files
 
-SO photos are stored at `MEDIA_ROOT` (configured in `.env`). Production path: `/var/www/toyoshima/media/`. nginx serves `/media/` directly from filesystem in production.
+SO, pallet, MPN/chip and checklist-scan photos (`checklist_scans/`, kept permanently) stored at `MEDIA_ROOT` (configured in `.env`). Production path: `/var/www/toyoshima/media/`. nginx serves `/media/` directly from filesystem in production.
