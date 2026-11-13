@@ -70,6 +70,8 @@ export interface Pallet {
   board_qty_is_legacy: boolean;
   /** Failed chips on this pallet, all chips together (PalletChipNG). */
   ng_qty: number;
+  /** Checklist photos of this pallet, discarded excluded. */
+  scan_count?: number;
   box_count?: number;
   checklist_count?: number;
   /** Checklist lines still without a qty. */

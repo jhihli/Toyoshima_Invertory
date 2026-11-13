@@ -23,6 +23,7 @@ import PalletBoardsTab from '@/app/ui/pallet/PalletBoardsTab';
 import PalletNgModal from '@/app/ui/pallet/PalletNgModal';
 import PalletBoardsNgSection, { usePalletBoardsNg } from '@/app/ui/pallet/PalletBoardsNgSection';
 import ChecklistScans from '@/app/ui/pallet/ChecklistScans';
+import PalletScansButton from '@/app/ui/pallet/PalletScansButton';
 import type { SODetail, Pallet, PalletPhoto, Chip, Vendor } from '@/interface/IDatatable';
 import { useIsMobile } from '@/app/ui/hooks/useIsMobile';
 
@@ -1516,6 +1517,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   </Badge>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <PalletScansButton soId={p.so} palletId={p.id} count={p.scan_count} label={ngLabel(p)} style={rowBtn} onApplied={onNgSaved} />
                   <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={{ ...rowBtn, color: checklistTone(p).color }} title={checklistTone(p).title}><BoxIcon size={17} /></button>
                   <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={rowBtn} title="Edit"><EditIcon size={17} /></button>
                   <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={rowBtn} title="Delete"><TrashIcon size={17} /></button>
@@ -1639,6 +1641,7 @@ function PalletsTab({ pallets, effectiveRule, ruleIsOverride, vendorName, pallet
                   </td>
                   <td style={{ ...tdS, textAlign: 'right' }}>
                     <div style={{ display: 'inline-flex', gap: 4 }}>
+                      <PalletScansButton soId={p.so} palletId={p.id} count={p.scan_count} label={ngLabel(p)} style={rowBtn} onApplied={onNgSaved} />
                       <button onClick={e => { e.stopPropagation(); onGoToBoxes(p.id); }} style={{ ...rowBtn, color: checklistTone(p).color }} title={checklistTone(p).title}><BoxIcon size={17} /></button>
                       <button onClick={e => { e.stopPropagation(); setEditingPallet(p); }} style={rowBtn} title="Edit"><EditIcon size={17} /></button>
                       <button onClick={e => { e.stopPropagation(); onDelete(p.id); }} style={rowBtn} title="Delete"><TrashIcon size={17} /></button>

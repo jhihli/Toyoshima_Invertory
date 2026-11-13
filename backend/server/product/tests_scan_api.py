@@ -223,3 +223,17 @@ class ScanApiTests(Cl2Fixture):
         self.upload()
         self.assertEqual(len(self.client.get(self.url, {'pallet': self.pallet.id}).json()), 1)
         self.assertEqual(len(self.client.get(self.url, {'pallet': self.other.id}).json()), 0)
+
+
+@override_settings(CHECKLIST_SCAN_INLINE=True, MEDIA_ROOT=MEDIA, ANTHROPIC_API_KEY='')
+class PalletScanCountTests(Cl2Fixture):
+    """The SO detail's pallets carry scan_count (discarded excluded) for the row's photo icon."""
+
+    def test_scan_count_on_so_detail_pallets(self):
+        ChecklistScan.objects.filter(pk=self.scan.pk).update(pallet=self.pallet, status='confirmed')
+        ChecklistScan.objects.create(so=self.so, pallet=self.pallet, image='x.jpg', status='discarded')
+        ChecklistScan.objects.create(so=self.so, pallet=self.pallet, image='y.jpg', status='ready')
+        resp = api_client('admin').get(f'/product/sos/{self.so.id}/')
+        self.assertEqual(resp.status_code, 200, resp.content)
+        row = next(p for p in resp.json()['pallets'] if p['id'] == self.pallet.id)
+        self.assertEqual(row['scan_count'], 2)

@@ -253,7 +253,7 @@ def so_list(request):
 @permission_classes([IsAuthenticated])
 def so_detail(request, pk):
     so = get_object_or_404(
-        SO.objects.select_related('vendor').prefetch_related('pallets__pallet_mpns__mpn__chips', 'pallets__checklists', 'pallets__chip_ngs', 'pallets__photos', 'photos'),
+        SO.objects.select_related('vendor').prefetch_related('pallets__pallet_mpns__mpn__chips', 'pallets__checklists', 'pallets__chip_ngs', 'pallets__photos', 'pallets__checklist_scans', 'photos'),
         pk=pk
     )
     if request.method == 'GET':
@@ -358,7 +358,7 @@ def so_photo_delete(request, so_pk, pk):
 def pallet_list(request, so_pk):
     so = get_object_or_404(SO, pk=so_pk)
     if request.method == 'GET':
-        return Response(PalletSerializer(so.pallets.prefetch_related('pallet_mpns__mpn__chips', 'checklists', 'chip_ngs', 'photos'), many=True).data)
+        return Response(PalletSerializer(so.pallets.prefetch_related('pallet_mpns__mpn__chips', 'checklists', 'chip_ngs', 'photos', 'checklist_scans'), many=True).data)
     data = request.data.copy()
     data['so'] = so.pk
     if 'pallet_seq' not in data:

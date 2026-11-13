@@ -64,6 +64,7 @@ class PalletSerializer(serializers.ModelSerializer):
     ng_qty = serializers.SerializerMethodField(read_only=True)
     box_count = serializers.SerializerMethodField(read_only=True)
     checklist_count = serializers.SerializerMethodField(read_only=True)
+    scan_count = serializers.SerializerMethodField(read_only=True)
     # Checklist lines still without a qty (labels are printed first, filled in later).
     checklist_unfilled = serializers.SerializerMethodField(read_only=True)
     # Checklist vs board qty (Pallet.checklist_check): 'ok' / 'mismatch' / 'incomplete' / 'none'.
@@ -73,7 +74,7 @@ class PalletSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Pallet
-        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'material_type', 'qty', 'board_qty', 'board_qty_is_legacy', 'ng_qty', 'box_count', 'checklist_count', 'checklist_unfilled', 'checklist_status', 'created_at']
+        fields = ['id', 'so', 'pallet_seq', 'licence_number', 'gateload_number', 'location', 'photo', 'photo_url', 'photos', 'in_weight_gross', 'actual_weight', 'out_weight_gross', 'out_weight_net', 'material_type', 'qty', 'board_qty', 'board_qty_is_legacy', 'ng_qty', 'box_count', 'checklist_count', 'checklist_unfilled', 'checklist_status', 'scan_count', 'created_at']
         read_only_fields = ['created_at', 'photo_url', 'photos']
 
     def get_board_qty(self, obj):
@@ -91,6 +92,11 @@ class PalletSerializer(serializers.ModelSerializer):
     # Both read .all() so a 'checklists' prefetch (SO detail) is reused.
     def get_checklist_count(self, obj):
         return len(obj.checklists.all())
+
+    def get_scan_count(self, obj):
+        """Checklist photos of this pallet, discarded ones excluded. Reads .all() so a
+        'checklist_scans' prefetch (SO detail) is reused."""
+        return sum(1 for s in obj.checklist_scans.all() if s.status != 'discarded')
 
     def get_checklist_unfilled(self, obj):
         return sum(1 for c in obj.checklists.all() if c.qty is None)
