@@ -134,14 +134,9 @@ git pull origin main
 cd backend/server
 source venv/bin/activate
 pip install -r requirements.txt      # only when requirements.txt changed
-# before migrations that drop tables (e.g. 0048_delete_board), back up first:
+# before migrations that drop tables or delete data, back up first:
 #   pg_dump -U $DB_USER -h $DB_HOST $DB_NAME > ~/backup_$(date +%F).sql
-# 0047 cannot place boards that have no pallet or no MPN — count them first and decide
-# whether to assign them in the old UI before migrating:
-#   psql -U $DB_USER -h $DB_HOST $DB_NAME -c "SELECT so_id, count(*) FROM board
-#     WHERE pallet_id IS NULL OR mpn_id IS NULL GROUP BY so_id;"
 python manage.py migrate             # only when there are new migrations
-# after 0048_delete_board: rm -rf /var/www/toyoshima/media/boards   (old board photos)
 sudo systemctl restart toyoshima-backend
 sudo systemctl status toyoshima-backend    # confirm active (running)
 
@@ -360,4 +355,4 @@ Renaming these keys again requires rebuilding and redeploying the Zebra APK in l
 
 ## Media Files
 
-Board photos and SO photos stored at `MEDIA_ROOT` (configured in `.env`). Production path: `/var/www/toyoshima/media/`. nginx serves `/media/` directly from filesystem in production.
+SO photos are stored at `MEDIA_ROOT` (configured in `.env`). Production path: `/var/www/toyoshima/media/`. nginx serves `/media/` directly from filesystem in production.
