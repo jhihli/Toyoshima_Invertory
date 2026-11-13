@@ -61,7 +61,7 @@ def _summary(request, s):
 
 
 def _full(request, s):
-    return {**_summary(request, s), 'draft': s.draft, 'transcription': s.transcription}
+    return {**_summary(request, s), 'draft': s.draft, 'confirmed': s.confirmed, 'transcription': s.transcription}
 
 
 def _get(pk, lock=False):
