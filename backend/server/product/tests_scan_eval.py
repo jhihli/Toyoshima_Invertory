@@ -3,6 +3,7 @@ from datetime import date
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.test import override_settings
 from django.test import SimpleTestCase, TestCase
 
 from product.management.commands.eval_checklist_scans import EXPECTED, score
@@ -53,6 +54,7 @@ class EvalScoringTests(SimpleTestCase):
         t['header_groups'][3]['mpn_text'] = 'B600GH0'  # cl2 'BG00GH0' may really be B600GH0
         self.assertEqual(score(EXPECTED['cl2'], t)['group_mpn'], (4, 4))
 
+    @override_settings(CHECKLIST_SCAN_BACKEND='anthropic')
     def test_refuses_to_spend_without_yes(self):
         with self.assertRaises(CommandError):
             call_command('eval_checklist_scans', '--dir', '.')

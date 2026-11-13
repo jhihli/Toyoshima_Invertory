@@ -201,6 +201,12 @@ SCANNER_API_KEY = os.getenv('SCANNER_API_KEY', 'insecure-default-key-change-in-p
 
 # Checklist photo reader (product.scan_reader). Use a dedicated Anthropic workspace key
 # with a monthly spend limit (see docs/SECURITY.md). Unset = uploads fail with a clear error.
+# Checklist photo reader backend: 'ollama' (local model on the office GPU PC, free) or 'anthropic'.
+CHECKLIST_SCAN_BACKEND = os.getenv('CHECKLIST_SCAN_BACKEND', 'ollama')
+OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://100.125.238.26:11434')
+CHECKLIST_SCAN_OLLAMA_MODEL = os.getenv('CHECKLIST_SCAN_OLLAMA_MODEL', 'qwen3-vl:8b-instruct')
+CHECKLIST_SCAN_OLLAMA_CTX = int(os.getenv('CHECKLIST_SCAN_OLLAMA_CTX', '8192'))
+CHECKLIST_SCAN_OLLAMA_TIMEOUT = int(os.getenv('CHECKLIST_SCAN_OLLAMA_TIMEOUT', '300'))
 ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
 CHECKLIST_SCAN_MODEL = os.getenv('CHECKLIST_SCAN_MODEL', 'claude-opus-5-5')
 CHECKLIST_SCAN_EFFORT = os.getenv('CHECKLIST_SCAN_EFFORT', 'high')

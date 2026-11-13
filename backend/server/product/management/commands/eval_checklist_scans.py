@@ -1,7 +1,7 @@
 """Eval: read the sample checklist photos with the real model and score the readings.
 
-THIS SPENDS MONEY: one billed claude-opus-5-5 call per photo (roughly US$0.10–0.20 each).
-It refuses to run without --yes.
+With CHECKLIST_SCAN_BACKEND=anthropic THIS SPENDS MONEY (one billed call per photo) and it
+refuses to run without --yes. With the default ollama backend it is free.
 
     python manage.py eval_checklist_scans --dir "../../asset/checklist screenshot" --yes
     python manage.py eval_checklist_scans --dir ... --samples cl2,cl4 --yes --out eval.json
@@ -130,9 +130,13 @@ class Command(BaseCommand):
         parser.add_argument('--yes', action='store_true', help="confirm the spend (one billed call per photo)")
         parser.add_argument('--no-context', action='store_true', help="send no dictionary / examples")
         parser.add_argument('--out', help="write readings + scores as JSON here")
+        parser.add_argument('--context-file', help="JSON dictionary to send instead of this database's "
+                                                   "(e.g. dumped from production with build_context())")
 
     def handle(self, *args, **opts):
-        if not opts['yes']:
+        from django.conf import settings
+        billed = getattr(settings, 'CHECKLIST_SCAN_BACKEND', 'ollama') == 'anthropic'
+        if billed and not opts['yes']:
             raise CommandError('This makes one billed API call per photo. Re-run with --yes to proceed.')
         from product import scan_reader
         folder = Path(opts['dir'])
@@ -140,8 +144,12 @@ class Command(BaseCommand):
         unknown = [n for n in names if n not in EXPECTED]
         if unknown:
             raise CommandError(f'No expected answers for: {", ".join(unknown)}')
-        context = ({'parts': [], 'mpns': [], 'corrections': [], 'examples': []} if opts['no_context']
-                   else scan_reader.build_context())
+        if opts['no_context']:
+            context = {'parts': [], 'mpns': [], 'corrections': [], 'examples': []}
+        elif opts['context_file']:
+            context = json.loads(Path(opts['context_file']).read_text(encoding='utf-8'))
+        else:
+            context = scan_reader.build_context()
 
         totals = {f: [0, 0] for f in FIELDS}
         cost_total, report = Decimal('0'), {}

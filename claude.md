@@ -88,10 +88,13 @@ Backend config at `backend/server/.env`. Key variables:
 - `SCANNER_API_KEY` — used by Zebra scanner endpoints
 - `MEDIA_ROOT` — local path for uploaded images (production: `/var/www/toyoshima/media`)
 - `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`
-- `ANTHROPIC_API_KEY` — checklist photo reader. Use a dedicated Anthropic workspace key with a
-  monthly spend limit (2026-08 compromise, `docs/SECURITY.md`). Unset = photo reads fail with a clear error.
-- Optional: `CHECKLIST_SCAN_MODEL` (default `claude-opus-5-5`), `CHECKLIST_SCAN_EFFORT` (`high`),
-  `CHECKLIST_SCAN_MAX_EDGE` (2000 px sent to the model; the original stays on disk)
+- `CHECKLIST_SCAN_BACKEND` — checklist photo reader: `ollama` (default, free — local model on the
+  office GPU PC) or `anthropic` (Claude, billed; owner chose not to pay, 2026-11-13).
+  - ollama: `OLLAMA_URL` (default `http://100.125.238.26:11434`, office-server over Tailscale),
+    `CHECKLIST_SCAN_OLLAMA_MODEL` (`qwen3-vl:8b-instruct`), `CHECKLIST_SCAN_OLLAMA_CTX` (8192),
+    `CHECKLIST_SCAN_OLLAMA_TIMEOUT` (300 s per region)
+  - anthropic: `ANTHROPIC_API_KEY` (dedicated spend-capped workspace key), `CHECKLIST_SCAN_MODEL`,
+    `CHECKLIST_SCAN_EFFORT`, `CHECKLIST_SCAN_MAX_EDGE`
 
 Frontend config at `frontend/.env.local`:
 - `NEXT_PUBLIC_Django_API_URL` — backend URL (e.g. `http://localhost:8000`)
@@ -142,7 +145,7 @@ pip install -r requirements.txt      # only when requirements.txt changed
 #   pg_dump -U $DB_USER -h $DB_HOST $DB_NAME > ~/backup_$(date +%F).sql
 python manage.py migrate             # only when there are new migrations
 sudo systemctl restart toyoshima-backend
-# a restart kills in-flight checklist photo reads; re-read them (billed) once it is up:
+# a restart kills in-flight checklist photo reads; re-read them once it is up:
 #   python manage.py process_checklist_scans
 sudo systemctl status toyoshima-backend    # confirm active (running)
 
@@ -291,9 +294,18 @@ Checklist until they confirm the review screen.
   `chip_model`, `capacity_class`, `brand_abbrev`), keyed on the I/1 S/5 O/0-folded text. Fed into
   the prompt and checked before fuzzy matching. 0058 seeds D9SFT/D9MNQ/K4B1G1646G-BCH9/
   NT5TU64M16HG-AC = 1G, K4B2G1646Q-BCK0 = 2G, AL = ALTERA.
-- `product/scan_reader.read_sheet()` is the ONLY Anthropic API call (claude-opus-5-5, structured
-  output, adaptive thinking, effort high, `fallbacks="default"`, cached dictionary prefix). It
-  transcribes; it decides nothing. Tests must mock it — never hit the API from a test.
+- `product/scan_reader.read_sheet()` is the ONLY model call. It transcribes; it decides nothing.
+  Tests must mock it (`_post_ollama` / `_client`) — never hit a model from a test.
+  - **ollama (default)**: `product/scan_local.py` crops the sheet's fixed regions (label, header
+    notes, left/right table halves), enlarges each, asks `qwen3-vl:8b-instruct` for plain `a | b | c`
+    lines (4 calls, ~25 s/photo), parses them into the transcription dict, renumbers duplicate
+    right-half stickers, and adds `model_candidates` by a wide handwriting fold (G/6 B/8 S/5 Z/2…)
+    against known parts. An 8B model asked for the whole JSON schema at once loops or loses the
+    table — don't go back to that. Eval 2026-11-13: index/qty/part-after-candidates 100%, board
+    MPN spelling 82%.
+  - The office box: Ollama in user space at `~/services/ollama` (systemd **user** unit
+    `ollama.service`, listens on :11434, models in `~/services/ollama/models`). `ssh office`.
+  - anthropic: claude-opus-5-5, structured output, cached dictionary prefix, `fallbacks="default"`.
 - `product/scan_draft.py`: `build_draft` (matching: MPNs ignore `SP#` + case, near-matches only
   pre-selected and yellow; parts via `scan_match.same_part`, never a near-duplicate chip),
   `apply_draft` (the single writer, one transaction, re-validates everything; rows only via
@@ -304,9 +316,10 @@ Checklist until they confirm the review screen.
   existing MPN are opt-in (shared by every order).
 - Background: a daemon thread per photo, started on commit (no Celery). A restart kills in-flight
   reads → scan stuck `processing`, stale after 10 min, retry from the UI or
-  `manage.py process_checklist_scans` (billed).
-- Eval: `manage.py eval_checklist_scans --dir "<repo>/asset/checklist screenshot" --yes`
-  (BILLED, one call per photo) scores the 4 samples per field and prints cost.
+  `manage.py process_checklist_scans`.
+- Eval: `manage.py eval_checklist_scans --dir "<repo>/asset/checklist screenshot"
+  [--context-file prod_context.json]` scores the 4 samples per field (free on ollama; with the
+  anthropic backend it is billed and needs `--yes`).
 
 ### Pallet mode rules for seed data / tests
 

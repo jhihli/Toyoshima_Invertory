@@ -1,6 +1,8 @@
-"""Reading a photographed 清單 with Claude: transcription only.
+"""Reading a photographed 清單 with a vision model: transcription only.
 
-`read_sheet()` is the ONE place this codebase calls the Anthropic API. It returns what is
+`read_sheet()` is the ONE place this codebase calls a model. Two backends, picked by
+CHECKLIST_SCAN_BACKEND: 'ollama' (default — a local open model on the office GPU box,
+reached over Tailscale; free) or 'anthropic' (Claude, billed). It returns what is
 written on the sheet, as structured JSON; it decides nothing about the database. Matching,
 classification, creation plans and reconciliation are done afterwards by deterministic
 server code (product.scan_draft). Tests replace `_client()` / `read_sheet()`; no test may
@@ -243,6 +245,45 @@ def _client():
 
 
 def read_sheet(image_bytes, media_type, context):
+    """Read one photo with the configured backend and return its transcription. Raises ReadError."""
+    backend = getattr(settings, 'CHECKLIST_SCAN_BACKEND', 'ollama')
+    if backend == 'anthropic':
+        return _read_anthropic(image_bytes, media_type, context)
+    if backend == 'ollama':
+        return _read_ollama(image_bytes, context)
+    raise ReadError(f'Unknown CHECKLIST_SCAN_BACKEND {backend!r} (use ollama or anthropic).')
+
+
+def _post_ollama(url, payload, timeout):
+    import requests
+    return requests.post(url, json=payload, timeout=timeout)
+
+
+def _read_ollama(image_bytes, context):
+    """Local model (Ollama on the office GPU PC), region by region — see product.scan_local.
+    Free. Known part names from the dictionary drive the misspelling candidates."""
+    import requests
+    from . import scan_local
+    base = getattr(settings, 'OLLAMA_URL', 'http://100.125.238.26:11434').rstrip('/')
+    model = getattr(settings, 'CHECKLIST_SCAN_OLLAMA_MODEL', 'qwen3-vl:8b-instruct')
+    known = [p['part'] for p in context.get('parts', [])]
+    known += [c['means'] for c in context.get('corrections', []) if c.get('kind') == 'chip_model']
+    try:
+        texts, usage = scan_local.read_regions(
+            image_bytes, _post_ollama, f'{base}/api/chat', model,
+            timeout=getattr(settings, 'CHECKLIST_SCAN_OLLAMA_TIMEOUT', 300),
+            num_ctx=getattr(settings, 'CHECKLIST_SCAN_OLLAMA_CTX', 8192))
+    except requests.RequestException as e:
+        raise ReadError(f'Could not reach the local model at {base} (is the office GPU PC on?): {e}')
+    except RuntimeError as e:
+        raise ReadError(f'Local model error {e}')
+    except (ValueError, OSError) as e:
+        raise ReadError(f'Not a readable image or reply: {e}')
+    transcription = scan_local.transcription_from_regions(texts, sorted(set(known)))
+    return ReadResult(transcription=transcription, model=f'ollama:{model}', usage=usage, cost_usd=Decimal('0'))
+
+
+def _read_anthropic(image_bytes, media_type, context):
     """Send one photo to Claude and return its transcription. Raises ReadError."""
     if not getattr(settings, 'ANTHROPIC_API_KEY', ''):
         raise ReadError('ANTHROPIC_API_KEY is not set on the server.')
