@@ -199,6 +199,16 @@ SIMPLE_JWT = {
 # Scanner API Key Authentication
 SCANNER_API_KEY = os.getenv('SCANNER_API_KEY', 'insecure-default-key-change-in-production')
 
+# Checklist photo reader (product.scan_reader). Use a dedicated Anthropic workspace key
+# with a monthly spend limit (see docs/SECURITY.md). Unset = uploads fail with a clear error.
+ANTHROPIC_API_KEY = os.getenv('ANTHROPIC_API_KEY', '')
+CHECKLIST_SCAN_MODEL = os.getenv('CHECKLIST_SCAN_MODEL', 'claude-opus-5-5')
+CHECKLIST_SCAN_EFFORT = os.getenv('CHECKLIST_SCAN_EFFORT', 'high')
+# Longest image edge sent to the model (the original upload is kept on disk untouched).
+CHECKLIST_SCAN_MAX_EDGE = int(os.getenv('CHECKLIST_SCAN_MAX_EDGE', '2000'))
+# True = read photos synchronously in the request (tests); False = background thread.
+CHECKLIST_SCAN_INLINE = os.getenv('CHECKLIST_SCAN_INLINE', 'False') == 'True'
+
 # Admin URL — set ADMIN_URL in .env.production to a non-predictable path
 ADMIN_URL = os.getenv('ADMIN_URL', 'admin/')
 
