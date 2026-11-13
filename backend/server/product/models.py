@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db import models
 from django.db.models import Sum
 from django.utils import timezone
@@ -625,6 +627,122 @@ class PalletChipNG(models.Model):
             PalletChipNG.objects.update_or_create(pallet=pallet, chip=chip, defaults={'qty': total})
         else:
             PalletChipNG.objects.filter(pallet=pallet, chip=chip).delete()
+
+
+class ChecklistScan(models.Model):
+    """One uploaded photo of a pallet's handwritten 清單, and what became of it.
+
+    Flow: the photo is read by the model in the background (`processing`) into a raw
+    `transcription`; the server turns that into a `draft` against the pallet's current
+    state (`ready`); the owner reviews, edits and confirms (`confirmed`, with what was
+    confirmed in `confirmed` and what was written in `result`) or discards it. Nothing
+    in Pallet / PalletMPN / MPN / Chip / Checklist changes before confirm. Photo, raw
+    reading and confirmed result are all kept: the differences are what the reader
+    learns from (ChecklistCorrection), and every confirmed scan is a future eval case.
+    """
+    STATUS_CHOICES = [
+        ('processing', 'Processing'),
+        ('ready', 'Ready for review'),
+        ('failed', 'Failed'),
+        ('confirmed', 'Confirmed'),
+        ('discarded', 'Discarded'),
+    ]
+    # A scan still 'processing' after this long lost its worker (process restart) and may
+    # be retried. A normal read takes well under two minutes.
+    STALE_AFTER = timedelta(minutes=10)
+
+    so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='checklist_scans')
+    pallet = models.ForeignKey(Pallet, on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name='checklist_scans',
+                               help_text='Null until the sheet is matched to a pallet.')
+    image = models.ImageField(upload_to='checklist_scans/%Y/%m/')
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='processing', db_index=True)
+    transcription = models.JSONField(null=True, blank=True, help_text="The model's raw reading.")
+    draft = models.JSONField(null=True, blank=True, help_text='Server-built draft shown for review.')
+    confirmed = models.JSONField(null=True, blank=True, help_text='The draft as the owner confirmed it.')
+    result = models.JSONField(null=True, blank=True, help_text='What the confirm wrote.')
+    error = models.TextField(blank=True)
+    model = models.CharField(max_length=64, blank=True)
+    input_tokens = models.IntegerField(default=0)
+    output_tokens = models.IntegerField(default=0)
+    cache_read_tokens = models.IntegerField(default=0)
+    cache_write_tokens = models.IntegerField(default=0)
+    cost_usd = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
+    attempts = models.IntegerField(default=0)
+    processing_started_at = models.DateTimeField(null=True, blank=True)
+    uploaded_by = models.ForeignKey('account.CustomUser', on_delete=models.SET_NULL,
+                                    null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'checklist_scan'
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        return f"Checklist scan {self.id} ({self.so.so_number}, {self.status})"
+
+    @property
+    def is_stale(self):
+        return (self.status == 'processing' and self.processing_started_at is not None
+                and timezone.now() - self.processing_started_at > self.STALE_AFTER)
+
+
+class ChecklistCorrection(models.Model):
+    """Owner-confirmed meaning of something written on a sheet: the reader's experience.
+
+    Recorded on confirm for every field the owner changed from the draft, and used twice:
+    put into the model's prompt ("S2km8 has meant SLKM8"), and checked by the server's
+    matching before any fuzzy match. Keyed on the handwriting-tolerant fuzzy key of the raw
+    text, so 'D9SFT' and 'D95FT' are one entry.
+    """
+    KIND_CHOICES = [
+        ('mpn_name', 'MPN name'),
+        ('chip_model', 'Chip part number'),
+        ('capacity_class', 'Memory capacity class'),
+        ('brand_abbrev', 'Brand abbreviation'),
+    ]
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES)
+    raw_text = models.CharField(max_length=200)
+    raw_key = models.CharField(max_length=200, db_index=True)
+    resolved = models.CharField(max_length=200)
+    count = models.IntegerField(default=1)
+    last_seen = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'checklist_correction'
+        unique_together = [('kind', 'raw_key')]
+        ordering = ['kind', 'raw_key']
+
+    def __str__(self):
+        return f"{self.kind}: {self.raw_text} → {self.resolved} (×{self.count})"
+
+    @staticmethod
+    def key(kind, text):
+        from .scan_match import fuzzy_key, mpn_key
+        return mpn_key(text) if kind == 'mpn_name' else fuzzy_key(text)
+
+    @classmethod
+    def lookup(cls, kind, text):
+        k = cls.key(kind, text)
+        if not k:
+            return None
+        return cls.objects.filter(kind=kind, raw_key=k).values_list('resolved', flat=True).first()
+
+    @classmethod
+    def record(cls, kind, raw, resolved):
+        k = cls.key(kind, raw)
+        if not k or not (resolved or '').strip():
+            return None
+        obj, created = cls.objects.get_or_create(
+            kind=kind, raw_key=k, defaults={'raw_text': raw.strip()[:200], 'resolved': resolved.strip()[:200]})
+        if not created:
+            obj.count += 1
+            obj.resolved = resolved.strip()[:200]
+            obj.raw_text = raw.strip()[:200]
+            obj.save()
+        return obj
 
 
 class MPNReportConfig(models.Model):

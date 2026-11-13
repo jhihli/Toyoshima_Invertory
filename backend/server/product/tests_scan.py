@@ -40,3 +40,44 @@ class SlotGroupRenameMigrationTests(TestCase):
         Chip.objects.create(mpn=mpn, chip_mpn='D9SFT', slot_group='1G')
         data = {d['chip_mpn']: d for d in api_client().get('/product/chips/catalog/').json()}
         self.assertEqual(data['D9SFT']['slot_group'], '1G')
+
+
+class CorrectionTests(TestCase):
+    """ChecklistCorrection: the owner-confirmed dictionary the reader learns from."""
+
+    def test_seeded_capacity_classes_and_brand_abbrev(self):
+        from product.models import ChecklistCorrection as CC
+        self.assertEqual(CC.lookup('capacity_class', 'd9sft'), '1G')
+        self.assertEqual(CC.lookup('capacity_class', 'D9MNQ'), '1G')
+        self.assertEqual(CC.lookup('capacity_class', 'K4B1G1646G-BCH9'), '1G')
+        self.assertEqual(CC.lookup('capacity_class', 'NT5TU64M16HG-AC'), '1G')
+        self.assertEqual(CC.lookup('capacity_class', 'K4B2G1646Q-BCK0'), '2G')
+        self.assertEqual(CC.lookup('brand_abbrev', 'AL'), 'ALTERA')
+        self.assertIsNone(CC.lookup('capacity_class', 'SLKM8'))
+
+    def test_lookup_is_handwriting_tolerant(self):
+        from product.models import ChecklistCorrection as CC
+        self.assertEqual(CC.lookup('capacity_class', 'D95FT'), '1G')   # S written as 5
+
+    def test_record_upserts_and_counts(self):
+        from product.models import ChecklistCorrection as CC
+        CC.record('chip_model', 'S2km8', 'SLKM8')
+        CC.record('chip_model', 's2KM8', 'SLKM8')
+        row = CC.objects.get(kind='chip_model')
+        self.assertEqual((row.count, row.resolved, CC.lookup('chip_model', 'S2KM8')), (2, 'SLKM8', 'SLKM8'))
+        CC.record('chip_model', 'S2km8', 'SLKM9')        # the owner changed their mind
+        self.assertEqual(CC.lookup('chip_model', 'S2km8'), 'SLKM9')
+
+    def test_scan_staleness(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from product.models import ChecklistScan
+        so = SO.objects.create(so_number='S06-000979', vendor=Vendor.objects.create(name='MSFT'),
+                               inbound_date=date(2026, 11, 1))
+        s = ChecklistScan.objects.create(so=so, image='checklist_scans/x.jpg', status='processing',
+                                         processing_started_at=timezone.now())
+        self.assertFalse(s.is_stale)
+        s.processing_started_at = timezone.now() - timedelta(minutes=11)
+        self.assertTrue(s.is_stale)
+        s.status = 'ready'
+        self.assertFalse(s.is_stale)
