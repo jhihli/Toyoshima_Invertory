@@ -848,17 +848,22 @@ def chip_catalog(request):
     def filled(c):
         return sum(bool(x) for x in (c.brand_id, c.chip_type, c.item_group, c.description))
 
-    best = {}
+    best, group = {}, {}
     for c in Chip.objects.select_related('brand').order_by('-id'):
         k = key(c.chip_mpn)
         if k and (k not in best or filled(c) > filled(best[k])):
             best[k] = c
+        if k and (c.slot_group or '').strip() and not c.variable_qty:
+            group.setdefault(k, c.slot_group.strip())   # newest copy that names a group
     out = [{
         'chip_mpn': ' '.join(c.chip_mpn.split()),
         'brand': c.brand_id,
         'brand_name': c.brand.name if c.brand_id else '',
         'chip_type': c.chip_type,
         'item_group': c.item_group,
+        # Memory parts carry their capacity class here ('1G', '2G'); the checklist
+        # photo reader also takes its known-parts dictionary from this list.
+        'slot_group': group.get(key(c.chip_mpn), ''),
         'description': c.description,
         'processed_type': c.processed_type,
         'packaging_type': c.packaging_type,

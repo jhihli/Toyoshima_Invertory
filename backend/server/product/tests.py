@@ -1303,10 +1303,10 @@ class VariableQtyModuleTests(TestCase):
         self.mpn = MPN.objects.create(name='DCS-7060CX-32S')
         self.bcm = Chip.objects.create(mpn=self.mpn, chip_mpn='BCM56960B1KFSBG')
         self.alt = Chip.objects.create(mpn=self.mpn, chip_mpn='EP4CGX30CF23C8N')
-        self.tosh = Chip.objects.create(mpn=self.mpn, chip_mpn='THGBMFG6C1LBAIL', slot_group='Memory')
-        self.jy = Chip.objects.create(mpn=self.mpn, chip_mpn='JY995', slot_group='Memory')
-        # Tagged Memory like the DRAMs, but must NOT join their slot.
-        self.ram = Chip.objects.create(mpn=self.mpn, chip_mpn='RAM-8G-PC3', slot_group='Memory',
+        self.tosh = Chip.objects.create(mpn=self.mpn, chip_mpn='THGBMFG6C1LBAIL', slot_group='1G')
+        self.jy = Chip.objects.create(mpn=self.mpn, chip_mpn='JY995', slot_group='1G')
+        # In the DRAMs' slot group, but a module must NOT join their slot.
+        self.ram = Chip.objects.create(mpn=self.mpn, chip_mpn='RAM-8G-PC3', slot_group='1G',
                                        variable_qty=True, chip_cost='0.5000')
 
     def test_module_is_not_a_cut_slot(self):
@@ -1345,12 +1345,12 @@ class ChecklistCheckTests(TestCase):
         a, b = MPN.objects.create(name='SP#0WW9TT'), MPN.objects.create(name='SP#841631-001')
         Chip.objects.create(mpn=a, chip_mpn='SLKM8')
         for m in ('K4B1G1646G-BCH9', 'D9SFT', 'NT5CB64M16FP'):
-            Chip.objects.create(mpn=a, chip_mpn=m, slot_group='Memory')
+            Chip.objects.create(mpn=a, chip_mpn=m, slot_group='1G')
         Chip.objects.create(mpn=b, chip_mpn='EP4CE1SF23C9LN')
         Chip.objects.create(mpn=b, chip_mpn='SLKM8')
         for m in ('D9SFT', 'NT5CB64M16FP'):
-            Chip.objects.create(mpn=b, chip_mpn=m, slot_group='Memory')
-        self.ram = Chip.objects.create(mpn=b, chip_mpn='RAM-8G-PC3', slot_group='Memory', variable_qty=True)
+            Chip.objects.create(mpn=b, chip_mpn=m, slot_group='1G')
+        self.ram = Chip.objects.create(mpn=b, chip_mpn='RAM-8G-PC3', slot_group='1G', variable_qty=True)
         PalletMPN.objects.create(pallet=self.p, mpn=a, board_qty=31)
         PalletMPN.objects.create(pallet=self.p, mpn=b, board_qty=355)
         self.n = 0
@@ -1374,7 +1374,7 @@ class ChecklistCheckTests(TestCase):
         c = self.p.checklist_check()
         self.assertEqual(c['status'], 'ok')
         self.assertEqual(self.slots(c), {
-            'SLKM8': (386, 386, 'ok'), 'Memory': (386, 386, 'ok'), 'EP4CE1SF23C9LN': (355, 355, 'ok'),
+            'SLKM8': (386, 386, 'ok'), '1G': (386, 386, 'ok'), 'EP4CE1SF23C9LN': (355, 355, 'ok'),
         })
 
     def test_short_slot_is_a_mismatch(self):
@@ -1393,7 +1393,7 @@ class ChecklistCheckTests(TestCase):
         self.line('SLKM8', 386)
         c = self.p.checklist_check()
         self.assertEqual(c['status'], 'ok')
-        self.assertEqual(self.slots(c)['Memory'], (386, 0, 'absent'))
+        self.assertEqual(self.slots(c)['1G'], (386, 0, 'absent'))
 
     def test_blank_qty_is_incomplete(self):
         self.fill()

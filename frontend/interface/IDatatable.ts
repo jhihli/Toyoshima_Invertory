@@ -427,6 +427,8 @@ export interface ChipCatalogEntry {
   brand_name: string;
   chip_type: string;
   item_group: string;
+  /** Capacity class of a memory part ('1G', '2G'); '' when the part has a slot of its own. */
+  slot_group?: string;
   description: string;
   processed_type: string;
   packaging_type: string;
