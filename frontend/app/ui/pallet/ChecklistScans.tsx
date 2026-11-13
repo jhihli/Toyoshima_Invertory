@@ -49,15 +49,22 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
     const files = Array.from(list ?? []);
     if (!files.length) return;
     setUploading(true);
-    try {
-      const made = await scanApi.upload(soId, files);
-      toast(`${made.length} photo${made.length === 1 ? '' : 's'} uploaded — reading…`);
+    // One request per photo: a phone photo is several MB, and a batch in one request could
+    // hit the proxy's body-size limit; this way one bad photo doesn't sink the others either.
+    let ok = 0;
+    const failed: string[] = [];
+    for (const f of files) {
+      try {
+        await scanApi.upload(soId, [f]);
+        ok += 1;
+      } catch (e) {
+        failed.push(apiErrorMessage(e) || `${f.name}: upload failed`);
+      }
       await load();
-    } catch (e) {
-      toast(apiErrorMessage(e) || 'Upload failed');
-    } finally {
-      setUploading(false);
     }
+    setUploading(false);
+    if (ok) toast(`${ok} photo${ok === 1 ? '' : 's'} uploaded — reading…`);
+    if (failed.length) toast(failed.join(' · '));
   };
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
