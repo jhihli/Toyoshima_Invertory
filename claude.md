@@ -88,8 +88,14 @@ Backend config at `backend/server/.env`. Key variables:
 - `SCANNER_API_KEY` — used by Zebra scanner endpoints
 - `MEDIA_ROOT` — local path for uploaded images (production: `/var/www/toyoshima/media`)
 - `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`
-- `CHECKLIST_SCAN_BACKEND` — checklist photo reader: `ollama` (default, free — local model on the
-  office GPU PC) or `anthropic` (Claude, billed; owner chose not to pay, 2026-11-13).
+- `CHECKLIST_SCAN_BACKEND` — checklist photo reader: `analyzer` (default, production — the office
+  GPU server's image-analyzer agent, async), `ollama` (direct, dev/eval) or `anthropic` (Claude,
+  billed; owner chose not to pay, 2026-11-13).
+  - analyzer: `IMAGE_ANALYZER_URL` (`http://100.125.238.26:8101`), `IMAGE_ANALYZER_API_KEY` and
+    `IMAGE_ANALYZER_HMAC_SECRET` (same values as the agent's `.env` `API_KEY` /
+    `CALLBACK_HMAC_SECRET`), `IMAGE_ANALYZER_CALLBACK_URL` (this server's **Tailscale** address,
+    `http://100.127.43.5:8000/product/checklist-scans/analyzer-callback/` — the office box can't
+    reach the public domain); `100.127.43.5` must be in `ALLOWED_HOSTS`
   - ollama: `OLLAMA_URL` (default `http://100.125.238.26:11434`, office-server over Tailscale),
     `CHECKLIST_SCAN_OLLAMA_MODEL` (`qwen3-vl:8b-instruct`), `CHECKLIST_SCAN_OLLAMA_CTX` (8192),
     `CHECKLIST_SCAN_OLLAMA_TIMEOUT` (300 s per region)
@@ -294,17 +300,29 @@ Checklist until they confirm the review screen.
   `chip_model`, `capacity_class`, `brand_abbrev`), keyed on the I/1 S/5 O/0-folded text. Fed into
   the prompt and checked before fuzzy matching. 0058 seeds D9SFT/D9MNQ/K4B1G1646G-BCH9/
   NT5TU64M16HG-AC = 1G, K4B2G1646Q-BCK0 = 2G, AL = ALTERA.
-- `product/scan_reader.read_sheet()` is the ONLY model call. It transcribes; it decides nothing.
-  Tests must mock it (`_post_ollama` / `_client`) — never hit a model from a test.
-  - **ollama (default)**: `product/scan_local.py` crops the sheet's fixed regions (label, header
+- **The model never runs on this server.** Production (`analyzer`): `product/scan_analyzer.py`
+  POSTs the prepared JPEG to the office image-analyzer as a one-image batch (task id
+  `checklist-scan-<id>-a<attempt>`; the agent never analyses a task id twice); the agent crops the
+  regions, asks the model, deletes the image, and POSTs raw text per region to
+  `checklist-scans/analyzer-callback/` (HMAC-signed, no JWT). `apply_result` parses it with
+  `scan_local.transcription_from_regions` and finishes via `scan_worker.complete()` (drops a
+  superseded attempt). A deploy/restart here no longer loses reads. Tests fake `requests`.
+- `product/scan_reader.read_sheet()` is the only *synchronous* model call (direct backends). It
+  transcribes; it decides nothing. Tests must mock it (`_post_ollama` / `_client`) — never hit a
+  model from a test.
+  - **ollama (direct)**: `product/scan_local.py` crops the sheet's fixed regions (label, header
     notes, left/right table halves), enlarges each, asks `qwen3-vl:8b-instruct` for plain `a | b | c`
     lines (4 calls, ~25 s/photo), parses them into the transcription dict, renumbers duplicate
     right-half stickers, and adds `model_candidates` by a wide handwriting fold (G/6 B/8 S/5 Z/2…)
     against known parts. An 8B model asked for the whole JSON schema at once loops or loses the
     table — don't go back to that. Eval 2026-11-13: index/qty/part-after-candidates 100%, board
     MPN spelling 82%.
-  - The office box: Ollama in user space at `~/services/ollama` (systemd **user** unit
-    `ollama.service`, listens on :11434, models in `~/services/ollama/models`). `ssh office`.
+  - The office box (`ssh office`, RTX 5060 8 GB, WSL2) follows `docs/platform/AGENT_PLATFORM.md`:
+    shared Ollama in `~/platform` (repo office-platform, Docker, host port 127.0.0.1 only), the
+    agent in `~/agents/image-analyzer` (own repo, own Redis, port 8101 on the Tailscale IP only).
+    Both repos live as bare repos in `office:~/repos/*.git` (push from the dev PC, `git pull` there).
+    The region crops/prompts exist twice — `scan_local.py` (direct backend) and the agent's
+    `profiles.py`; change both together.
   - anthropic: claude-opus-5-5, structured output, cached dictionary prefix, `fallbacks="default"`.
 - `product/scan_draft.py`: `build_draft` (matching: MPNs ignore `SP#` + case, near-matches only
   pre-selected and yellow; parts via `scan_match.same_part`, never a near-duplicate chip),
@@ -314,9 +332,10 @@ Checklist until they confirm the review screen.
   never removes a PalletMPN, never writes weight), `preview_check` (apply in a rolled-back
   savepoint → `checklist_check()`; **don't write a second reconciliation**). Chip additions to an
   existing MPN are opt-in (shared by every order).
-- Background: a daemon thread per photo, started on commit (no Celery). A restart kills in-flight
-  reads → scan stuck `processing`, stale after 10 min, retry from the UI or
-  `manage.py process_checklist_scans`.
+- Background: a daemon thread per photo, started on commit (no Celery) — with `analyzer` it only
+  submits. Stale after 35 min (`STALE_AFTER`; the agent may queue up to 30 min when the GPU is
+  busy) → retry from the UI. `manage.py process_checklist_scans` polls the agent for results whose
+  callback was lost and resubmits stale scans it never received (direct backends: re-reads).
 - Eval: `manage.py eval_checklist_scans --dir "<repo>/asset/checklist screenshot"
   [--context-file prod_context.json]` scores the 4 samples per field (free on ollama; with the
   anthropic backend it is billed and needs `--yes`).
@@ -353,7 +372,8 @@ User roles: `admin`, `manager`, `vz_user`, `r2_user`, `n_user`. Role-based menu 
 - Checklist scans (JWT, admin/manager only): `POST/GET sos/<id>/checklist-scans/` (multipart
   `images`; `?pallet=`), `GET checklist-scans/<id>/`, and POSTs under `checklist-scans/<id>/`:
   `preview/ {draft}`, `rebuild/ {pallet_id?, overrides?}`, `confirm/ {draft}` (409 = the pallet
-  changed since the draft — rebuild), `discard/`, `retry/`
+  changed since the draft — rebuild), `discard/`, `retry/`. `POST checklist-scans/analyzer-callback/`
+  is the image-analyzer's HMAC-signed result (no JWT)
 
 ---
 

@@ -4,6 +4,7 @@ from . import views, scan_views
 urlpatterns = [
     # Checklist photo scans (photo → draft → confirm)
     path('sos/<int:so_pk>/checklist-scans/', scan_views.scan_list_create, name='checklist-scan-list'),
+    path('checklist-scans/analyzer-callback/', scan_views.analyzer_callback, name='checklist-scan-analyzer-callback'),
     path('checklist-scans/<int:pk>/', scan_views.scan_detail, name='checklist-scan-detail'),
     path('checklist-scans/<int:pk>/preview/', scan_views.scan_preview, name='checklist-scan-preview'),
     path('checklist-scans/<int:pk>/rebuild/', scan_views.scan_rebuild, name='checklist-scan-rebuild'),

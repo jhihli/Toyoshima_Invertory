@@ -37,7 +37,7 @@ def ok_read(transcription=CL2):
                                   cost_usd=Decimal('0.1000'))
 
 
-@override_settings(CHECKLIST_SCAN_INLINE=True, MEDIA_ROOT=MEDIA, ANTHROPIC_API_KEY='')
+@override_settings(CHECKLIST_SCAN_INLINE=True, CHECKLIST_SCAN_BACKEND='ollama', MEDIA_ROOT=MEDIA, ANTHROPIC_API_KEY='')
 class ScanApiTests(Cl2Fixture):
 
     @classmethod
@@ -101,7 +101,7 @@ class ScanApiTests(Cl2Fixture):
         s = ChecklistScan.objects.create(so=self.so, image='checklist_scans/x.jpg', status='processing',
                                          processing_started_at=timezone.now(), attempts=1)
         self.assertEqual(self.client.post(f'/product/checklist-scans/{s.id}/retry/').status_code, 400)
-        s.processing_started_at = timezone.now() - timedelta(minutes=30)
+        s.processing_started_at = timezone.now() - ChecklistScan.STALE_AFTER - timedelta(minutes=1)
         s.save()
         with mock.patch('product.scan_worker.start_processing') as start:
             r = self.client.post(f'/product/checklist-scans/{s.id}/retry/')
@@ -175,7 +175,7 @@ class ScanApiTests(Cl2Fixture):
 
     def test_management_command_rereads_only_stale_scans(self):
         from django.core.management import call_command
-        old = timezone.now() - timedelta(minutes=30)
+        old = timezone.now() - ChecklistScan.STALE_AFTER - timedelta(minutes=1)
         stale = ChecklistScan.objects.create(so=self.so, image=jpeg('s.jpg'), status='processing',
                                              processing_started_at=old, attempts=1)
         fresh = ChecklistScan.objects.create(so=self.so, image=jpeg('f.jpg'), status='processing',
@@ -225,7 +225,7 @@ class ScanApiTests(Cl2Fixture):
         self.assertEqual(len(self.client.get(self.url, {'pallet': self.other.id}).json()), 0)
 
 
-@override_settings(CHECKLIST_SCAN_INLINE=True, MEDIA_ROOT=MEDIA, ANTHROPIC_API_KEY='')
+@override_settings(CHECKLIST_SCAN_INLINE=True, CHECKLIST_SCAN_BACKEND='ollama', MEDIA_ROOT=MEDIA, ANTHROPIC_API_KEY='')
 class PalletScanCountTests(Cl2Fixture):
     """The SO detail's pallets carry scan_count (discarded excluded) for the row's photo icon."""
 

@@ -77,7 +77,9 @@ class CorrectionTests(TestCase):
         s = ChecklistScan.objects.create(so=so, image='checklist_scans/x.jpg', status='processing',
                                          processing_started_at=timezone.now())
         self.assertFalse(s.is_stale)
-        s.processing_started_at = timezone.now() - timedelta(minutes=11)
+        s.processing_started_at = timezone.now() - ChecklistScan.STALE_AFTER + timedelta(minutes=1)
+        self.assertFalse(s.is_stale)
+        s.processing_started_at = timezone.now() - ChecklistScan.STALE_AFTER - timedelta(minutes=1)
         self.assertTrue(s.is_stale)
         s.status = 'ready'
         self.assertFalse(s.is_stale)

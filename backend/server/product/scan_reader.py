@@ -1,8 +1,9 @@
 """Reading a photographed 清單 with a vision model: transcription only.
 
-`read_sheet()` is the ONE place this codebase calls a model. Two backends, picked by
-CHECKLIST_SCAN_BACKEND: 'ollama' (default — a local open model on the office GPU box,
-reached over Tailscale; free) or 'anthropic' (Claude, billed). It returns what is
+`read_sheet()` is the ONE place this codebase calls a model synchronously. Backends, picked
+by CHECKLIST_SCAN_BACKEND: 'analyzer' (default, production — asynchronous, through the
+office GPU server's image-analyzer agent; see product.scan_analyzer, which does not use
+read_sheet), 'ollama' (direct to an Ollama URL; dev / eval) or 'anthropic' (Claude, billed). It returns what is
 written on the sheet, as structured JSON; it decides nothing about the database. Matching,
 classification, creation plans and reconciliation are done afterwards by deterministic
 server code (product.scan_draft). Tests replace `_client()` / `read_sheet()`; no test may
@@ -254,6 +255,13 @@ def read_sheet(image_bytes, media_type, context):
     raise ReadError(f'Unknown CHECKLIST_SCAN_BACKEND {backend!r} (use ollama or anthropic).')
 
 
+def known_parts(context):
+    """Part names misreadings are matched against: the chip catalog plus owner corrections."""
+    known = [p['part'] for p in context.get('parts', [])]
+    known += [c['means'] for c in context.get('corrections', []) if c.get('kind') == 'chip_model']
+    return sorted(set(known))
+
+
 def _post_ollama(url, payload, timeout):
     import requests
     return requests.post(url, json=payload, timeout=timeout)
@@ -266,8 +274,6 @@ def _read_ollama(image_bytes, context):
     from . import scan_local
     base = getattr(settings, 'OLLAMA_URL', 'http://100.125.238.26:11434').rstrip('/')
     model = getattr(settings, 'CHECKLIST_SCAN_OLLAMA_MODEL', 'qwen3-vl:8b-instruct')
-    known = [p['part'] for p in context.get('parts', [])]
-    known += [c['means'] for c in context.get('corrections', []) if c.get('kind') == 'chip_model']
     try:
         texts, usage = scan_local.read_regions(
             image_bytes, _post_ollama, f'{base}/api/chat', model,
@@ -279,7 +285,7 @@ def _read_ollama(image_bytes, context):
         raise ReadError(f'Local model error {e}')
     except (ValueError, OSError) as e:
         raise ReadError(f'Not a readable image or reply: {e}')
-    transcription = scan_local.transcription_from_regions(texts, sorted(set(known)))
+    transcription = scan_local.transcription_from_regions(texts, known_parts(context))
     return ReadResult(transcription=transcription, model=f'ollama:{model}', usage=usage, cost_usd=Decimal('0'))
 
 

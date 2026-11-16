@@ -24,19 +24,31 @@ from .models import ChecklistScan
 log = logging.getLogger(__name__)
 
 
+def uses_analyzer():
+    return getattr(settings, 'CHECKLIST_SCAN_BACKEND', 'analyzer') == 'analyzer'
+
+
 def start_processing(scan_id):
-    """Read scan `scan_id` in the background (synchronously when CHECKLIST_SCAN_INLINE)."""
+    """Read scan `scan_id` in the background (synchronously when CHECKLIST_SCAN_INLINE).
+    With the 'analyzer' backend the background step only hands the photo to the office
+    image-analyzer; its signed callback finishes the scan (scan_analyzer.apply_result)."""
+    work = _submit if uses_analyzer() else process_scan
     if getattr(settings, 'CHECKLIST_SCAN_INLINE', False):
-        process_scan(scan_id)
+        work(scan_id)
         return
     transaction.on_commit(lambda: threading.Thread(
-        target=_run, args=(scan_id,), daemon=True, name=f'checklist-scan-{scan_id}').start())
+        target=_run, args=(scan_id, work), daemon=True, name=f'checklist-scan-{scan_id}').start())
 
 
-def _run(scan_id):
+def _submit(scan_id):
+    from . import scan_analyzer
+    scan_analyzer.submit(scan_id)
+
+
+def _run(scan_id, work):
     close_old_connections()
     try:
-        process_scan(scan_id)
+        work(scan_id)
     except Exception:            # never let a thread die silently with the scan 'processing'
         log.exception('checklist scan %s crashed', scan_id)
         ChecklistScan.objects.filter(pk=scan_id, status='processing').update(
@@ -53,9 +65,29 @@ def _finish(scan, attempt, **fields):
     return bool(n)
 
 
-def process_scan(scan_id):
-    """Read one 'processing' scan: model transcription, then the server-built draft."""
+def fail(scan, attempt, error, **fields):
+    return _finish(scan, attempt, status='failed', error=error, **fields)
+
+
+def complete(scan, attempt, result):
+    """A transcription is in (any backend): build the draft and mark the scan ready."""
     from .scan_draft import build_draft
+    usage = result.usage or {}
+    fields = dict(transcription=result.transcription, model=result.model,
+                  input_tokens=usage.get('input_tokens', 0), output_tokens=usage.get('output_tokens', 0),
+                  cache_read_tokens=usage.get('cache_read_tokens', 0),
+                  cache_write_tokens=usage.get('cache_write_tokens', 0), cost_usd=result.cost_usd, error='')
+    scan.transcription = result.transcription
+    try:
+        draft = build_draft(scan)
+    except Exception as e:
+        log.exception('checklist scan %s: draft failed', scan.pk)
+        return _finish(scan, attempt, status='failed', error=f'Read OK, but building the draft failed: {e}', **fields)
+    return _finish(scan, attempt, status='ready', draft=draft, pallet_id=draft['pallet_id'], **fields)
+
+
+def process_scan(scan_id):
+    """Read one 'processing' scan synchronously (direct backends): transcription, then draft."""
     scan = ChecklistScan.objects.select_related('so').filter(pk=scan_id).first()
     if scan is None or scan.status != 'processing':
         return
@@ -72,19 +104,7 @@ def process_scan(scan_id):
         _finish(scan, attempt, status='failed', error=f'Unexpected error while reading: {e}')
         return
 
-    usage = result.usage
-    fields = dict(transcription=result.transcription, model=result.model,
-                  input_tokens=usage.get('input_tokens', 0), output_tokens=usage.get('output_tokens', 0),
-                  cache_read_tokens=usage.get('cache_read_tokens', 0),
-                  cache_write_tokens=usage.get('cache_write_tokens', 0), cost_usd=result.cost_usd, error='')
-    scan.transcription = result.transcription
-    try:
-        draft = build_draft(scan)
-    except Exception as e:
-        log.exception('checklist scan %s: draft failed', scan_id)
-        _finish(scan, attempt, status='failed', error=f'Read OK, but building the draft failed: {e}', **fields)
-        return
-    _finish(scan, attempt, status='ready', draft=draft, pallet_id=draft['pallet_id'], **fields)
+    complete(scan, attempt, result)
 
 
 def queue_retry(scan):

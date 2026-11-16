@@ -647,9 +647,10 @@ class ChecklistScan(models.Model):
         ('confirmed', 'Confirmed'),
         ('discarded', 'Discarded'),
     ]
-    # A scan still 'processing' after this long lost its worker (process restart) and may
-    # be retried. A normal read takes well under two minutes.
-    STALE_AFTER = timedelta(minutes=10)
+    # A scan still 'processing' after this long lost its read (restart, analyzer down, callback
+    # lost) and may be retried. A normal read takes under a minute; the office image-analyzer
+    # may queue a batch for up to 30 min (GPU busy) before it gives up.
+    STALE_AFTER = timedelta(minutes=35)
 
     so = models.ForeignKey(SO, on_delete=models.CASCADE, related_name='checklist_scans')
     pallet = models.ForeignKey(Pallet, on_delete=models.SET_NULL, null=True, blank=True,

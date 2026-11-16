@@ -202,7 +202,14 @@ SCANNER_API_KEY = os.getenv('SCANNER_API_KEY', 'insecure-default-key-change-in-p
 # Checklist photo reader (product.scan_reader). Use a dedicated Anthropic workspace key
 # with a monthly spend limit (see docs/SECURITY.md). Unset = uploads fail with a clear error.
 # Checklist photo reader backend: 'ollama' (local model on the office GPU PC, free) or 'anthropic'.
-CHECKLIST_SCAN_BACKEND = os.getenv('CHECKLIST_SCAN_BACKEND', 'ollama')
+CHECKLIST_SCAN_BACKEND = os.getenv('CHECKLIST_SCAN_BACKEND', 'analyzer')
+# 'analyzer': the office GPU server's image-analyzer agent (docs/platform/AGENT_PLATFORM.md).
+# API key + HMAC secret are shared with the agent's .env; the callback URL is this server's
+# Tailscale address (the office server can't reach the public domain: no hairpin NAT).
+IMAGE_ANALYZER_URL = os.getenv('IMAGE_ANALYZER_URL', 'http://100.125.238.26:8101')
+IMAGE_ANALYZER_API_KEY = os.getenv('IMAGE_ANALYZER_API_KEY', '')
+IMAGE_ANALYZER_HMAC_SECRET = os.getenv('IMAGE_ANALYZER_HMAC_SECRET', '')
+IMAGE_ANALYZER_CALLBACK_URL = os.getenv('IMAGE_ANALYZER_CALLBACK_URL', '')
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://100.125.238.26:11434')
 CHECKLIST_SCAN_OLLAMA_MODEL = os.getenv('CHECKLIST_SCAN_OLLAMA_MODEL', 'qwen3-vl:8b-instruct')
 CHECKLIST_SCAN_OLLAMA_CTX = int(os.getenv('CHECKLIST_SCAN_OLLAMA_CTX', '8192'))

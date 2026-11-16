@@ -16,7 +16,8 @@ description: API endpoints reference and error handling for TGT Inventory
 | POST | `checklist-scans/<id>/preview/` | `{draft}` → `{check}` (dry run, writes nothing) |
 | POST | `checklist-scans/<id>/rebuild/` | `{pallet_id?, overrides?}` → re-derived draft (no model call) |
 | POST | `checklist-scans/<id>/confirm/` | `{draft}` → applied in one transaction; 409 = stale draft |
-| POST | `checklist-scans/<id>/discard/`, `retry/` | Discard / read again (billed) |
+| POST | `checklist-scans/<id>/discard/`, `retry/` | Discard / read again |
+| POST | `checklist-scans/analyzer-callback/` | Office image-analyzer result — **no JWT**, `X-IA-Signature` HMAC over `"<X-IA-Timestamp>." + body`, ≤5 min old |
 
 ## Error Handling
 - Validate with `serializer.is_valid()` → return `serializer.errors` + `HTTP 400`

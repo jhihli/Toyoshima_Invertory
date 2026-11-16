@@ -8,17 +8,20 @@
     POST checklist-scans/<pk>/confirm/         {draft} → scan; 400/409 {error}
     POST checklist-scans/<pk>/discard/         → scan
     POST checklist-scans/<pk>/retry/           → scan (failed, ready, or stale processing)
+    POST checklist-scans/analyzer-callback/    office image-analyzer result; HMAC-signed, no JWT
 """
+import json
+import logging
 import os
 
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from . import scan_worker
+from . import scan_analyzer, scan_worker
 from .models import SO, ChecklistScan
 from .scan_draft import DraftError, apply_draft, build_draft, learn_from_confirm, preview_check
 from .scan_match import fuzzy_key
@@ -27,6 +30,7 @@ from .views import IsAdminOrManager
 MAX_IMAGES = 20
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 PERMS = [IsAuthenticated, IsAdminOrManager]
+log = logging.getLogger(__name__)
 
 
 def _not_found():
@@ -238,3 +242,23 @@ def scan_retry(request, pk):
     scan_worker.queue_retry(s)
     s.refresh_from_db()
     return Response(_full(request, s))
+
+
+@api_view(['POST'])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def analyzer_callback(request):
+    """The office image-analyzer's result for one scan attempt. Trusted only by its HMAC
+    signature over the raw body (and only reachable over Tailscale). Always 200 once the
+    signature is good, so the agent stops retrying even for a superseded attempt."""
+    body = request._request.body
+    if not scan_analyzer.verify(body, request.headers.get('X-IA-Timestamp', ''),
+                                request.headers.get('X-IA-Signature', '')):
+        return Response({'error': 'bad signature'}, status=status.HTTP_401_UNAUTHORIZED)
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return _bad('invalid JSON')
+    applied = scan_analyzer.apply_result(payload)
+    log.info('analyzer callback task=%s applied=%s', payload.get('task_id'), applied)
+    return Response({'ok': True, 'applied': bool(applied)})
