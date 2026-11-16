@@ -133,6 +133,8 @@ def parse_table(text, column, known):
             continue
         idx = _int(cells[0])
         brand, model = cells[1], ' '.join(cells[2].split())
+        if not model and re.search(r'\d', brand):        # "#4 | D9SFT |  | 143": part in the brand cell
+            brand, model = '', ' '.join(brand.split())
         qty = _int(cells[3]) if len(cells) > 3 else None
         cands = candidates(model, known)
         exact = bool(cands) and hand_key(cands[0]) == hand_key(model) and cands[0].upper() == model.upper()

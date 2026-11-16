@@ -233,6 +233,12 @@ class OllamaReaderTests(TestCase):
 class ScanLocalParsingTests(TestCase):
     from product import scan_local as sl
 
+    def test_part_number_in_the_brand_cell_moves_to_model(self):
+        known = ['D9SFT', 'NT5TU64M16HG-AC']
+        got = self.sl.parse_table('#4 | D9SFT |  | 143\n#5 | NT5TU64M16HG-AC |  | 1\n#2 | ALTERA |  | 9', 'left', known)
+        self.assertEqual([(l['brand_text'], l['model_text'], l['qty']) for l in got],
+                         [('', 'D9SFT', 143), ('', 'NT5TU64M16HG-AC', 1), ('ALTERA', '', 9)])
+
     def test_candidates_fold_handwriting_lookalikes(self):
         known = ['K4B1G1646G-BCH9', 'D9MNQ', 'D9SFT', 'NT5TU64M16HG-AC', 'SLKM8']
         c = self.sl.candidates
