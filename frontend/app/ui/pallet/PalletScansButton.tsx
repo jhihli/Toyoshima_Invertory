@@ -1,10 +1,11 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { Modal, Badge, Button, useToast } from '@/app/ui/components';
+import { Modal, Button, useToast } from '@/app/ui/components';
 import { apiErrorMessage } from '@/app/lib/api';
 import { scanApi, type ChecklistScan } from '@/app/lib/checklistScanApi';
 import ChecklistScanReview from './ChecklistScanReview';
+import { ReadingLine, StatusBadge, isReading, useTick } from './ScanProgress';
 
 /**
  * Camera icon on a pallet row (Pallets tab), shown when the pallet has checklist photos.
@@ -24,16 +25,25 @@ export default function PalletScansButton({ soId, palletId, count, label, style,
   const [scans, setScans] = useState<ChecklistScan[] | null>(null);
   const [reviewId, setReviewId] = useState<number | null>(null);
 
-  if (!count || !(role === 'admin' || role === 'manager')) return null;
-
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const all = await scanApi.list(soId, palletId);
       setScans(all.filter(s => s.pallet_id === palletId && s.status !== 'discarded'));
     } catch (e) {
       toast(apiErrorMessage(e) || 'Could not load the photos');
     }
-  };
+  }, [soId, palletId, toast]);
+
+  // While the dialog is open and a photo is being read (e.g. a retry), keep it current.
+  const reading = open && (scans ?? []).some(isReading);
+  useTick(reading);
+  useEffect(() => {
+    if (!reading) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [reading, load]);
+
+  if (!count || !(role === 'admin' || role === 'manager')) return null;
 
   const show = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -76,8 +86,10 @@ export default function PalletScansButton({ soId, palletId, count, label, style,
                   )}
                   <div style={{ flex: '1 1 140px', minWidth: 0 }}>
                     <StatusBadge s={s} />
-                    <div style={{ fontSize: 11.5, color: 'var(--ink-4)', marginTop: 4 }}>
-                      #{s.id} · {new Date(s.created_at).toLocaleString()}
+                    <div style={{ fontSize: 11.5, color: s.status === 'failed' ? 'var(--err)' : 'var(--ink-4)', marginTop: 4 }}>
+                      {s.status === 'processing' ? <ReadingLine s={s} />
+                        : s.status === 'failed' ? s.error
+                        : <>#{s.id} · {new Date(s.created_at).toLocaleString()}</>}
                     </div>
                   </div>
                   {(s.status === 'ready' || s.status === 'confirmed') && (
@@ -100,13 +112,6 @@ export default function PalletScansButton({ soId, palletId, count, label, style,
       </span>
     </>
   );
-}
-
-function StatusBadge({ s }: { s: ChecklistScan }) {
-  if (s.status === 'processing') return <Badge tone={s.is_stale ? 'err' : 'blue'}>{s.is_stale ? 'Stuck' : 'Reading…'}</Badge>;
-  if (s.status === 'ready') return <Badge tone="warn">To review</Badge>;
-  if (s.status === 'failed') return <Badge tone="err">Failed</Badge>;
-  return <Badge tone="ok">Confirmed</Badge>;
 }
 
 const CameraIcon = () => (

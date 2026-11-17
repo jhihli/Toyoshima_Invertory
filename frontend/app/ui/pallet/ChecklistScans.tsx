@@ -1,10 +1,11 @@
 'use client';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { Button, Badge, useToast } from '@/app/ui/components';
+import { Button, useToast } from '@/app/ui/components';
 import { apiErrorMessage } from '@/app/lib/api';
 import { scanApi, type ChecklistScan } from '@/app/lib/checklistScanApi';
 import ChecklistScanReview from './ChecklistScanReview';
+import { ReadingLine, ReadingProgress, StatusBadge, isReading, useTick } from './ScanProgress';
 import type { Pallet } from '@/interface/IDatatable';
 
 /**
@@ -25,7 +26,8 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
   const toast = useToast();
   const inputRef = useRef<HTMLInputElement>(null);
   const [scans, setScans] = useState<ChecklistScan[]>([]);
-  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUpload] = useState<{ done: number; total: number } | null>(null);
+  const uploading = uploadProgress != null;
   const [reviewId, setReviewId] = useState<number | null>(null);
   const [showDone, setShowDone] = useState(false);
 
@@ -36,7 +38,8 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
   useEffect(() => { if (allowed) load(); }, [allowed, load]);
 
   // Poll while any photo is still being read.
-  const reading = scans.some(s => s.status === 'processing' && !s.is_stale);
+  const reading = scans.some(isReading);
+  useTick(reading);
   useEffect(() => {
     if (!reading) return;
     const t = setInterval(load, 3000);
@@ -48,7 +51,7 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
   const upload = async (list: FileList | null) => {
     const files = Array.from(list ?? []);
     if (!files.length) return;
-    setUploading(true);
+    setUpload({ done: 0, total: files.length });
     // One request per photo: a phone photo is several MB, and a batch in one request could
     // hit the proxy's body-size limit; this way one bad photo doesn't sink the others either.
     let ok = 0;
@@ -60,9 +63,10 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
       } catch (e) {
         failed.push(apiErrorMessage(e) || `${f.name}: upload failed`);
       }
+      setUpload({ done: ok + failed.length, total: files.length });
       await load();
     }
-    setUploading(false);
+    setUpload(null);
     if (ok) toast(`${ok} photo${ok === 1 ? '' : 's'} uploaded — reading…`);
     if (failed.length) toast(failed.join(' · '));
   };
@@ -88,7 +92,7 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <Button variant="outline" icon={<CameraIcon />} onClick={() => inputRef.current?.click()}
           disabled={uploading} style={{ height: 40, fontSize: 13.5 }}>
-          {uploading ? 'Uploading…' : '上传清单 / Upload checklist'}
+          {uploadProgress ? `Uploading ${Math.min(uploadProgress.done + 1, uploadProgress.total)} / ${uploadProgress.total}…` : '上传清单 / Upload checklist'}
         </Button>
         <span style={{ fontSize: 11.5, color: 'var(--ink-4)', lineHeight: 1.4, flex: '1 1 200px' }}>
           Photograph the filled-in 清單 sheets (several at once is fine). Nothing changes until you review and confirm.
@@ -99,6 +103,8 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
           </button>
         )}
       </div>
+
+      <ReadingProgress scans={scans} upload={uploadProgress} />
 
       {shown.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
@@ -118,8 +124,8 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
                 </div>
                 <div style={{ fontSize: 11, color: s.status === 'failed' ? 'var(--err)' : 'var(--ink-4)', marginTop: 2 }}>
                   {s.status === 'failed' ? s.error
-                    : s.is_stale ? 'The read was interrupted (server restart?). Retry it.'
-                    : `#${s.id} · ${new Date(s.created_at).toLocaleString()}${s.cost_usd ? ` · $${Number(s.cost_usd).toFixed(2)}` : ''}`}
+                    : s.status === 'processing' ? <ReadingLine s={s} />
+                    : `#${s.id} · ${new Date(s.created_at).toLocaleString()}${Number(s.cost_usd) ? ` · $${Number(s.cost_usd).toFixed(2)}` : ''}`}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -147,14 +153,6 @@ export default function ChecklistScans({ soId, pallets, onApplied }: {
       )}
     </div>
   );
-}
-
-function StatusBadge({ s }: { s: ChecklistScan }) {
-  if (s.status === 'processing') return <Badge tone={s.is_stale ? 'err' : 'blue'}>{s.is_stale ? 'Stuck' : 'Reading…'}</Badge>;
-  if (s.status === 'ready') return <Badge tone="warn">To review</Badge>;
-  if (s.status === 'failed') return <Badge tone="err">Failed</Badge>;
-  if (s.status === 'confirmed') return <Badge tone="ok">Confirmed</Badge>;
-  return <Badge>Discarded</Badge>;
 }
 
 const linkBtn: React.CSSProperties = {

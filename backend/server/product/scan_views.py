@@ -50,8 +50,9 @@ def _image_url(request, scan):
     return request.build_absolute_uri(scan.image.url) if request else scan.image.url
 
 
-def _summary(request, s):
+def _summary(request, s, snap=None):
     p = s.pallet
+    queue = (scan_analyzer.queue_info(s, snap) if snap and s.status == 'processing' else None)
     return {
         'id': s.id, 'so': s.so_id, 'status': s.status, 'is_stale': s.is_stale,
         'pallet_id': s.pallet_id,
@@ -61,11 +62,20 @@ def _summary(request, s):
         'created_at': s.created_at.isoformat(), 'updated_at': s.updated_at.isoformat(),
         'confirmed_at': s.confirmed_at.isoformat() if s.confirmed_at else None,
         'result': s.result,
+        'processing_started_at': s.processing_started_at.isoformat() if s.processing_started_at else None,
+        'queue': queue,
     }
 
 
+def _snapshot(scans):
+    """The image-analyzer's queue, fetched only when something is being read through it."""
+    if scan_worker.uses_analyzer() and any(s.status == 'processing' for s in scans):
+        return scan_analyzer.queue_snapshot()
+    return None
+
+
 def _full(request, s):
-    return {**_summary(request, s), 'draft': s.draft, 'confirmed': s.confirmed, 'transcription': s.transcription}
+    return {**_summary(request, s, _snapshot([s])), 'draft': s.draft, 'confirmed': s.confirmed, 'transcription': s.transcription}
 
 
 def _get(pk, lock=False):
@@ -100,7 +110,9 @@ def scan_list_create(request, so_pk):
         pallet = request.query_params.get('pallet')
         if pallet:
             qs = qs.filter(pallet_id=pallet)
-        return Response([_summary(request, s) for s in qs])
+        scans = list(qs)
+        snap = _snapshot(scans)
+        return Response([_summary(request, s, snap) for s in scans])
 
     files = request.FILES.getlist('images') or request.FILES.getlist('image')
     if not files:

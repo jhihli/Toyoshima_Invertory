@@ -142,3 +142,40 @@ def poll(scan):
         apply_result(body)
         return 'applied'
     return 'pending'
+
+
+QUEUE_CACHE_KEY = 'image-analyzer-queue'
+
+
+def queue_snapshot():
+    """{task_id: queue item} for unfinished batches, plus timing hints under None.
+    One request to the agent per 3 s at most (the review list polls every 3 s); on any
+    error an empty snapshot — progress display is a convenience, never an error."""
+    from django.core.cache import cache
+    snap = cache.get(QUEUE_CACHE_KEY)
+    if snap is not None:
+        return snap
+    snap = {}
+    try:
+        r = requests.get(f'{_base()}/queue', headers=_headers(), timeout=2)
+        if r.status_code == 200:
+            body = r.json()
+            snap = {i['task_id']: i for i in body.get('items', [])}
+            snap[None] = {'seconds_per_image': body.get('seconds_per_image'),
+                          'cold_start_seconds': body.get('cold_start_seconds')}
+    except (requests.RequestException, ValueError, KeyError, TypeError):
+        snap = {}
+    cache.set(QUEUE_CACHE_KEY, snap, 3)
+    return snap
+
+
+def queue_info(scan, snap):
+    """What the review list shows for a scan being read: its place in the agent's line."""
+    item = snap.get(task_id(scan))
+    if not item:
+        return None
+    hints = snap.get(None) or {}
+    return {'position': item.get('position'), 'status': item.get('status'),
+            'wait_reason': item.get('wait_reason'), 'images_ahead': item.get('images_ahead', 0),
+            'seconds_per_image': hints.get('seconds_per_image'),
+            'cold_start_seconds': hints.get('cold_start_seconds')}

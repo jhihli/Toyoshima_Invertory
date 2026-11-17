@@ -81,6 +81,17 @@ export interface ScanOverrides {
   mpns?: Record<string, { mpn_id?: number | null; new_name?: string; board_qty?: number | null; items?: Record<string, string> }>;
 }
 
+export interface ScanQueue {
+  /** 1 = being read now. */
+  position: number;
+  status: 'queued' | 'processing' | 'waiting';
+  wait_reason: string | null;
+  /** Photos to be read before this one. */
+  images_ahead: number;
+  seconds_per_image: number | null;
+  cold_start_seconds: number | null;
+}
+
 export interface ChecklistScan {
   id: number; so: number; status: ScanStatus; is_stale: boolean;
   pallet_id: number | null; pallet_label: string;
@@ -88,6 +99,10 @@ export interface ChecklistScan {
   model: string; cost_usd: string | null;
   created_at: string; updated_at: string; confirmed_at: string | null;
   result: Record<string, number> | null;
+  /** When the current read attempt started (elapsed-time clock). */
+  processing_started_at?: string | null;
+  /** Place in the office image-analyzer's line while being read (null when unknown). */
+  queue?: ScanQueue | null;
   draft?: ScanDraft | null;
   /** What the owner confirmed (status 'confirmed'). */
   confirmed?: ScanDraft | null;

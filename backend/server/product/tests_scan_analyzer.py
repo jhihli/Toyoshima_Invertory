@@ -180,3 +180,29 @@ class AnalyzerBackendTests(Cl2Fixture):
         post.assert_not_called()
         scan.refresh_from_db()
         self.assertEqual((scan.status, scan.attempts), ('processing', 1))
+
+    def test_list_shows_queue_position_while_reading(self):
+        from django.core.cache import cache
+        cache.delete(scan_analyzer.QUEUE_CACHE_KEY)
+        scan, _ = self.upload()
+        q = {'items': [{'position': 1, 'task_id': 'other', 'status': 'processing', 'images_ahead': 0},
+                       {'position': 2, 'task_id': f'checklist-scan-{scan.id}-a1', 'status': 'queued',
+                        'wait_reason': None, 'images_ahead': 1}],
+             'seconds_per_image': 25, 'cold_start_seconds': 45}
+        with mock.patch.object(scan_analyzer.requests, 'get', return_value=Resp(200, q)) as get:
+            rows = self.client.get(f'/product/sos/{self.so.id}/checklist-scans/').json()
+            self.client.get(f'/product/sos/{self.so.id}/checklist-scans/')
+        self.assertEqual(get.call_count, 1)                        # cached between polls
+        self.assertEqual(rows[0]['queue'], {'position': 2, 'status': 'queued', 'wait_reason': None,
+                                            'images_ahead': 1, 'seconds_per_image': 25,
+                                            'cold_start_seconds': 45})
+        self.assertIsNotNone(rows[0]['processing_started_at'])
+
+    def test_list_survives_an_unreachable_analyzer(self):
+        import requests
+        from django.core.cache import cache
+        cache.delete(scan_analyzer.QUEUE_CACHE_KEY)
+        self.upload()
+        with mock.patch.object(scan_analyzer.requests, 'get', side_effect=requests.ConnectionError('x')):
+            rows = self.client.get(f'/product/sos/{self.so.id}/checklist-scans/').json()
+        self.assertIsNone(rows[0]['queue'])
