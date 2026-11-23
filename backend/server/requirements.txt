@@ -11,4 +11,4 @@ gunicorn
 Pillow
 openpyxl
 requests
-anthropic>=2.8,<3
+anthropic>=2.11.0,<3
